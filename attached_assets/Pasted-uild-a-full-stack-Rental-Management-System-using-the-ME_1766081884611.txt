@@ -1,0 +1,179 @@
+uild a full-stack Rental Management System using the MERN stack that allows landlords and caretakers to manage properties, tenants, and rent payments efficiently.
+
+Tech Stack:
+
+Frontend: React (Vite or CRA)
+
+Backend: Node.js + Express.js
+
+Database: MongoDB (Mongoose)
+
+Authentication: JWT (Access + Refresh tokens)
+
+Styling: Tailwind CSS
+
+Fully responsive (mobile & desktop)
+
+👤 User Roles
+
+Admin / Landlord – full system control
+
+Caretaker – limited permissions
+(No tenant login; tenants are managed internally.)
+
+🔐 Authentication & Authorization
+
+Secure login
+
+Password hashing (bcrypt)
+
+JWT-based authentication
+
+Role-based access control (RBAC)
+
+Admin creates and manages caretaker accounts
+
+🏢 Property & Unit Management
+
+Add, edit, delete properties
+
+Add units under each property
+
+Unit details:
+
+Unit name/number
+
+Unit type (bedsitter, 1-bedroom, shop, etc.)
+
+Monthly rent
+
+Status (Occupied / Vacant)
+
+Assign caretakers to properties
+
+👥 Tenant Records (No Login)
+
+Create and manage tenants
+
+Tenant details:
+
+Full name
+
+Phone number
+
+National ID
+
+Assigned unit
+
+Lease start date
+
+Monthly rent due date
+
+💰 Rent & Payments
+
+Record rent payments manually
+
+Payment types: Cash / Bank / Mobile Money
+
+Track rent status:
+
+Paid
+
+Partial
+
+Unpaid
+
+Auto-calculate balances
+
+View payment history per tenant
+
+Detect overdue rent
+
+🔔 Notifications & Reminders
+
+Upcoming rent due alerts
+
+Overdue rent notifications
+
+Payment confirmation logs
+
+SMS / WhatsApp reminder integration (mock service)
+
+📊 Dashboards
+Admin Dashboard
+
+Total properties & units
+
+Occupied vs vacant units
+
+Monthly rent collected
+
+Outstanding balances
+
+Caretaker activity tracking
+
+Caretaker Dashboard
+
+Assigned properties & units
+
+Tenant list
+
+Record rent payments
+
+View overdue tenants
+
+📑 Reports
+
+Rent collection reports
+
+Outstanding rent reports
+
+Tenant payment history
+
+Export to CSV / PDF
+
+⚙️ System Features
+
+Search & filter (tenants, units, payments)
+
+Pagination
+
+Activity logs
+
+Dark / light mode
+
+Form validation & error handling
+
+Clean, modern UI/UX
+
+🗄️ MongoDB Collections
+
+Users (admin, caretaker)
+
+Properties
+
+Units
+
+Tenants
+
+Leases
+
+Payments
+
+Notifications
+
+ActivityLogs
+
+📦 Deliverables
+
+Full MERN project (client & server folders)
+
+REST API with proper endpoints
+
+MongoDB models with relationships
+
+Seed data for testing
+
+README with setup instructions
+
+Build the project step-by-step, connect frontend and backend fully, and ensure the application is production-ready.
