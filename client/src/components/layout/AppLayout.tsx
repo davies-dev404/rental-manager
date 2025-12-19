@@ -12,7 +12,10 @@ import {
   Bell,
   Search,
   Menu,
-  Clock
+  Clock,
+  BarChart3,
+  FileText,
+  Activity
 } from "lucide-react";
 import logo from "@assets/generated_images/minimalist_geometric_building_logo.png";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -34,7 +37,13 @@ function SidebarContent({ className, onClose }: SidebarProps) {
     { icon: Building2, label: "Properties", href: "/properties" },
     { icon: Users, label: "Tenants", href: "/tenants" },
     { icon: CreditCard, label: "Payments", href: "/payments" },
+  ];
+
+  const toolsMenuItems = [
     { icon: Clock, label: "Reminders", href: "/reminders" },
+    { icon: BarChart3, label: "Reports", href: "/reports" },
+    { icon: FileText, label: "Documents", href: "/documents" },
+    { icon: Activity, label: "Activity Logs", href: "/activity-logs" },
   ];
 
   return (
@@ -47,7 +56,7 @@ function SidebarContent({ className, onClose }: SidebarProps) {
       </div>
 
       <div className="flex-1 py-6 px-4 space-y-1">
-        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2">Menu</p>
+        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2">Core</p>
         {menuItems.map((item) => {
           const isActive = location === item.href;
           return (
@@ -66,8 +75,28 @@ function SidebarContent({ className, onClose }: SidebarProps) {
             </Link>
           );
         })}
+
+        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6">Tools</p>
+        {toolsMenuItems.map((item) => {
+          const isActive = location === item.href;
+          return (
+            <Link key={item.href} href={item.href} onClick={onClose}>
+              <div
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all cursor-pointer group",
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
+                    : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
+                )}
+              >
+                <item.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground")} />
+                {item.label}
+              </div>
+            </Link>
+          );
+        })}
         
-        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6">Settings</p>
+        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6">Account</p>
         <Link href="/settings" onClick={onClose}>
           <div
             className={cn(
