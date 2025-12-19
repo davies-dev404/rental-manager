@@ -144,7 +144,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Monthly Revenue"
-          value={`$${(stats?.collectedThisMonth / 1000).toFixed(0)}K`}
+          value={`$${((stats?.collectedThisMonth ?? 0) / 1000).toFixed(0)}K`}
           subtext="+8% from last month"
           icon={Wallet}
           trend="up"
@@ -152,7 +152,7 @@ export default function Dashboard() {
         />
         <StatCard
           title="Outstanding"
-          value={`$${(stats?.outstandingAmount / 1000).toFixed(0)}K`}
+          value={`$${((stats?.outstandingAmount ?? 0) / 1000).toFixed(0)}K`}
           subtext="Pending collection"
           icon={AlertCircle}
           trend="down"

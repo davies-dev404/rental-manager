@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, Payment } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Filter, Download, CheckCircle2, Clock, AlertCircle, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, Download, CheckCircle2, Clock, AlertCircle, Loader2, ArrowUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -53,7 +53,7 @@ const paymentSchema = z.object({
   tenantId: z.string().min(1, "Tenant is required"),
   amount: z.coerce.number().min(1, "Amount must be greater than 0"),
   date: z.string(),
-  method: z.enum(["cash", "bank", "mobile_money"]),
+  method: z.enum(["cash", "bank", "mobile_money", "lipa_na_mpesa"]),
   status: z.enum(["paid", "partial"]),
   monthCovered: z.string(),
 });
@@ -73,7 +73,7 @@ function RecordPaymentDialog() {
       date: new Date().toISOString().split('T')[0],
       method: "mobile_money",
       status: "paid",
-      monthCovered: new Date().toISOString().slice(0, 7) // YYYY-MM
+      monthCovered: new Date().toISOString().slice(0, 7)
     }
   });
 
@@ -81,7 +81,7 @@ function RecordPaymentDialog() {
     mutationFn: api.recordPayment,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] }); // Update revenue stats
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
       setOpen(false);
       form.reset();
       toast({ title: "Payment Recorded", description: "Transaction has been logged successfully." });
@@ -92,7 +92,6 @@ function RecordPaymentDialog() {
   });
 
   function onSubmit(values: z.infer<typeof paymentSchema>) {
-    // Find unitId from tenant
     const tenant = tenants?.find(t => t.id === values.tenantId);
     if (!tenant) return;
 
@@ -178,7 +177,7 @@ function RecordPaymentDialog() {
                 name="method"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Method</FormLabel>
+                    <FormLabel>Payment Method</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                         <SelectTrigger>
@@ -186,6 +185,7 @@ function RecordPaymentDialog() {
                         </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                            <SelectItem value="lipa_na_mpesa">Lipa na M-Pesa</SelectItem>
                             <SelectItem value="mobile_money">Mobile Money</SelectItem>
                             <SelectItem value="bank">Bank Transfer</SelectItem>
                             <SelectItem value="cash">Cash</SelectItem>
@@ -237,6 +237,21 @@ export default function PaymentsPage() {
     queryFn: api.getPayments,
   });
 
+  const [sortBy, setSortBy] = useState<"date" | "amount" | "status">("date");
+
+  const sortedPayments = payments ? [...payments].sort((a, b) => {
+    switch (sortBy) {
+      case "date":
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      case "amount":
+        return b.amount - a.amount;
+      case "status":
+        return a.status.localeCompare(b.status);
+      default:
+        return 0;
+    }
+  }) : [];
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -261,9 +276,17 @@ export default function PaymentsPage() {
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <Input placeholder="Search transaction..." className="pl-9 h-9" />
                     </div>
-                    <Button variant="outline" size="sm" className="h-9">
-                        <Filter className="w-4 h-4 mr-2" /> Filter
-                    </Button>
+                    <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+                        <SelectTrigger className="w-44 h-9">
+                            <ArrowUpDown className="w-4 h-4 mr-2" />
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="date">Sort by Date</SelectItem>
+                            <SelectItem value="amount">Sort by Amount</SelectItem>
+                            <SelectItem value="status">Sort by Status</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
         </CardHeader>
@@ -285,7 +308,7 @@ export default function PaymentsPage() {
                         <TableRow>
                             <TableCell colSpan={7} className="h-24 text-center">Loading payments...</TableCell>
                         </TableRow>
-                    ) : payments?.map((payment) => (
+                    ) : sortedPayments.map((payment) => (
                         <TableRow key={payment.id} className="hover:bg-muted/50 transition-colors">
                             <TableCell className="font-medium text-sm">{payment.date}</TableCell>
                             <TableCell className="text-muted-foreground text-xs uppercase tracking-wide">
