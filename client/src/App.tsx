@@ -11,6 +11,7 @@ import Dashboard from "@/pages/dashboard";
 import PropertiesPage from "@/pages/properties";
 import TenantsPage from "@/pages/tenants";
 import PaymentsPage from "@/pages/payments";
+import SettingsPage from "@/pages/settings";
 
 function PrivateRoute({ component: Component, ...rest }: any) {
   const { user, isLoading } = useAuth();
@@ -45,6 +46,9 @@ function Router() {
       </Route>
       <Route path="/payments">
         {() => <PrivateRoute component={PaymentsPage} />}
+      </Route>
+      <Route path="/settings">
+        {() => <PrivateRoute component={SettingsPage} />}
       </Route>
 
       <Route component={NotFound} />

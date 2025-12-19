@@ -35,10 +35,6 @@ function SidebarContent({ className, onClose }: SidebarProps) {
     { icon: CreditCard, label: "Payments", href: "/payments" },
   ];
 
-  if (user?.role === "admin") {
-    menuItems.push({ icon: Settings, label: "Settings", href: "/settings" });
-  }
-
   return (
     <div className={cn("flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border", className)}>
       <div className="p-6 flex items-center gap-3">
@@ -68,6 +64,21 @@ function SidebarContent({ className, onClose }: SidebarProps) {
             </Link>
           );
         })}
+        
+        <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6">Settings</p>
+        <Link href="/settings" onClick={onClose}>
+          <div
+            className={cn(
+              "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all cursor-pointer group",
+              location === "/settings"
+                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
+                : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80"
+            )}
+          >
+            <Settings className={cn("w-5 h-5", location === "/settings" ? "text-white" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground")} />
+            Settings
+          </div>
+        </Link>
       </div>
 
       <div className="p-4 border-t border-sidebar-border mt-auto">
