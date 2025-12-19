@@ -13,11 +13,14 @@ import TenantsPage from "@/pages/tenants";
 import PaymentsPage from "@/pages/payments";
 import SettingsPage from "@/pages/settings";
 import RemindersPage from "@/pages/reminders";
+import ReportsPage from "@/pages/reports";
+import ActivityLogsPage from "@/pages/activity-logs";
+import DocumentsPage from "@/pages/documents";
 
 function PrivateRoute({ component: Component, ...rest }: any) {
   const { user, isLoading } = useAuth();
 
-  if (isLoading) return null; // Or a loading spinner
+  if (isLoading) return null;
   
   if (!user) {
     return <Redirect to="/login" />;
@@ -53,6 +56,15 @@ function Router() {
       </Route>
       <Route path="/reminders">
         {() => <PrivateRoute component={RemindersPage} />}
+      </Route>
+      <Route path="/reports">
+        {() => <PrivateRoute component={ReportsPage} />}
+      </Route>
+      <Route path="/activity-logs">
+        {() => <PrivateRoute component={ActivityLogsPage} />}
+      </Route>
+      <Route path="/documents">
+        {() => <PrivateRoute component={DocumentsPage} />}
       </Route>
 
       <Route component={NotFound} />
