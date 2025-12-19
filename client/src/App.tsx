@@ -12,6 +12,7 @@ import PropertiesPage from "@/pages/properties";
 import TenantsPage from "@/pages/tenants";
 import PaymentsPage from "@/pages/payments";
 import SettingsPage from "@/pages/settings";
+import RemindersPage from "@/pages/reminders";
 
 function PrivateRoute({ component: Component, ...rest }: any) {
   const { user, isLoading } = useAuth();
@@ -49,6 +50,9 @@ function Router() {
       </Route>
       <Route path="/settings">
         {() => <PrivateRoute component={SettingsPage} />}
+      </Route>
+      <Route path="/reminders">
+        {() => <PrivateRoute component={RemindersPage} />}
       </Route>
 
       <Route component={NotFound} />

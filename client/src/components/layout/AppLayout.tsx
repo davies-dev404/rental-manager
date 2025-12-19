@@ -11,7 +11,8 @@ import {
   LogOut,
   Bell,
   Search,
-  Menu
+  Menu,
+  Clock
 } from "lucide-react";
 import logo from "@assets/generated_images/minimalist_geometric_building_logo.png";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -33,6 +34,7 @@ function SidebarContent({ className, onClose }: SidebarProps) {
     { icon: Building2, label: "Properties", href: "/properties" },
     { icon: Users, label: "Tenants", href: "/tenants" },
     { icon: CreditCard, label: "Payments", href: "/payments" },
+    { icon: Clock, label: "Reminders", href: "/reminders" },
   ];
 
   return (

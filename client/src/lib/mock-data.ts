@@ -45,7 +45,7 @@ export interface Tenant {
 }
 
 export type PaymentStatus = "paid" | "partial" | "pending" | "overdue";
-export type PaymentMethod = "cash" | "bank" | "mobile_money";
+export type PaymentMethod = "cash" | "bank" | "mobile_money" | "lipa_na_mpesa";
 
 export interface Payment {
   id: string;

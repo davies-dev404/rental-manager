@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, Property } from "@/lib/mock-data";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, MapPin, Building, Home, MoreHorizontal, Loader2 } from "lucide-react";
+import { Plus, MapPin, Building, Home, MoreHorizontal, Loader2, ArrowUpDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
@@ -29,6 +29,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // --- Property Card ---
 function PropertyCard({ property }: { property: Property }) {
@@ -206,6 +213,15 @@ export default function PropertiesPage() {
     queryFn: api.getProperties,
   });
 
+  const [sortBy, setSortBy] = useState<"name" | "units">("name");
+
+  const sortedProperties = properties ? [...properties].sort((a, b) => {
+    if (sortBy === "name") {
+      return a.name.localeCompare(b.name);
+    }
+    return 0;
+  }) : [];
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
@@ -213,7 +229,19 @@ export default function PropertiesPage() {
             <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">Properties</h2>
             <p className="text-muted-foreground mt-1">Manage your buildings and units.</p>
         </div>
-        <AddPropertyDialog />
+        <div className="flex items-center gap-2">
+          <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+            <SelectTrigger className="w-40 h-10">
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Sort by Name</SelectItem>
+              <SelectItem value="units">Sort by Units</SelectItem>
+            </SelectContent>
+          </Select>
+          <AddPropertyDialog />
+        </div>
       </div>
 
       {isLoading ? (
@@ -222,7 +250,7 @@ export default function PropertiesPage() {
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {properties?.map(prop => (
+            {sortedProperties.map(prop => (
                 <PropertyCard key={prop.id} property={prop} />
             ))}
         </div>
