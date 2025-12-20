@@ -2,7 +2,7 @@
 
 A modern, comprehensive property management solution designed to streamline operations for landlords and property managers. Built with a focus on user experience, localization, and financial tracking.
 
-![Dashboard Preview](client/public/vite.svg)
+![Dashboard Preview](client/public/dashboard-screenshot.png)
 
 ## 🚀 Key Features
 
@@ -97,4 +97,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
+
 # rent_manager
