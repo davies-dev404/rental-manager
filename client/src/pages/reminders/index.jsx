@@ -101,6 +101,7 @@ export default function RemindersPage() {
     return (<div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
+          <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">{t('reminders')}</h2>
           <p className="text-muted-foreground mt-1">{t('reminders_desc')}</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

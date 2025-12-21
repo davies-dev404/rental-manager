@@ -20,159 +20,18 @@ import { useTranslation } from "react-i18next";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Copy, Printer } from "lucide-react";
 
-// --- Add Tenant Dialog ---
+import { AddTenantDialog } from "@/components/dialogs/AddTenantDialog";
+
+// Define schema for Edit Tenant as well
 const tenantSchema = z.object({
     name: z.string().min(2, "Name is required"),
     email: z.string().email(),
     phone: z.string().min(10, "Phone is required"),
     idType: z.enum(["national_id", "passport", "driving_license"]),
     nationalId: z.string().min(5, "ID is required"),
-    unitId: z.string().min(1, "Unit is required"),
+    unitId: z.string(), // Can be optional or string in edit
     leaseStart: z.string(),
 });
-function AddTenantDialog() {
-    const { t } = useTranslation();
-    const [open, setOpen] = useState(false);
-    const { toast } = useToast();
-    const queryClient = useQueryClient();
-    const { data: units } = useQuery({ queryKey: ["units"], queryFn: () => api.getUnits() });
-    const vacantUnits = units?.filter(u => u.status === "vacant") || [];
-    const form = useForm({
-        resolver: zodResolver(tenantSchema),
-        defaultValues: {
-            name: "",
-            email: "",
-            phone: "",
-            idType: "national_id",
-            nationalId: "",
-            unitId: "",
-            leaseStart: new Date().toISOString().split('T')[0]
-        }
-    });
-    const mutation = useMutation({
-        mutationFn: api.addTenant,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tenants"] });
-            queryClient.invalidateQueries({ queryKey: ["units"] }); // Update unit status
-            setOpen(false);
-            form.reset();
-            toast({ title: "Tenant Added", description: "New tenant registered successfully." });
-        },
-        onError: () => {
-            toast({ variant: "destructive", title: "Error", description: "Failed to add tenant." });
-        }
-    });
-    function onSubmit(values) {
-        mutation.mutate({
-            ...values,
-            status: "active" // Default status for new tenants
-        });
-    }
-    return (<Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="shadow-lg hover:shadow-xl transition-all">
-            <Plus className="w-4 h-4 mr-2"/> {t('add_tenant')}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>{t('register_new_tenant')}</DialogTitle>
-          <DialogDescription>
-            {t('add_tenant_desc')}
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="name" render={({ field }) => (<FormItem>
-                    <FormLabel>{t('full_name')}</FormLabel>
-                    <FormControl>
-                        <Input placeholder="John Doe" {...field}/>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>)}/>
-                
-                 <FormField control={form.control} name="idType" render={({ field }) => (<FormItem>
-                  <FormLabel>{t('id_type')}</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('select_id_type')}/>
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="national_id">{t('national_id')}</SelectItem>
-                      <SelectItem value="passport">{t('passport')}</SelectItem>
-                      <SelectItem value="driving_license">{t('driving_license')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>)}/>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                 <FormField control={form.control} name="nationalId" render={({ field }) => (<FormItem>
-                    <FormLabel>{t('id_number')}</FormLabel>
-                    <FormControl>
-                        <Input placeholder="12345678" {...field}/>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>)}/>
-                <FormField control={form.control} name="email" render={({ field }) => (<FormItem>
-                    <FormLabel>{t('email')}</FormLabel>
-                    <FormControl>
-                        <Input type="email" placeholder="john@example.com" {...field}/>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>)}/>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="phone" render={({ field }) => (<FormItem>
-                    <FormLabel>{t('phone')}</FormLabel>
-                    <FormControl>
-                        <Input placeholder="+254..." {...field}/>
-                    </FormControl>
-                    <FormMessage />
-                    </FormItem>)}/>
-                 <FormField control={form.control} name="leaseStart" render={({ field }) => (<FormItem>
-                   <FormLabel>{t('lease_start_date')}</FormLabel>
-                   <FormControl>
-                     <Input type="date" {...field}/>
-                   </FormControl>
-                   <FormMessage />
-                 </FormItem>)}/>
-            </div>
-
-            <FormField control={form.control} name="unitId" render={({ field }) => (<FormItem>
-                  <FormLabel>{t('assign_unit')}</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('select_unit_placeholder')}/>
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {vacantUnits.map(unit => (<SelectItem key={unit.id} value={unit.id}>
-                              {t('unit')} {unit.unitNumber} - {unit.type} ({unit.rentAmount})
-                          </SelectItem>))}
-                      {vacantUnits.length === 0 && <SelectItem value="none" disabled>{t('no_vacant_units')}</SelectItem>}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>)}/>
-
-            <DialogFooter>
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                {t('register_tenant')}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>);
-}
 
 // --- View Lease Dialog ---
 function ViewLeaseDialog({ tenant, open, onOpenChange }) {
@@ -182,6 +41,7 @@ function ViewLeaseDialog({ tenant, open, onOpenChange }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col">
                 <DialogHeader>
+                    <DialogTitle>{t('lease_details')}</DialogTitle>
                     <DialogDescription>{t('signed')} {tenant.leaseStart}</DialogDescription>
                 </DialogHeader>
                 <div className="flex-1 bg-muted/20 border border-border/50 rounded-lg p-8 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
@@ -227,7 +87,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
             toast({ title: t('tenant_updated'), description: t('tenant_updated_desc') });
         },
         onError: () => {
-            toast({ variant: "destructive", title: "Error", description: "Failed to update tenant." });
+            toast({ variant: "destructive", title: t('error'), description: t('tenant_update_failed') });
         }
     });
 

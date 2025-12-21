@@ -50,10 +50,10 @@ export default function Settings() {
         try {
             await api.updateSettings(settings);
             // Simulate other update calls for profile if needed, but here we focus on the settings object
-            toast({ title: "Settings Saved", description: "Your preferences have been updated." });
+            toast({ title: t('settings_saved'), description: t('settings_saved_desc') });
         } catch (error) {
             console.error(error);
-            toast({ variant: "destructive", title: "Error", description: "Failed to save settings." });
+            toast({ variant: "destructive", title: t('error'), description: t('save_failed') });
         } finally {
             setIsSaving(false);
         }
@@ -193,7 +193,7 @@ export default function Settings() {
               <div className="flex items-center justify-between pt-2">
                 <div className="space-y-0.5">
                   <Label>{t('dark_mode')}</Label>
-                  <p className="text-sm text-muted-foreground">Use dark theme across the app</p>
+                  <p className="text-sm text-muted-foreground">{t('dark_mode_desc')}</p>
                 </div>
                 <Switch defaultChecked/>
               </div>
@@ -215,29 +215,29 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="orgName">Business Name</Label>
+                <Label htmlFor="orgName">{t('business_name')}</Label>
                 <Input id="orgName" placeholder="Your Property Management Company"/>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="orgEmail">Business Email</Label>
+                <Label htmlFor="orgEmail">{t('business_email')}</Label>
                 <Input id="orgEmail" type="email" placeholder="contact@property.com"/>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="orgPhone">Business Phone</Label>
+                <Label htmlFor="orgPhone">{t('business_phone')}</Label>
                 <Input id="orgPhone" type="tel" placeholder="+254700000000"/>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="orgAddress">Business Address</Label>
+                <Label htmlFor="orgAddress">{t('business_address')}</Label>
                 <Textarea id="orgAddress" placeholder="123 Business St, City, Country" rows={3}/>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="taxId">Tax ID / Registration Number</Label>
+                <Label htmlFor="taxId">{t('tax_id')}</Label>
                 <Input id="taxId" placeholder="P001234567"/>
               </div>
             </CardContent>
             <CardFooter className="border-t bg-muted/20">
               <Button onClick={handleSave} disabled={isSaving}>
-                <Save className="w-4 h-4 mr-2"/> Save Details
+                <Save className="w-4 h-4 mr-2"/> {t('save_details')}
               </Button>
             </CardFooter>
           </Card>
@@ -250,17 +250,17 @@ export default function Settings() {
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between p-4 rounded-lg border border-primary/20 bg-primary/5">
                 <div className="space-y-1">
-                  <p className="font-medium">Current Plan</p>
-                  <p className="text-sm text-muted-foreground">Professional Plan</p>
+                  <p className="font-medium">{t('current_plan')}</p>
+                  <p className="text-sm text-muted-foreground">{t('professional_plan')}</p>
                 </div>
-                <Badge className="bg-primary text-primary-foreground">Active</Badge>
+                <Badge className="bg-primary text-primary-foreground">{t('active')}</Badge>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="billingEmail">Billing Email</Label>
+                <Label htmlFor="billingEmail">{t('billing_email')}</Label>
                 <Input id="billingEmail" type="email" placeholder="billing@company.com"/>
               </div>
               <Button variant="outline" className="w-full">
-                <CreditCard className="w-4 h-4 mr-2"/> Update Payment Method
+                <CreditCard className="w-4 h-4 mr-2"/> {t('update_payment_method')}
               </Button>
             </CardContent>
           </Card>
@@ -276,14 +276,14 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-sm">Rent Payment Reminders</p>
-                  <p className="text-xs text-muted-foreground mt-1">Notify when rent is due</p>
+                  <p className="font-medium text-sm">{t('rent_payment_reminders')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('rent_payment_reminders_desc')}</p>
                 </div>
                 <Switch defaultChecked/>
               </div>
               <Separator />
               <div className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">Service Provider Configuration</h4>
+                  <h4 className="text-sm font-medium mb-3">{t('provider_config')}</h4>
                   <Tabs defaultValue="smtp" className="w-full">
                       <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="smtp">SMTP</TabsTrigger>
@@ -293,7 +293,7 @@ export default function Settings() {
                       <TabsContent value="smtp" className="space-y-4 mt-4 p-4 border rounded-md">
                           <div className="grid grid-cols-2 gap-4">
                              <div className="space-y-2">
-                                <Label>Host</Label>
+                                <Label>{t('host')}</Label>
                                 <Input 
                                     placeholder="smtp.example.com" 
                                     value={settings?.integrations?.email?.smtp?.host || ''} 
@@ -301,7 +301,7 @@ export default function Settings() {
                                 />
                              </div>
                              <div className="space-y-2">
-                                <Label>Port</Label>
+                                <Label>{t('port')}</Label>
                                 <Input 
                                     placeholder="587" 
                                     value={settings?.integrations?.email?.smtp?.port || ''}
@@ -310,7 +310,7 @@ export default function Settings() {
                              </div>
                           </div>
                           <div className="space-y-2">
-                                <Label>Username</Label>
+                                <Label>{t('username')}</Label>
                                 <Input 
                                     placeholder="user@example.com" 
                                     value={settings?.integrations?.email?.smtp?.user || ''}
@@ -318,7 +318,7 @@ export default function Settings() {
                                 />
                              </div>
                           <div className="space-y-2">
-                                <Label>Password</Label>
+                                <Label>{t('password')}</Label>
                                 <Input 
                                     type="password" 
                                     placeholder="••••••••" 
@@ -328,13 +328,13 @@ export default function Settings() {
                           </div>
                           <div className="flex justify-end pt-2">
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('email', 'smtp', 'provider', 'smtp')}>
-                                    Activate SMTP
+                                    {t('activate_smtp')}
                                 </Button>
                           </div>
                       </TabsContent>
                       <TabsContent value="sendgrid" className="space-y-4 mt-4 p-4 border rounded-md">
                           <div className="space-y-2">
-                                <Label>API Key</Label>
+                                <Label>{t('api_key')}</Label>
                                 <Input 
                                     type="password" 
                                     placeholder="SG.xxxxxxxx..." 
@@ -344,13 +344,13 @@ export default function Settings() {
                           </div>
                           <div className="flex justify-end pt-2">
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('email', 'sendgrid', 'provider', 'sendgrid')}>
-                                    Activate SendGrid
+                                    {t('activate_sendgrid')}
                                 </Button>
                           </div>
                       </TabsContent>
                       <TabsContent value="gmail" className="space-y-4 mt-4 p-4 border rounded-md">
                            <div className="space-y-2">
-                                <Label>Client ID</Label>
+                                <Label>{t('client_id')}</Label>
                                 <Input 
                                     placeholder="xxxx.apps.googleusercontent.com" 
                                     value={settings?.integrations?.email?.gmail?.clientId || ''}
@@ -358,7 +358,7 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="space-y-2">
-                                <Label>Client Secret</Label>
+                                <Label>{t('client_secret')}</Label>
                                 <Input 
                                     type="password" 
                                     placeholder="••••••••" 
@@ -368,7 +368,7 @@ export default function Settings() {
                           </div>
                            <div className="flex justify-end pt-2">
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('email', 'gmail', 'provider', 'gmail')}>
-                                    Activate Gmail
+                                    {t('activate_gmail')}
                                 </Button>
                           </div>
                       </TabsContent>
@@ -390,8 +390,8 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-sm">Enable SMS Integration</p>
-                  <p className="text-xs text-muted-foreground mt-1">Send SMS via 3rd party providers</p>
+                  <p className="font-medium text-sm">{t('enable_sms')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('enable_sms_desc')}</p>
                 </div>
                 <Switch 
                     checked={settings?.integrations?.sms?.enabled || false}
@@ -400,7 +400,7 @@ export default function Settings() {
               </div>
               <Separator />
                <div className="pt-4">
-                  <h4 className="text-sm font-medium mb-3">SMS Provider Configuration</h4>
+                  <h4 className="text-sm font-medium mb-3">{t('sms_provider_config')}</h4>
                   <Tabs defaultValue="twilio" className="w-full">
                       <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="twilio">Twilio</TabsTrigger>
@@ -409,7 +409,7 @@ export default function Settings() {
                       </TabsList>
                       <TabsContent value="twilio" className="space-y-4 mt-4 p-4 border rounded-md">
                           <div className="space-y-2">
-                                <Label>Account SID</Label>
+                                <Label>{t('account_sid')}</Label>
                                 <Input 
                                     placeholder="ACxxxxxxxx..." 
                                     value={settings?.integrations?.sms?.twilio?.accountSid || ''}
@@ -417,7 +417,7 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="space-y-2">
-                                <Label>Auth Token</Label>
+                                <Label>{t('auth_token')}</Label>
                                 <Input 
                                     type="password" 
                                     placeholder="••••••••" 
@@ -427,13 +427,13 @@ export default function Settings() {
                           </div>
                           <div className="flex justify-end pt-2">
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('sms', 'twilio', 'provider', 'twilio')}>
-                                    Activate Twilio
+                                    {t('activate_twilio')}
                                 </Button>
                           </div>
                       </TabsContent>
                        <TabsContent value="africastalking" className="space-y-4 mt-4 p-4 border rounded-md">
                           <div className="space-y-2">
-                                <Label>Username</Label>
+                                <Label>{t('username')}</Label>
                                 <Input 
                                     placeholder="sandbox" 
                                     value={settings?.integrations?.sms?.africastalking?.username || ''}
@@ -441,7 +441,7 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="space-y-2">
-                                <Label>API Key</Label>
+                                <Label>{t('api_key')}</Label>
                                 <Input 
                                     type="password" 
                                     placeholder="••••••••" 
@@ -451,7 +451,7 @@ export default function Settings() {
                           </div>
                           <div className="flex justify-end pt-2">
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('sms', 'africastalking', 'provider', 'africastalking')}>
-                                    Activate Africa's Talking
+                                    {t('activate_africastalking')}
                                 </Button>
                           </div>
                       </TabsContent>
@@ -471,8 +471,8 @@ export default function Settings() {
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-sm">Enable M-Pesa</p>
-                  <p className="text-xs text-muted-foreground mt-1">Allow tenants to pay via M-Pesa STK Push</p>
+                  <p className="font-medium text-sm">{t('enable_mpesa')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('allow_mpesa_desc')}</p>
                 </div>
                 <Switch 
                      checked={settings?.integrations?.mpesa?.enabled || false}
@@ -482,7 +482,7 @@ export default function Settings() {
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Environment</Label>
+                    <Label>{t('environment')}</Label>
                     <Select 
                         value={settings?.integrations?.mpesa?.environment || 'sandbox'}
                         onValueChange={(val) => updateIntegration('mpesa', null, 'environment', val)}
@@ -491,13 +491,13 @@ export default function Settings() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="sandbox">Sandbox (Testing)</SelectItem>
-                        <SelectItem value="production">Production (Live)</SelectItem>
+                        <SelectItem value="sandbox">{t('sandbox')}</SelectItem>
+                        <SelectItem value="production">{t('production')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Paybill / Till Number</Label>
+                    <Label>{t('paybill_till_no')}</Label>
                      <Input 
                         placeholder="174379" 
                         value={settings?.integrations?.mpesa?.paybill || ''}
@@ -506,7 +506,7 @@ export default function Settings() {
                   </div>
               </div>
               <div className="space-y-2">
-                <Label>Consumer Key</Label>
+                <Label>{t('consumer_key')}</Label>
                 <Input 
                     placeholder="Generrated from Daraja Portal" 
                     value={settings?.integrations?.mpesa?.consumerKey || ''}
@@ -514,7 +514,7 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Consumer Secret</Label>
+                <Label>{t('consumer_secret')}</Label>
                 <Input 
                     type="password"
                     placeholder="••••••••" 
@@ -523,7 +523,7 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Passkey</Label>
+                <Label>{t('passkey')}</Label>
                 <Input 
                     type="password"
                     placeholder="Lipa Na M-Pesa Passkey" 
@@ -534,7 +534,7 @@ export default function Settings() {
             </CardContent>
             <CardFooter className="border-t bg-muted/20">
               <Button onClick={handleSave} disabled={isSaving}>
-                <Save className="w-4 h-4 mr-2"/> Save Payment Settings
+                <Save className="w-4 h-4 mr-2"/> {t('save_payment_settings')}
               </Button>
             </CardFooter>
           </Card>
@@ -544,8 +544,8 @@ export default function Settings() {
         <TabsContent value="security" className="space-y-6">
           <Card className="border-border/50 shadow-sm">
             <CardHeader>
-              <CardTitle>{t('security_settings') || "Password & Authentication"}</CardTitle>
-              <CardDescription>{t('security_desc') || t('password_auth_desc') || "Secure your account with strong authentication."}</CardDescription>
+              <CardTitle>{t('security_settings')}</CardTitle>
+              <CardDescription>{t('password_auth_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Button variant="outline" className="w-full">
@@ -554,12 +554,12 @@ export default function Settings() {
               <Separator />
               <div className="pt-2 space-y-4">
                 <div>
-                  <p className="font-medium text-sm mb-3">Two-Factor Authentication</p>
+                  <p className="font-medium text-sm mb-3">{t('two_factor_auth')}</p>
                   <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/20">
-                    Not Enabled
+                    {t('not_enabled')}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">Add an extra layer of security to your account. You'll need to enter a code from your authenticator app or phone in addition to your password when logging in.</p>
+                <p className="text-sm text-muted-foreground">{t('two_factor_desc')}</p>
                 <Button>
                   {t('enable_2fa')} <ArrowRight className="w-4 h-4 ml-2"/>
                 </Button>
@@ -570,13 +570,13 @@ export default function Settings() {
           <Card className="border-border/50 shadow-sm">
             <CardHeader>
               <CardTitle>{t('active_sessions')}</CardTitle>
-              <CardDescription>{t('manage_sessions_desc') || "Manage your active login sessions."}</CardDescription>
+              <CardDescription>{t('manage_sessions_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
                 <div>
-                  <p className="font-medium text-sm">Current Session</p>
-                  <p className="text-xs text-muted-foreground mt-1">Your current browser</p>
+                  <p className="font-medium text-sm">{t('current_session')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('current_session_desc')}</p>
                 </div>
                 <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/20">{t('active')}</Badge>
               </div>
@@ -586,20 +586,20 @@ export default function Settings() {
           <Card className="border-destructive/20 shadow-sm">
             <CardHeader>
               <CardTitle className="text-destructive">{t('danger_zone')}</CardTitle>
-              <CardDescription>{t('danger_zone_desc') || "Irreversible actions. Please be careful."}</CardDescription>
+              <CardDescription>{t('danger_zone_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" className="w-full border-destructive/50 text-destructive hover:text-destructive hover:bg-destructive/5">
-                    <Trash2 className="w-4 h-4 mr-2"/> Delete Account
+                    <Trash2 className="w-4 h-4 mr-2"/> {t('delete_account')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Account</AlertDialogTitle>
+                    <AlertDialogTitle>{t('delete_account')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. Your account and all associated data will be permanently deleted.
+                      {t('delete_account_confirm')}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

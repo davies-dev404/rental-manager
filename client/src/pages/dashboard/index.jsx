@@ -6,10 +6,11 @@ import { ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, BarChart, Ba
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { generateReport } from "@/lib/reports";
+import { Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePreferences } from "@/lib/currency";
+
 
 function StatCard({ title, value, subtext, icon: Icon, trend, color = "primary" }) {
     const colorVariants = {
@@ -69,13 +70,8 @@ export default function Dashboard() {
         queryFn: api.getNotifications
     });
 
-    const handleGenerateReport = async () => {
-        try {
-            await generateReport('properties');
-            toast({ title: "Report Generated", description: "Properties report downloaded successfully." });
-        } catch (error) {
-            toast({ variant: "destructive", title: "Error", description: "Could not generate report." });
-        }
+    const handleGenerateReport = () => {
+        window.print();
     };
 
     if (isLoading) {
@@ -118,7 +114,12 @@ export default function Dashboard() {
             <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">{t('dashboard')}</h2>
             <p className="text-muted-foreground mt-1">{t('welcome')}. {t('dashboard_desc')}</p>
         </div>
-        <Button className="shadow-md hover:shadow-lg transition-all" onClick={handleGenerateReport}>{t('export_report')}</Button>
+        <div className="flex items-center gap-2">
+            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={handleGenerateReport}>
+                <Download className="w-4 h-4 mr-2"/>
+                {t('export_report')}
+            </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}

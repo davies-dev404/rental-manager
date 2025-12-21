@@ -27,8 +27,7 @@ export const generateCSVReport = async (type) => {
         }
 
         if (!data || data.length === 0) {
-            alert("No data available to generate report.");
-            return;
+            return { success: false, message: "No data available to generate report." };
         }
 
         // Convert JSON to CSV
@@ -46,6 +45,10 @@ export const generateCSVReport = async (type) => {
         };
 
         const flatData = data.map(item => flattenObject(item));
+        if (flatData.length === 0 || Object.keys(flatData[0]).length === 0) {
+             return { success: false, message: "Data is empty or invalid." };
+        }
+
         const headers = Object.keys(flatData[0]);
         const csvContent = [
             headers.join(','),
@@ -64,9 +67,11 @@ export const generateCSVReport = async (type) => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        return { success: true, count: data.length };
     } catch (error) {
         console.error("Failed to generate report:", error);
-        alert("Failed to generate report.");
+        return { success: false, message: error.message };
     }
 };
 

@@ -53,6 +53,7 @@ export default function ActivityLogsPage() {
     return (<div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
+          <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">{t('activity_logs') || t('logs')}</h2>
           <p className="text-muted-foreground mt-1">{t('logs_desc')}</p>
         </div>
         <Button variant="outline" onClick={() => generateCSVReport('activity-logs')}>
