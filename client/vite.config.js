@@ -9,21 +9,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "../attached_assets"),
+      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
-  // Root is current directory by default
   build: {
-    outDir: path.resolve(import.meta.dirname, "../dist/public"), // Build outside
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {
     host: "0.0.0.0",
-    fs: {
-      allow: [
-        // search up for workspace root
-        path.resolve(import.meta.dirname, ".."),
-      ],
-    },
   },
 });
