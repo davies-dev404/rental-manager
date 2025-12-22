@@ -207,6 +207,7 @@ export const api = {
     if (index !== -1) {
         properties[index] = { ...properties[index], ...updatedProp };
         setStorage(KEYS.PROPERTIES, properties);
+        await api.logActivity("Update Property", `Updated property details: ${updatedProp.name}`, "property");
         return properties[index];
     }
     throw new Error("Property not found");
@@ -230,6 +231,7 @@ export const api = {
       
       properties[propertyIndex] = { ...properties[propertyIndex], caretakerId: caretaker.id, caretakerName: caretaker.name };
       setStorage(KEYS.PROPERTIES, properties);
+      await api.logActivity("Assign Caretaker", `Assigned ${caretaker.name} to property`, "property");
       
       return properties[propertyIndex];
   },
@@ -253,11 +255,14 @@ export const api = {
     const newUnits = units.filter(u => u.propertyId !== id);
     
     // Filter out property
+    const propName = properties.find(p => p.id === id)?.name || "Unknown";
     const newProperties = properties.filter(p => p.id !== id);
     
     setStorage(KEYS.TENANTS, newTenants);
     setStorage(KEYS.UNITS, newUnits);
     setStorage(KEYS.PROPERTIES, newProperties);
+    
+    await api.logActivity("Delete Property", `Deleted property: ${propName}`, "property");
     
     return true;
   },
@@ -275,6 +280,7 @@ export const api = {
       const newUnit = { ...unit, id: Math.random().toString(36).substr(2, 9), status: 'vacant' };
       units.push(newUnit);
       setStorage(KEYS.UNITS, units);
+      await api.logActivity("Add Unit", `Added unit ${unit.unitNumber}`, "unit");
       return newUnit;
   },
   updateUnit: async (unit) => {
@@ -284,6 +290,7 @@ export const api = {
       if (index !== -1) {
           units[index] = { ...units[index], ...unit };
           setStorage(KEYS.UNITS, units);
+          await api.logActivity("Update Unit", `Updated unit ${unit.unitNumber}`, "unit");
           return units[index];
       }
       throw new Error("Unit not found");
@@ -291,8 +298,10 @@ export const api = {
   deleteUnit: async (id) => {
       await delay(300);
       const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
+      const unitNum = units.find(u => u.id === id)?.unitNumber || "Unknown";
       const newUnits = units.filter(u => u.id !== id);
       setStorage(KEYS.UNITS, newUnits);
+      await api.logActivity("Delete Unit", `Deleted unit ${unitNum}`, "unit");
       return true;
   },
 
@@ -354,6 +363,7 @@ export const api = {
 
           tenants[index] = { ...tenants[index], ...tenant };
           setStorage(KEYS.TENANTS, tenants);
+          await api.logActivity("Update Tenant", `Updated tenant details: ${tenant.name}`, "tenant");
           return tenants[index];
       }
       throw new Error("Tenant not found");
@@ -363,6 +373,7 @@ export const api = {
       const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
       const index = tenants.findIndex(t => t.id === id);
       if (index !== -1) {
+          const tenantName = tenants[index].name;
           tenants[index].status = 'past';
           tenants[index].leaseEnd = new Date().toISOString().split('T')[0];
           setStorage(KEYS.TENANTS, tenants);
@@ -377,6 +388,7 @@ export const api = {
                   setStorage(KEYS.UNITS, units);
               }
           }
+          await api.logActivity("Terminate Lease", `Terminated lease for ${tenantName}`, "lease");
           return true;
       }
       throw new Error("Tenant not found");
@@ -402,6 +414,7 @@ export const api = {
           
           const newTenants = tenants.filter(t => t.id !== id);
           setStorage(KEYS.TENANTS, newTenants);
+          await api.logActivity("Delete Tenant", `Deleted tenant: ${tenant.name}`, "tenant");
           return true;
       }
       return false;
@@ -559,6 +572,7 @@ export const api = {
   updateSettings: async (newSettings) => {
       await delay(500);
       setStorage(KEYS.SETTINGS, newSettings);
+      await api.logActivity("Update Settings", "Updated system and account settings", "settings");
       return newSettings;
   },
 

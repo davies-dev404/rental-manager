@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Protect, PERMISSIONS } from "@/lib/access-control";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -456,13 +457,17 @@ function PropertyCard({ property, onAssign }) {
                             <DropdownMenuItem onClick={() => setEditOpen(true)}>
                                 <Pencil className="w-4 h-4 mr-2 text-muted-foreground"/> {t('edit_property')}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onAssign(property)}>
-                                <UserPlus className="w-4 h-4 mr-2 text-muted-foreground"/> {t('assign_caretaker')}
-                            </DropdownMenuItem>
+                            <Protect permission={PERMISSIONS.MANAGE_PROPERTIES}>
+                                <DropdownMenuItem onClick={() => onAssign(property)}>
+                                    <UserPlus className="w-4 h-4 mr-2 text-muted-foreground"/> {t('assign_caretaker')}
+                                </DropdownMenuItem>
+                            </Protect>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20" onClick={() => setDeleteOpen(true)}>
-                                <Trash2 className="w-4 h-4 mr-2"/> {t('delete')}
-                            </DropdownMenuItem>
+                            <Protect permission={PERMISSIONS.DELETE_DATA}>
+                                <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20" onClick={() => setDeleteOpen(true)}>
+                                    <Trash2 className="w-4 h-4 mr-2"/> {t('delete')}
+                                </DropdownMenuItem>
+                            </Protect>
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </CardFooter>
@@ -700,7 +705,9 @@ export default function PropertiesPage() {
               <SelectItem value="units">{t('sort_by_units')}</SelectItem>
             </SelectContent>
           </Select>
-          <AddPropertyDialog />
+          <Protect permission={PERMISSIONS.MANAGE_PROPERTIES}>
+            <AddPropertyDialog />
+          </Protect>
         </div>
       </div>
 

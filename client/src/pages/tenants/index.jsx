@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Protect, PERMISSIONS } from "@/lib/access-control";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -304,49 +305,53 @@ export default function TenantsPage() {
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
-                                                   {t('terminate_lease')}
-                                                </DropdownMenuItem>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        {t('terminate_lease_confirm', { name: tenant.name })}
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => terminateMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
-                                                        {t('terminate')}
-                                                    </AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                        <Protect permission={PERMISSIONS.MANAGE_TENANTS}>
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
+                                                    {t('terminate_lease')}
+                                                    </DropdownMenuItem>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            {t('terminate_lease_confirm', { name: tenant.name })}
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => terminateMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
+                                                            {t('terminate')}
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </Protect>
 
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
-                                                   {t('delete_record')}
-                                                </DropdownMenuItem>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        {t('delete_tenant_confirm')}
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => deleteMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
-                                                        {t('delete')}
-                                                    </AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                        <Protect permission={PERMISSIONS.DELETE_DATA}>
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
+                                                    {t('delete_record')}
+                                                    </DropdownMenuItem>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            {t('delete_tenant_confirm')}
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => deleteMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
+                                                            {t('delete')}
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        </Protect>
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </TableCell>

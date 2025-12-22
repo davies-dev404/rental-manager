@@ -1,9 +1,11 @@
 
 import { useState, useEffect } from "react";
+import { Protect, PERMISSIONS } from "@/lib/access-control";
 import QRCode from "react-qr-code";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { ProfilePhotoUpload } from "@/components/profile-photo-upload";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "next-themes";
 import { usePreferences } from "@/lib/currency";
@@ -31,6 +33,37 @@ export default function Settings() {
     const timezones = Intl.supportedValuesOf('timeZone');
     const [activeTab, setActiveTab] = useState("account");
     const [isSaving, setIsSaving] = useState(false);
+    
+    // Profile Form Data
+    const [formData, setFormData] = useState({
+        name: user?.name || "",
+        email: user?.email || "",
+        phone: user?.phone || "",
+        avatar: user?.avatar
+    });
+
+    useEffect(() => {
+        if (user) {
+            setFormData({
+                name: user.name || "",
+                email: user.email || "",
+                phone: user.phone || "",
+                avatar: user.avatar
+            });
+        }
+    }, [user]);
+
+    const handleSaveProfile = async () => {
+        setIsSaving(true);
+        try {
+            await updateProfile(formData);
+            // Success toast is handled in auth context
+        } catch (error) {
+            // Error toast is handled in auth context
+        } finally {
+            setIsSaving(false);
+        }
+    };
     const [settings, setSettings] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -188,18 +221,26 @@ export default function Settings() {
           <TabsTrigger value="account" className="text-sm">
             <User className="w-4 h-4 mr-2"/> {t('account')}
           </TabsTrigger>
-          <TabsTrigger value="organization" className="text-sm">
-            <Building2 className="w-4 h-4 mr-2"/> {t('organization')}
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="text-sm">
-            <Bell className="w-4 h-4 mr-2"/> {t('notifications')}
-          </TabsTrigger>
-          <TabsTrigger value="rent_collection" className="text-sm">
-            <Smartphone className="w-4 h-4 mr-2"/> {t('rent_collection')}
-          </TabsTrigger>
-          <TabsTrigger value="security" className="text-sm">
-            <Shield className="w-4 h-4 mr-2"/> {t('security')}
-          </TabsTrigger>
+          <Protect permission={PERMISSIONS.MANAGE_SETTINGS}>
+            <TabsTrigger value="organization" className="text-sm">
+                <Building2 className="w-4 h-4 mr-2"/> {t('organization')}
+            </TabsTrigger>
+          </Protect>
+          <Protect permission={PERMISSIONS.MANAGE_SETTINGS}>
+            <TabsTrigger value="notifications" className="text-sm">
+                <Bell className="w-4 h-4 mr-2"/> {t('notifications')}
+            </TabsTrigger>
+          </Protect>
+          <Protect permission={PERMISSIONS.MANAGE_SETTINGS}>
+            <TabsTrigger value="rent_collection" className="text-sm">
+                <Smartphone className="w-4 h-4 mr-2"/> {t('rent_collection')}
+            </TabsTrigger>
+          </Protect>
+          <Protect permission={PERMISSIONS.MANAGE_SETTINGS}>
+            <TabsTrigger value="security" className="text-sm">
+                <Shield className="w-4 h-4 mr-2"/> {t('security')}
+            </TabsTrigger>
+          </Protect>
         </TabsList>
 
         {/* Account Settings */}
@@ -210,28 +251,65 @@ export default function Settings() {
               <CardDescription>{t('personal_information_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="firstName">{t('first_name')}</Label>
-                  <Input id="firstName" defaultValue={user?.name.split(' ')[0] || ''}/>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="lastName">{t('last_name')}</Label>
-                  <Input id="lastName" defaultValue={user?.name.split(' ').slice(1).join(' ') || ''}/>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">{t('email_address')}</Label>
-                <Input id="email" type="email" defaultValue={user?.email || ''}/>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">{t('phone_number')}</Label>
-                <Input id="phone" type="tel" placeholder="+254700000000"/>
+              <div className="flex flex-col md:flex-row gap-6">
+                  <div className="flex-shrink-0 flex flex-col items-center space-y-2">
+                       <ProfilePhotoUpload 
+                          currentPhoto={formData.avatar || user?.avatar} 
+                          onSave={(url) => setFormData(prev => ({ ...prev, avatar: url }))} 
+                       />
+                       <span className="text-xs text-muted-foreground">{t('click_to_edit') || "Click to edit"}</span>
+                  </div>
+                  
+                  <div className="flex-1 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="firstName">{t('first_name')}</Label>
+                            <Input 
+                                id="firstName" 
+                                value={formData.name.split(' ')[0]} 
+                                onChange={(e) => {
+                                    const lastName = formData.name.split(' ').slice(1).join(' ');
+                                    setFormData(prev => ({ ...prev, name: `${e.target.value} ${lastName}` }));
+                                }}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="lastName">{t('last_name')}</Label>
+                            <Input 
+                                id="lastName" 
+                                value={formData.name.split(' ').slice(1).join(' ')} 
+                                onChange={(e) => {
+                                    const firstName = formData.name.split(' ')[0];
+                                    setFormData(prev => ({ ...prev, name: `${firstName} ${e.target.value}` }));
+                                }}
+                            />
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="email">{t('email_address')}</Label>
+                        <Input 
+                            id="email" 
+                            type="email" 
+                            value={formData.email} 
+                            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="phone">{t('phone_number')}</Label>
+                        <Input 
+                            id="phone" 
+                            type="tel" 
+                            value={formData.phone || ""}
+                            onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                            placeholder="+254700000000"
+                        />
+                    </div>
+                  </div>
               </div>
             </CardContent>
             <CardFooter className="border-t bg-muted/20 flex justify-between">
               <p className="text-sm text-muted-foreground">{t('changes_auto_saved')}</p>
-              <Button onClick={handleSave} disabled={isSaving}>
+              <Button onClick={handleSaveProfile} disabled={isSaving}>
                 <Save className="w-4 h-4 mr-2"/> {t('save_changes')}
               </Button>
             </CardFooter>
