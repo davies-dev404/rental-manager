@@ -32,6 +32,15 @@ export default function Settings() {
     const { theme, setTheme } = useTheme();
     const timezones = Intl.supportedValuesOf('timeZone');
     const [activeTab, setActiveTab] = useState("account");
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get("tab");
+        if (tab) {
+            setActiveTab(tab);
+        }
+    }, []);
+
     const [isSaving, setIsSaving] = useState(false);
     
     // Profile Form Data
@@ -321,6 +330,19 @@ export default function Settings() {
               <CardDescription>{t('settings')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label>{t('theme') || "Theme"}</Label>
+                <Select value={theme} onValueChange={setTheme}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Light</SelectItem>
+                    <SelectItem value="dark">Dark</SelectItem>
+                    <SelectItem value="system">System</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="language">{t('preferred_language')}</Label>
                 <Label htmlFor="language">{t('preferred_language')}</Label>

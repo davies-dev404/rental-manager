@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -67,6 +68,7 @@ function ReminderCard({ reminder }) {
 export default function RemindersPage() {
     const { t } = useTranslation();
     const { toast } = useToast();
+    const [, setLocation] = useLocation();
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState("all");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -195,16 +197,16 @@ export default function RemindersPage() {
           <div className="space-y-4">
             <h4 className="font-medium text-sm">{t('email_provider')}</h4>
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <Mail className="w-4 h-4 mr-2"/> Gmail / Google
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <Mail className="w-4 h-4 mr-2"/> SendGrid
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <Mail className="w-4 h-4 mr-2"/> Mailgun
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <Mail className="w-4 h-4 mr-2"/> SMTP (Active)
               </Button>
             </div>
@@ -215,23 +217,23 @@ export default function RemindersPage() {
           <div className="space-y-4">
             <h4 className="font-medium text-sm">{t('sms_provider')}</h4>
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <MessageSquare className="w-4 h-4 mr-2"/> Twilio
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <MessageSquare className="w-4 h-4 mr-2"/> Africa's Talking
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <MessageSquare className="w-4 h-4 mr-2"/> Nexmo/Vonage
               </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => window.location.href = '/settings'}>
+              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
                 <MessageSquare className="w-4 h-4 mr-2"/> AWS SNS
               </Button>
             </div>
           </div>
         </CardContent>
         <CardFooter className="border-t bg-muted/20">
-          <Button onClick={() => window.location.href = '/settings'}>{t('go_to_advanced')}</Button>
+          <Button onClick={() => setLocation('/settings?tab=notifications')}>{t('go_to_advanced')}</Button>
         </CardFooter>
       </Card>
     </div>);
