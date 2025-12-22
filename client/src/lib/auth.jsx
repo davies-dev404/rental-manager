@@ -31,7 +31,23 @@ export function AuthProvider({ children }) {
         localStorage.removeItem("rental_user");
         toast({ title: "Logged out" });
     };
-    return (<AuthContext.Provider value={{ user, login, logout, isLoading }}>
+
+    const updateProfile = async (updates) => {
+        try {
+            const updatedUser = { ...user, ...updates };
+            // In a real app, we'd wait for API confirmation
+            await api.updateUser(updates);
+            
+            setUser(updatedUser);
+            localStorage.setItem("rental_user", JSON.stringify(updatedUser));
+            toast({ title: "Profile updated", description: "Your profile has been updated successfully." });
+        } catch (error) {
+            toast({ variant: "destructive", title: "Update failed", description: "Could not update profile." });
+            throw error;
+        }
+    };
+
+    return (<AuthContext.Provider value={{ user, login, logout, updateProfile, isLoading }}>
       {children}
     </AuthContext.Provider>);
 }

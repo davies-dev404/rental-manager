@@ -30,6 +30,7 @@ export default function DocumentsPage() {
     
     // Form state (simple for now)
     const [newDoc, setNewDoc] = useState({ type: "lease", name: "", usedBy: "General" });
+    const [previewDoc, setPreviewDoc] = useState(null);
 
     const { data: documents = [] } = useQuery({
         queryKey: ["documents"],
@@ -49,6 +50,27 @@ export default function DocumentsPage() {
     const handleUpload = () => {
         if (!newDoc.name) return;
         mutation.mutate(newDoc);
+    };
+
+    const handleDownload = (doc) => {
+        toast({ title: "Downloading...", description: `Starting download for ${doc.name}` });
+        // Simulating download - normally would be window.open(doc.url)
+        setTimeout(() => {
+             // Create dummy blob
+            const blob = new Blob(["Mock Document Content"], { type: "text/plain" });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = doc.name || "document.txt";
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }, 1000);
+    };
+
+    const handleView = (doc) => {
+        setPreviewDoc(doc);
     };
 
     const filteredDocs = filterType === "all" ? documents : documents.filter(doc => doc.type === filterType);
@@ -158,10 +180,10 @@ export default function DocumentsPage() {
                       <TableCell className="text-sm">{doc.usedBy}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleView(doc)}>
                             <Eye className="w-4 h-4"/>
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDownload(doc)}>
                             <Download className="w-4 h-4"/>
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
@@ -212,5 +234,48 @@ export default function DocumentsPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewDoc} onOpenChange={(val) => !val && setPreviewDoc(null)}>
+        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
+            <DialogHeader>
+                <DialogTitle>{t('document_preview') || "Document Preview"}</DialogTitle>
+                <DialogDescription>{previewDoc?.name}</DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 bg-muted/30 border rounded-md p-8 overflow-y-auto font-mono text-sm">
+                <div className="text-center space-y-4">
+                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto text-primary">
+                        <FileText className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-lg font-bold">{previewDoc?.name}</h3>
+                    <p className="text-muted-foreground">Type: {previewDoc?.type}</p>
+                    <p className="text-muted-foreground">Size: {previewDoc?.size}</p>
+                    <div className="border-t pt-4 mt-4 text-left">
+                        <p className="text-xs text-muted-foreground mb-2">CONTENT PREVIEW:</p>
+                        <p>
+                            This is a mock preview of the document content. In a real application, 
+                            this would display the actual PDF, Image, or Text content of the file.
+                        </p>
+                        <p className="mt-2">
+                             Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. 
+                             Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+                        </p>
+                        <p className="mt-4 text-xs text-muted-foreground italic">
+                            (Detailed content hidden for security in this preview)
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setPreviewDoc(null)}>{t('close') || "Close"}</Button>
+                <Button onClick={() => {
+                    handleDownload(previewDoc);
+                    setPreviewDoc(null);
+                }}>
+                    <Download className="w-4 h-4 mr-2"/> {t('download') || "Download"}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>);
 }

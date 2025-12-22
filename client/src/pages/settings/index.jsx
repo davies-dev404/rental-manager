@@ -1,11 +1,13 @@
 
 import { useState, useEffect } from "react";
+import QRCode from "react-qr-code";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useTranslation } from "react-i18next";
+import { useTheme } from "next-themes";
 import { usePreferences } from "@/lib/currency";
-import { Loader2, User, Building2, Bell, Smartphone, Shield, Save, CreditCard, Lock, ArrowRight, Trash2, Coins } from "lucide-react";
+import { Loader2, User, Building2, Bell, Smartphone, Shield, Save, CreditCard, Lock, ArrowRight, Trash2, Coins, RefreshCw } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -18,17 +20,39 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 
 export default function Settings() {
     const { toast } = useToast();
-    const { user } = useAuth();
+    const { user, updateProfile } = useAuth();
     const { t, i18n } = useTranslation();
     const { currency, changeCurrency, currencies, timezone, changeTimezone } = usePreferences();
+    const { theme, setTheme } = useTheme();
     const timezones = Intl.supportedValuesOf('timeZone');
     const [activeTab, setActiveTab] = useState("account");
     const [isSaving, setIsSaving] = useState(false);
     const [settings, setSettings] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+
+    const handleLanguageChange = (val) => {
+        i18n.changeLanguage(val);
+        // Persist to API settings
+        if (settings) {
+            const newSettings = { ...settings, language: val };
+            setSettings(newSettings);
+            api.updateSettings(newSettings);
+        }
+    };
+
+
+    // Security State
+    const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+    const [passwordForm, setPasswordForm] = useState({ old: '', new: '', confirm: '' });
+    
+    const [isTwoFactorOpen, setIsTwoFactorOpen] = useState(false);
+    const [twoFactorStep, setTwoFactorStep] = useState('enable'); // enable, verify
+    const [twoFactorData, setTwoFactorData] = useState(null); // { secret, qrCode }
+    const [verificationCode, setVerificationCode] = useState('');
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -77,6 +101,80 @@ export default function Settings() {
         });
     };
 
+    const handleChangePassword = async () => {
+        if (passwordForm.new !== passwordForm.confirm) {
+            toast({ variant: "destructive", title: "Error", description: "New passwords do not match" });
+            return;
+        }
+        setIsSaving(true);
+        try {
+            await api.changePassword(passwordForm.old, passwordForm.new);
+            toast({ title: "Success", description: "Password changed successfully" });
+            setIsChangePasswordOpen(false);
+            setPasswordForm({ old: '', new: '', confirm: '' });
+        } catch (error) {
+            toast({ variant: "destructive", title: "Error", description: error.message });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleEnable2FA = async () => {
+        setIsSaving(true);
+        try {
+            const data = await api.enable2FA();
+            setTwoFactorData(data);
+            setTwoFactorStep('verify');
+        } catch (error) {
+             toast({ variant: "destructive", title: "Error", description: "Could not initiate 2FA setup" });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleVerify2FA = async () => {
+        setIsSaving(true);
+        try {
+            await api.verifyAndEnable2FA(verificationCode);
+            toast({ title: "Success", description: "2FA Enabled Successfully" });
+            setIsTwoFactorOpen(false);
+            // Refresh settings
+            const newSettings = await api.getSettings();
+            setSettings(newSettings);
+        } catch (error) {
+            toast({ variant: "destructive", title: "Error", description: error.message });
+        } finally {
+             setIsSaving(false);
+        }
+    };
+    
+    const handleDisable2FA = async () => {
+        // For simplicity, just disable directly or ask for password. 
+        // We'll assume user is logged in and authoritative for this mock.
+        setIsSaving(true);
+        try {
+             await api.disable2FA("1234"); // Mock password
+             const newSettings = await api.getSettings();
+             setSettings(newSettings);
+             toast({ title: "Success", description: "2FA Disabled" });
+        } catch (error) {
+             toast({ variant: "destructive", title: "Error", description: error.message });
+        } finally {
+             setIsSaving(false);
+        }
+    };
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+             updateProfile({ avatar: reader.result });
+        };
+        reader.readAsDataURL(file);
+    };
+
     if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
     return (<div className="space-y-8">
@@ -86,7 +184,7 @@ export default function Settings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-12">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto md:h-12 gap-1 md:gap-0">
           <TabsTrigger value="account" className="text-sm">
             <User className="w-4 h-4 mr-2"/> {t('account')}
           </TabsTrigger>
@@ -147,7 +245,8 @@ export default function Settings() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="language">{t('preferred_language')}</Label>
-                <Select value={i18n.language} onValueChange={(val) => i18n.changeLanguage(val)}>
+                <Label htmlFor="language">{t('preferred_language')}</Label>
+                <Select value={i18n.language} onValueChange={handleLanguageChange}>
                   <SelectTrigger id="language">
                     <SelectValue />
                   </SelectTrigger>
@@ -155,7 +254,7 @@ export default function Settings() {
                     <SelectItem value="en">English</SelectItem>
                     <SelectItem value="sw">Kiswahili</SelectItem>
                     <SelectItem value="fr">Français</SelectItem>
-                    <SelectItem value="de">Deutsch</SelectItem>
+                    <SelectItem value="es">Español</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -195,7 +294,10 @@ export default function Settings() {
                   <Label>{t('dark_mode')}</Label>
                   <p className="text-sm text-muted-foreground">{t('dark_mode_desc')}</p>
                 </div>
-                <Switch defaultChecked/>
+                <Switch 
+                  checked={theme === 'dark'}
+                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                />
               </div>
             </CardContent>
             <CardFooter className="border-t bg-muted/20">
@@ -548,24 +650,115 @@ export default function Settings() {
               <CardDescription>{t('password_auth_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" onClick={() => setIsChangePasswordOpen(true)}>
                 <Lock className="w-4 h-4 mr-2"/> {t('change_password')}
               </Button>
               <Separator />
               <div className="pt-2 space-y-4">
                 <div>
                   <p className="font-medium text-sm mb-3">{t('two_factor_auth')}</p>
-                  <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/20">
-                    {t('not_enabled')}
-                  </Badge>
+                  {settings?.security?.twoFactorEnabled ? (
+                      <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/20 hover:bg-emerald-500/25">
+                        {t('enabled') || "Enabled"}
+                      </Badge>
+                  ) : (
+                      <Badge variant="outline" className="bg-amber-500/15 text-amber-700 border-amber-500/20">
+                        {t('not_enabled')}
+                      </Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">{t('two_factor_desc')}</p>
-                <Button>
-                  {t('enable_2fa')} <ArrowRight className="w-4 h-4 ml-2"/>
-                </Button>
+                {settings?.security?.twoFactorEnabled ? (
+                    <Button variant="destructive" onClick={handleDisable2FA} disabled={isSaving}>
+                        {t('disable_2fa') || "Disable 2FA"}
+                    </Button>
+                ) : (
+                    <Button onClick={() => { setIsTwoFactorOpen(true); setTwoFactorStep('enable'); handleEnable2FA(); }} disabled={isSaving}>
+                      {t('enable_2fa')} <ArrowRight className="w-4 h-4 ml-2"/>
+                    </Button>
+                )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Change Password Dialog */}
+          <Dialog open={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen}>
+              <DialogContent>
+                  <DialogHeader>
+                      <DialogTitle>{t('change_password')}</DialogTitle>
+                      <DialogDescription>{t('change_password_desc')}</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                      <div className="space-y-2">
+                          <Label>{t('current_password')}</Label>
+                          <Input 
+                            type="password" 
+                            value={passwordForm.old} 
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, old: e.target.value }))}
+                          />
+                      </div>
+                      <div className="space-y-2">
+                          <Label>{t('new_password')}</Label>
+                          <Input 
+                            type="password" 
+                            value={passwordForm.new} 
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, new: e.target.value }))}
+                          />
+                      </div>
+                       <div className="space-y-2">
+                          <Label>{t('confirm_new_password')}</Label>
+                          <Input 
+                            type="password" 
+                            value={passwordForm.confirm} 
+                            onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm: e.target.value }))}
+                          />
+                      </div>
+                  </div>
+                  <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsChangePasswordOpen(false)}>{t('cancel')}</Button>
+                      <Button onClick={handleChangePassword} disabled={isSaving}>{t('change_password')}</Button>
+                  </DialogFooter>
+              </DialogContent>
+          </Dialog>
+
+          {/* 2FA Dialog */}
+          <Dialog open={isTwoFactorOpen} onOpenChange={setIsTwoFactorOpen}>
+              <DialogContent>
+                  <DialogHeader>
+                      <DialogTitle>{t('two_factor_auth')}</DialogTitle>
+                      <DialogDescription>
+                          {twoFactorStep === 'enable' ? t('setting_up_2fa') : t('scan_qr_code')}
+                      </DialogDescription>
+                  </DialogHeader>
+                  
+                  {twoFactorStep === 'verify' && twoFactorData && (
+                      <div className="flex flex-col items-center justify-center space-y-4 py-4">
+                          <div className="bg-white p-4 border rounded-lg">
+                              <QRCode value={`otpauth://totp/Dwello:${user.email}?secret=${twoFactorData.secret}&issuer=Dwello`} size={156} />
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center break-all select-all">
+                              {twoFactorData.secret}
+                          </p>
+                          <div className="w-full space-y-2">
+                               <Label>{t('verification_code')}</Label>
+                               <Input 
+                                    placeholder="123456" 
+                                    value={verificationCode}
+                                    onChange={(e) => setVerificationCode(e.target.value)}
+                               />
+                               <p className="text-xs text-muted-foreground">{t('use_mock_code')}</p>
+                          </div>
+                      </div>
+                  )}
+
+                  <DialogFooter>
+                      <Button variant="outline" onClick={() => setIsTwoFactorOpen(false)}>{t('cancel')}</Button>
+                      {twoFactorStep === 'verify' && (
+                          <Button onClick={handleVerify2FA} disabled={isSaving || !verificationCode}>{t('verify_enable')}</Button>
+                      )}
+                  </DialogFooter>
+              </DialogContent>
+          </Dialog>
 
           <Card className="border-border/50 shadow-sm">
             <CardHeader>
@@ -589,6 +782,30 @@ export default function Settings() {
               <CardDescription>{t('danger_zone_desc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="w-full">
+                     <RefreshCw className="w-4 h-4 mr-2"/> {t('reset_data') || "Reset Data"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t('reset_data_confirm') || "Reset All Data?"}</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('reset_data_desc') || "This will permanently delete all your properties, tenants, and payment records. The app will return to its initial state."}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => api.resetData()}>
+                      {t('confirm_reset') || "Yes, Reset Everything"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              <Separator />
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" className="w-full border-destructive/50 text-destructive hover:text-destructive hover:bg-destructive/5">

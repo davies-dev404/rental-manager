@@ -6,6 +6,10 @@ const resources = {
   en: {
     translation: {
       "settings": "Settings",
+      // ... (Rest of EN is essentially kept, but we are just adding others below. 
+      // Since I can't see all of EN to replace it, I will just append the other languages AFTER the EN block closes.
+      // Wait, I need to close EN first. I'll target the closing constant.)
+
       "dashboard": "Dashboard",
       "properties": "Properties",
       "tenants": "Tenants",
@@ -264,12 +268,19 @@ const resources = {
       "billing_desc": "Manage your billing and payment settings.",
       "email_notifications": "Email Notifications",
       "email_notifications_desc": "Control what notifications you receive via email.",
+      "assign_caretaker": "Assign Caretaker",
+      "select_caretaker": "Select a Caretaker",
+      "caretaker_assigned": "Caretaker Assigned",
+      "caretaker": "Caretaker",
+      "no_caretaker": "No Caretaker Assigned",
+      "assign": "Assign",
       "sms_notifications": "SMS Notifications",
       "sms_notifications_desc": "Receive critical alerts via SMS (if available).",
       "mpesa_integration": "M-Pesa Integration",
       "mpesa_desc": "Configure Lipa Na M-Pesa interactions for rent collection.",
       "vs_last_period": "vs last period",
       "avg_per_month": "avg per month",
+      "tenant_info": "Tenant Info",
       "contact": "Contact",
       "unit_info": "Unit Info",
       "lease_status": "Lease Status",
@@ -286,6 +297,23 @@ const resources = {
       "payments_desc": "Track rent collection and payment history.",
       "reports_desc": "Detailed financial and operational analytics.",
       "documents_desc": "Manage leases, contracts, and property documents.",
+      "expenses": "Expenses",
+      "expenses_desc": "Track and manage your property expenses.",
+      "add_expense": "Record Expense",
+      "add_expense_desc": "Enter the details of the new expense.",
+      "total_expenses_month": "This Month",
+      "total_expenses_year": "Year to Date",
+      "expenses_history": "Expense History",
+      "no_expenses": "No expenses found",
+      "amount": "Amount",
+      "category": "Category",
+      "date": "Date",
+      "description": "Description",
+      "maintenance": "Maintenance",
+      "utilities": "Utilities",
+      "repairs": "Repairs",
+      "taxes": "Taxes",
+      "save": "Save",
       "upload_document_desc": "Add a new document to your library.",
       "total_activities": "Total Activities",
       "today": "Today",
@@ -381,6 +409,15 @@ const resources = {
       "danger_zone_desc": "Irreversible actions. Please be careful.",
       "delete_account": "Delete Account",
       "delete_account_confirm": "This action cannot be undone. Your account will be deleted.",
+      "change_password_desc": "Enter your current password and a new strong password.",
+      "current_password": "Current Password",
+      "new_password": "New Password",
+      "confirm_new_password": "Confirm New Password",
+      "setting_up_2fa": "Setting up 2FA...",
+      "scan_qr_code": "Scan the QR code and enter the code.",
+      "verification_code": "Verification Code",
+      "use_mock_code": "Use code '123456' to verify for this demo.",
+      "verify_enable": "Verify & Enable",
 
       "activity_history": "Activity History",
       "activity_logs": "Activity Logs",
@@ -647,6 +684,7 @@ const resources = {
       "mpesa_desc": "Configurez les interactions Lipa Na M-Pesa pour l'encaissement des loyers.",
       "vs_last_period": "par rapport à la période précédente",
       "avg_per_month": "moyenne par mois",
+      "tenant_info": "Infos Locataire",
       "contact": "Contact",
       "unit_info": "Infos unité",
       "lease_status": "Statut du bail",
@@ -685,7 +723,17 @@ const resources = {
       "property_name_placeholder": "par exemple, Riverside Apartments",
       "address_placeholder": "par exemple, 123 Main St, Nairobi",
       "image_url": "URL de l'image",
-      "upload_photo": "Télécharger la photo"
+      "upload_photo": "Télécharger la photo",
+      "two_factor_auth": "Authentification à deux facteurs",
+      "change_password_desc": "Entrez votre mot de passe actuel et un nouveau mot de passe sécurisé.",
+      "current_password": "Mot de passe actuel",
+      "new_password": "Nouveau mot de passe",
+      "confirm_new_password": "Confirmer le nouveau mot de passe",
+      "setting_up_2fa": "Configuration de la 2FA...",
+      "scan_qr_code": "Scanner le code QR et entrer le code.",
+      "verification_code": "Code de vérification",
+      "use_mock_code": "Utilisez le code '123456' pour vérifier dans cette démo.",
+      "verify_enable": "Vérifier et activer"
     }
   },
   de: {
@@ -947,6 +995,7 @@ const resources = {
       "mpesa_desc": "Konfigurieren Sie Lipa Na M-Pesa-Interaktionen für die Mieteinnahmen.",
       "vs_last_period": "im Vergleich zum Vorzeitraum",
       "avg_per_month": "Durchschnitt pro Monat",
+      "tenant_info": "Mieterinfo",
       "contact": "Kontakt",
       "unit_info": "Einheit Info",
       "lease_status": "Mietstatus",
@@ -985,7 +1034,17 @@ const resources = {
       "property_name_placeholder": "z. B. Riverside Apartments",
       "address_placeholder": "z. B. 123 Main St, Nairobi",
       "image_url": "Bild-URL",
-      "upload_photo": "Foto hochladen"
+      "upload_photo": "Foto hochladen",
+      "two_factor_auth": "Zwei-Faktor-Authentifizierung",
+      "change_password_desc": "Geben Sie Ihr aktuelles Passwort und ein neues sicheres Passwort ein.",
+      "current_password": "Aktuelles Passwort",
+      "new_password": "Neues Passwort",
+      "confirm_new_password": "Neues Passwort bestätigen",
+      "setting_up_2fa": "2FA wird eingerichtet...",
+      "scan_qr_code": "Scannen Sie den QR-Code und geben Sie den Code ein.",
+      "verification_code": "Bestätigungscode",
+      "use_mock_code": "Verwenden Sie den Code '123456' zur Überprüfung in dieser Demo.",
+      "verify_enable": "Überprüfen & Aktivieren"
     }
   },
   sw: {
@@ -1253,6 +1312,7 @@ const resources = {
       "mpesa_desc": "Sanidi mwingiliano wa Lipa Na M-Pesa kwa ukusanyaji wa kodi.",
       "vs_last_period": "dhidi ya kipindi kilichopita",
       "avg_per_month": "wastani kwa mwezi",
+      "tenant_info": "Maelezo ya Mpangaji",
       "contact": "Mawasiliano",
       "unit_info": "Maelezo ya Nyumba",
       "lease_status": "Hali ya Mkataba",
@@ -1295,6 +1355,16 @@ const resources = {
       "address_placeholder": "mifano. 123 Main St, Nairobi",
       "image_url": "Kiungo cha Picha",
       "upload_photo": "Pakia Picha",
+      "two_factor_auth": "Uthibitishaji wa Hatua Mbili",
+      "change_password_desc": "Weka nenosiri lako la sasa na jipya lenye nguvu.",
+      "current_password": "Nenosiri la Sasa",
+      "new_password": "Nenosiri Jipya",
+      "confirm_new_password": "Thibitisha Nenosiri Jipya",
+      "setting_up_2fa": "Inaweka Uthibitishaji wa Hatua Mbili...",
+      "scan_qr_code": "Changanua msimbo wa QR na uweke msimbo.",
+      "verification_code": "Msimbo wa Uthibitishaji",
+      "use_mock_code": "Tumia msimbo '123456' kuthibitisha kwa onyesho hili.",
+      "verify_enable": "Thibitisha na Wezesha",
       "tenant_updated": "Mpangaji Amesasishwa",
       "tenant_updated_desc": "Maelezo ya mpangaji yamesasishwa kikamilifu.",
       "tenant_deleted": "Mpangaji Amefutwa",
@@ -1425,6 +1495,42 @@ const resources = {
       "failed_logins": "Kuingia Kulikoshindwa",
       "active": "Amilifu",
       "activity_logs": "Kumbukumbu za Shughuli"
+    }
+  },
+  fr: {
+    translation: {
+      "settings": "Paramètres",
+      "dashboard": "Tableau de bord",
+      "properties": "Propriétés",
+      "tenants": "Locataires",
+      "payments": "Paiements",
+      "expenses": "Dépenses",
+      "reports": "Rapports",
+      "documents": "Documents",
+      "activity_logs": "Journaux",
+      "logout": "Se déconnecter",
+      "welcome": "Bon retour",
+      "language": "Langue",
+      "currency": "Devise",
+      "save_changes": "Sauvegarder"
+    }
+  },
+  es: {
+    translation: {
+      "settings": "Configuración",
+      "dashboard": "Tablero",
+      "properties": "Propiedades",
+      "tenants": "Inquilinos",
+      "payments": "Pagos",
+      "expenses": "Gastos",
+      "reports": "Informes",
+      "documents": "Documentos",
+      "activity_logs": "Registros",
+      "logout": "Cerrar sesión",
+      "welcome": "Bienvenido de nuevo",
+      "language": "Idioma",
+      "currency": "Moneda",
+      "save_changes": "Guardar cambios"
     }
   }
 };

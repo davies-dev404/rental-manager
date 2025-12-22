@@ -29,6 +29,8 @@ const unitSchema = z.object({
     bathrooms: z.string().min(1, "Bathrooms is required"),
 });
 
+
+
 function ManageUnitsDialog({ property }) {
     const [open, setOpen] = useState(false);
     const { toast } = useToast();
@@ -367,7 +369,7 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
 }
 
 // --- Property Card ---
-function PropertyCard({ property }) {
+function PropertyCard({ property, onAssign }) {
     const { t } = useTranslation();
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -454,8 +456,8 @@ function PropertyCard({ property }) {
                             <DropdownMenuItem onClick={() => setEditOpen(true)}>
                                 <Pencil className="w-4 h-4 mr-2 text-muted-foreground"/> {t('edit_property')}
                             </DropdownMenuItem>
-                            <DropdownMenuItem disabled className="opacity-50 cursor-not-allowed">
-                                <UserPlus className="w-4 h-4 mr-2 text-muted-foreground"/> {t('assign_caretaker') || "Assign Caretaker"}
+                            <DropdownMenuItem onClick={() => onAssign(property)}>
+                                <UserPlus className="w-4 h-4 mr-2 text-muted-foreground"/> {t('assign_caretaker')}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20" onClick={() => setDeleteOpen(true)}>
@@ -606,9 +608,70 @@ function AddPropertyDialog() {
       </DialogContent>
     </Dialog>);
 }
+
+function AssignCaretakerDialog({ property, open, onOpenChange }) {
+    const { t } = useTranslation();
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const [selectedCaretaker, setSelectedCaretaker] = useState(property.caretakerId || "");
+
+    const { data: caretakers } = useQuery({
+        queryKey: ["caretakers"],
+        queryFn: api.getCaretakers
+    });
+
+    const mutation = useMutation({
+        mutationFn: ({ propertyId, caretakerId }) => api.assignCaretaker(propertyId, caretakerId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["properties"] });
+            onOpenChange(false);
+            toast({ title: "Success", description: t('caretaker_assigned') });
+        },
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Failed to assign caretaker." })
+    });
+
+    const handleAssign = () => {
+        if (!selectedCaretaker) return;
+        mutation.mutate({ propertyId: property.id, caretakerId: selectedCaretaker });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <DialogTitle>{t('assign_caretaker')} - {property.name}</DialogTitle>
+                    <DialogDescription>{t('select_caretaker')}</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label>{t('caretaker')}</Label>
+                        <Select value={selectedCaretaker} onValueChange={setSelectedCaretaker}>
+                             <SelectTrigger>
+                                <SelectValue placeholder={t('select_caretaker')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {caretakers?.map((caretaker) => (
+                                    <SelectItem key={caretaker.id} value={caretaker.id}>
+                                        {caretaker.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleAssign} disabled={mutation.isPending || !selectedCaretaker}>
+                        {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} {t('assign')}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
 // --- Main Page ---
 export default function PropertiesPage() {
     const { t } = useTranslation();
+    const [assigningCaretaker, setAssigningCaretaker] = useState(null);
     const { data: properties, isLoading } = useQuery({
         queryKey: ["properties"],
         queryFn: api.getProperties,
@@ -644,7 +707,15 @@ export default function PropertiesPage() {
       {isLoading ? (<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-72 w-full rounded-xl"/>)}
         </div>) : (<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {sortedProperties.map(prop => (<PropertyCard key={prop.id} property={prop}/>))}
+             {sortedProperties.map(prop => (<PropertyCard key={prop.id} property={prop} onAssign={setAssigningCaretaker}/>))}
         </div>)}
+        
+        {assigningCaretaker && (
+            <AssignCaretakerDialog 
+                property={assigningCaretaker} 
+                open={!!assigningCaretaker} 
+                onOpenChange={(val) => !val && setAssigningCaretaker(null)} 
+            />
+        )}
     </div>);
 }

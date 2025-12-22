@@ -12,7 +12,10 @@ const KEYS = {
   DOCUMENTS: 'rental_documents_v2',
   REMINDERS: 'rental_reminders_v2',
   EXPENSES: 'rental_expenses_v2',
-  SETTINGS: 'rental_settings_v2'
+  REMINDERS: 'rental_reminders_v2',
+  EXPENSES: 'rental_expenses_v2',
+  SETTINGS: 'rental_settings_v2',
+  CARETAKERS: 'rental_caretakers_v2'
 };
 
 // Empty Defaults to initialize if storage is empty
@@ -26,7 +29,28 @@ const DEFAULTS = {
   DOCUMENTS: [],
   REMINDERS: [],
   EXPENSES: [],
+  REMINDERS: [],
+  EXPENSES: [],
+  CARETAKERS: [
+      { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+254700000001' },
+      { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+254700000002' },
+      { id: '3', name: 'James Kamau', email: 'james@example.com', phone: '+254700000003' }
+  ],
+  REMINDERS: [],
+  EXPENSES: [],
+  REMINDERS: [],
+  EXPENSES: [],
+  CARETAKERS: [
+      { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+254700000001' },
+      { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+254700000002' },
+      { id: '3', name: 'James Kamau', email: 'james@example.com', phone: '+254700000003' }
+  ],
   SETTINGS: {
+    security: {
+      passwordLastChanged: new Date().toISOString(),
+      twoFactorEnabled: false,
+      twoFactorSecret: null
+    },
     notifications: {
       email: true,
       sms: true,
@@ -34,6 +58,8 @@ const DEFAULTS = {
       reminderDays: 3
     },
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    currency: "USD",
+    language: "en",
     integrations: {
       mpesa: {
         enabled: false,
@@ -79,13 +105,80 @@ export const api = {
   // Users
   login: async (email, role) => {
     await delay(500);
+    const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
+    
+    // Simulate 2FA check if enabled
+    if (settings.security && settings.security.twoFactorEnabled) {
+       // Ideally would return a specific state to UI to prompt for code
+    }
+    
     return {
       id: "1",
       name: role === 'admin' ? "Admin User" : "Caretaker User",
       email: email,
       role: role,
+      role: role,
       avatar: "https://github.com/shadcn.png" 
     };
+  },
+
+  updateUser: async (updates) => {
+    await delay(300);
+    // In a real app, this would PUT/PATCH to /api/users/me
+    // For mock, we assume the auth context holds the "session" and we just return the updates
+    // so the context can merge them.
+    return updates;
+  },
+  
+  changePassword: async (oldPassword, newPassword) => {
+      await delay(800);
+      // Mock validation
+      if (oldPassword.length < 4) throw new Error("Incorrect current password");
+      if (newPassword.length < 6) throw new Error("New password must be at least 6 characters");
+      
+      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
+      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
+      
+      settings.security.passwordLastChanged = new Date().toISOString();
+      setStorage(KEYS.SETTINGS, settings);
+      
+      return true;
+  },
+  
+  enable2FA: async () => {
+      await delay(500);
+      // Generate mock secret
+      const secret = "JBSWY3DPEHPK3PXP"; 
+      const qrCode = `otpauth://totp/Dwello:Admin?secret=${secret}&issuer=Dwello`;
+      return { secret, qrCode };
+  },
+  
+  verifyAndEnable2FA: async (token) => {
+      await delay(600);
+      if (token !== "123456") throw new Error("Invalid verification code"); // Mock check
+      
+      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
+      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
+      
+      settings.security.twoFactorEnabled = true;
+      settings.security.twoFactorSecret = "JBSWY3DPEHPK3PXP";
+      setStorage(KEYS.SETTINGS, settings);
+      
+      return true;
+  },
+  
+  disable2FA: async (password) => {
+      await delay(500);
+      if (password.length < 4) throw new Error("Incorrect password");
+      
+      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
+      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
+      
+      settings.security.twoFactorEnabled = false;
+      settings.security.twoFactorSecret = null;
+      setStorage(KEYS.SETTINGS, settings);
+      
+      return true;
   },
 
   // Properties
@@ -104,6 +197,7 @@ export const api = {
     };
     properties.push(newProp);
     setStorage(KEYS.PROPERTIES, properties);
+    await api.logActivity("Add Property", `Added new property: ${newProp.name}`, "settings");
     return newProp;
   },
   updateProperty: async (updatedProp) => {
@@ -117,6 +211,29 @@ export const api = {
     }
     throw new Error("Property not found");
   },
+
+  getCaretakers: async () => {
+      await delay(400);
+      return getStorage(KEYS.CARETAKERS, DEFAULTS.CARETAKERS);
+  },
+  
+  assignCaretaker: async (propertyId, caretakerId) => {
+      await delay(500);
+      const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
+      const caretakers = getStorage(KEYS.CARETAKERS, DEFAULTS.CARETAKERS);
+      
+      const propertyIndex = properties.findIndex(p => p.id === propertyId);
+      if (propertyIndex === -1) throw new Error("Property not found");
+      
+      const caretaker = caretakers.find(c => c.id === caretakerId);
+      if (!caretaker) throw new Error("Caretaker not found");
+      
+      properties[propertyIndex] = { ...properties[propertyIndex], caretakerId: caretaker.id, caretakerName: caretaker.name };
+      setStorage(KEYS.PROPERTIES, properties);
+      
+      return properties[propertyIndex];
+  },
+
   deleteProperty: async (id) => {
     await delay(300);
     const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
@@ -199,6 +316,7 @@ export const api = {
     const newTenant = { ...tenant, id: Math.random().toString(36).substr(2, 9) };
     tenants.push(newTenant);
     setStorage(KEYS.TENANTS, tenants);
+    await api.logActivity("Register Tenant", `Registered new tenant: ${newTenant.name}`, "tenant");
     
     // Update unit status to occupied
     if (tenant.unitId) {
@@ -300,6 +418,7 @@ export const api = {
     const newPayment = { ...payment, id: Math.random().toString(36).substr(2, 9), status: "Completed" };
     payments.push(newPayment);
     setStorage(KEYS.PAYMENTS, payments);
+    await api.logActivity("Record Payment", `Recorded payment of ${payment.amount} for tenant ID ${payment.tenantId}`, "payment");
     return newPayment;
   },
 
@@ -460,7 +579,13 @@ export const api = {
         revenueMap[month].expected += parseInt(p.amount); 
     });
     // Fill in last 6 months if empty
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]; // Static for now or dynamic
+    // Generate last 6 months dynamically
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        months.push(d.toLocaleString('default', { month: 'short' }));
+    }
     const revenueData = months.map(m => revenueMap[m] || { month: m, collected: 0, expected: 0 });
 
     // Tenant Data (Real Logic)
@@ -509,6 +634,14 @@ export const api = {
     const formattedExpenseData = months.map(m => expenseData[m] || { month: m, amount: 0 });
 
     return { revenueData, tenantData, expenseData: formattedExpenseData };
+  },
+
+  resetData: async () => {
+    await delay(500);
+    Object.values(KEYS).forEach(key => {
+        localStorage.removeItem(key);
+    });
+    window.location.reload();
   }
 };
 

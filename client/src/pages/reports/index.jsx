@@ -249,7 +249,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Button className="w-full" size="lg">
+          <Button className="w-full" size="lg" onClick={() => exportToPDF()}>
             <FileText className="w-4 h-4 mr-2"/> {t('view_detailed_report')}
           </Button>
         </TabsContent>

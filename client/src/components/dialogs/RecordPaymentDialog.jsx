@@ -47,6 +47,7 @@ export function RecordPaymentDialog() {
         onSuccess: (data, variables) => {
             queryClient.invalidateQueries({ queryKey: ["payments"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
+            queryClient.invalidateQueries({ queryKey: ["reports_data"] });
             setOpen(false);
             form.reset();
             

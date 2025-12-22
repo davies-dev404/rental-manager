@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { LayoutDashboard, Building2, Users, CreditCard, Settings, LogOut, Bell, Search, Menu, Clock, BarChart3, FileText, Activity, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Building2, Users, CreditCard, Settings, LogOut, Bell, Search, Menu, Clock, BarChart3, FileText, Activity, ChevronLeft, ChevronRight, DollarSign } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState, useEffect } from "react";
@@ -24,6 +24,7 @@ function SidebarContent({ className, onClose, collapsed, onToggleCollapse }) {
         { icon: Building2, label: t("properties"), href: "/properties" },
         { icon: Users, label: t("tenants"), href: "/tenants" },
         { icon: CreditCard, label: t("payments"), href: "/payments" },
+        { icon: DollarSign, label: t("expenses"), href: "/expenses" },
     ];
     const toolsMenuItems = [
         { icon: Clock, label: t("reminders"), href: "/reminders" },
@@ -252,6 +253,16 @@ export default function AppLayout({ children }) {
         <div className="flex-1 p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {children}
         </div>
+        <footer className="border-t border-border py-6 px-6 md:px-8 bg-background/50 backdrop-blur-sm mt-auto">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
+                <p>&copy; {new Date().getFullYear()} Dwello. All rights reserved.</p>
+                <div className="flex items-center gap-4">
+                    <Link href="/privacy" className="hover:text-primary transition-colors cursor-pointer">Privacy Policy</Link>
+                    <Link href="/terms" className="hover:text-primary transition-colors cursor-pointer">Terms of Service</Link>
+                    <Link href="/support" className="hover:text-primary transition-colors cursor-pointer">Support</Link>
+                </div>
+            </div>
+        </footer>
       </main>
     </div>);
 }

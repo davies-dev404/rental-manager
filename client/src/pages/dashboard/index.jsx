@@ -88,14 +88,22 @@ export default function Dashboard() {
 
     // Dynamic Chart Data (Defaults to 0 if no data)
     // In a real app, this would come from a historical stats API
-    const chartData = [
-        { name: "Jan", revenue: 0, target: 0 },
-        { name: "Feb", revenue: 0, target: 0 },
-        { name: "Mar", revenue: 0, target: 0 },
-        { name: "Apr", revenue: 0, target: 0 },
-        { name: "May", revenue: 0, target: 0 },
-        { name: "Jun", revenue: stats?.collectedThisMonth || 0, target: stats?.expectedMonthlyRent || 0 }, // Show current month data at end
-    ];
+    // Generate last 6 months dynamically
+    const chartData = (() => {
+        const data = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date();
+            d.setMonth(d.getMonth() - i);
+            const monthName = d.toLocaleString('default', { month: 'short' });
+            // For the current month (last item), use valid stats. For others, 0 (mock history)
+            if (i === 0) {
+                 data.push({ name: monthName, revenue: stats?.collectedThisMonth || 0, target: stats?.expectedMonthlyRent || 0 });
+            } else {
+                 data.push({ name: monthName, revenue: 0, target: 0 });
+            }
+        }
+        return data;
+    })();
 
     const occupancyData = [
         { name: "Occupied", value: stats?.occupiedUnits || 0, fill: "hsl(var(--chart-2))" },

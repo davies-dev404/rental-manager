@@ -48,7 +48,9 @@ export function AddTenantDialog() {
         mutationFn: api.addTenant,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["tenants"] });
-            queryClient.invalidateQueries({ queryKey: ["units"] }); // Update unit status
+            queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
+            queryClient.invalidateQueries({ queryKey: ["reports_data"] });
             setOpen(false);
             form.reset();
             toast({ title: t('tenant_added'), description: t('tenant_added_desc') });
@@ -67,8 +69,10 @@ export function AddTenantDialog() {
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 border bg-secondary text-secondary-foreground border-secondary-border h-9 px-4 py-2 shadow-md hover:shadow-lg transition-all cursor-pointer">
-                <Plus className="w-4 h-4 mr-2"/> {t('add_tenant')}
+            <DialogTrigger asChild>
+                <Button className="shadow-lg hover:shadow-xl transition-all">
+                    <Plus className="w-4 h-4 mr-2"/> {t('add_tenant')}
+                </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
