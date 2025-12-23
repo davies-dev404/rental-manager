@@ -143,6 +143,23 @@ export default function Settings() {
         });
     };
 
+    const handleTestSMTP = async () => {
+        setIsSaving(true);
+        try {
+            const config = settings?.integrations?.email?.smtp;
+            if (!config || !config.host || !config.user || !config.pass) {
+                 toast({ variant: "destructive", title: "Error", description: "Please fill in all SMTP fields." });
+                 return;
+            }
+            await api.testSMTP(config);
+            toast({ title: "Success", description: "SMTP Connection Successful!" });
+        } catch (error) {
+            toast({ variant: "destructive", title: "Test Failed", description: error.message });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleChangePassword = async () => {
         if (passwordForm.new !== passwordForm.confirm) {
             toast({ variant: "destructive", title: "Error", description: "New passwords do not match" });
@@ -529,6 +546,9 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="flex justify-end pt-2">
+                                <Button variant="outline" size="sm" onClick={handleTestSMTP} disabled={isSaving} className="mr-2">
+                                    {t('test_connection') || "Test Connection"}
+                                </Button>
                                 <Button variant="outline" size="sm" onClick={() => updateIntegration('email', 'smtp', 'provider', 'smtp')}>
                                     {t('activate_smtp')}
                                 </Button>

@@ -28,6 +28,7 @@ const unitSchema = z.object({
     rentAmount: z.string().min(1, "Rent Amount is required"),
     bedrooms: z.string().min(1, "Bedrooms is required"),
     bathrooms: z.string().min(1, "Bathrooms is required"),
+    status: z.string().optional()
 });
 
 
@@ -41,8 +42,8 @@ function ManageUnitsDialog({ property }) {
     
     // Fetch units for this property
     const { data: units } = useQuery({
-        queryKey: ["units", property.id],
-        queryFn: () => api.getUnits(property.id),
+        queryKey: ["units", property._id || property.id],
+        queryFn: () => api.getUnits(property._id || property.id),
         enabled: open
     });
 
@@ -60,8 +61,9 @@ function ManageUnitsDialog({ property }) {
     const mutation = useMutation({
         mutationFn: api.addUnit,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["units", property.id] });
-            queryClient.invalidateQueries({ queryKey: ["properties"] }); // Update counts
+            queryClient.invalidateQueries({ queryKey: ["units", property._id || property.id] });
+            queryClient.invalidateQueries({ queryKey: ["properties"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] }); // Update dashboard
             form.reset();
             toast({ title: "Unit Added", description: "New unit created successfully." });
         },
@@ -73,7 +75,7 @@ function ManageUnitsDialog({ property }) {
     function onSubmit(values) {
         mutation.mutate({
             ...values,
-            propertyId: property.id,
+            propertyId: property._id || property.id,
             status: "vacant"
         });
     }
@@ -84,8 +86,9 @@ function ManageUnitsDialog({ property }) {
     const deleteMutation = useMutation({
         mutationFn: api.deleteUnit,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["units", property.id] });
+            queryClient.invalidateQueries({ queryKey: ["units", property._id || property.id] });
             queryClient.invalidateQueries({ queryKey: ["properties"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             setDeletingUnitId(null);
             toast({ title: "Unit Deleted", description: "Unit removed successfully." });
         }
@@ -170,7 +173,7 @@ function ManageUnitsDialog({ property }) {
                                         <tr><td colSpan={5} className="p-4 text-center text-muted-foreground italic">{t('no_units')}</td></tr>
                                     )}
                                     {units?.map((unit) => (
-                                        <tr key={unit.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
+                                        <tr key={unit._id || unit.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20">
                                             <td className="p-3 font-medium">{unit.unitNumber}</td>
                                             <td className="p-3">{unit.type}</td>
                                             <td className="p-3">{formatCurrency(unit.rentAmount)}</td>
@@ -190,7 +193,7 @@ function ManageUnitsDialog({ property }) {
                                                             <Pencil className="w-3 h-3 mr-2 text-muted-foreground"/> {t('edit_details')}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuSeparator />
-                                                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => setDeletingUnitId(unit.id)}>
+                                                        <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => setDeletingUnitId(unit._id || unit.id)}>
                                                             <Trash2 className="w-3 h-3 mr-2"/> {t('delete_unit')}
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
@@ -237,9 +240,10 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
         defaultValues: {
             unitNumber: unit.unitNumber,
             type: unit.type,
-            rentAmount: unit.rentAmount,
-            bedrooms: unit.bedrooms || "1",
-            bathrooms: unit.bathrooms || "1"
+            rentAmount: String(unit.rentAmount || ""),
+            bedrooms: String(unit.bedrooms || "1"),
+            bathrooms: String(unit.bathrooms || "1"),
+            status: unit.status || "vacant"
         }
     });
 
@@ -247,6 +251,8 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
         mutationFn: api.updateUnit,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["properties"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             onOpenChange(false);
             toast({ title: "Unit Updated", description: "Unit details updated." });
         },
@@ -254,7 +260,7 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
     });
 
     function onSubmit(values) {
-        mutation.mutate({ ...values, id: unit.id, propertyId: unit.propertyId, status: unit.status });
+        mutation.mutate({ ...values, id: unit._id || unit.id, propertyId: unit.propertyId });
     }
 
     return (
@@ -262,6 +268,9 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>{t('edit_details')}</DialogTitle>
+                    <DialogDescription>
+                        {t('edit_unit_desc') || "Make changes to the unit here. Click save when you're done."}
+                    </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -277,6 +286,19 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
                                         <SelectItem value="Apartment">Apartment</SelectItem>
                                         <SelectItem value="Studio">Studio</SelectItem>
                                         <SelectItem value="Shop">Shop</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormItem>
+                        )}/>
+                        <FormField control={form.control} name="status" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>{t('status') || "Status"}</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                        <SelectItem value="vacant">{t('vacant') || "Vacant"}</SelectItem>
+                                        <SelectItem value="occupied">{t('occupied') || "Occupied"}</SelectItem>
+                                        <SelectItem value="maintenance">{t('maintenance') || "Maintenance"}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </FormItem>
@@ -305,7 +327,7 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
         resolver: zodResolver(propertySchema),
         defaultValues: {
             name: property.name,
-            address: property.address,
+            location: property.location,
             image: property.image
         }
     });
@@ -323,7 +345,7 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
     });
 
     function onSubmit(values) {
-        mutation.mutate({ ...values, id: property.id });
+        mutation.mutate({ ...values, id: property._id || property.id });
     }
 
     return (
@@ -342,7 +364,7 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
                                 <FormMessage />
                             </FormItem>
                         )}/>
-                        <FormField control={form.control} name="address" render={({ field }) => (
+                        <FormField control={form.control} name="location" render={({ field }) => (
                             <FormItem>
                                 <FormLabel>{t('address')}</FormLabel>
                                 <FormControl><Input {...field}/></FormControl>
@@ -378,8 +400,8 @@ function PropertyCard({ property, onAssign }) {
     const { toast } = useToast();
     
     const { data: units } = useQuery({
-        queryKey: ["units", property.id],
-        queryFn: () => api.getUnits(property.id)
+        queryKey: ["units", property._id || property.id],
+        queryFn: () => api.getUnits(property._id || property.id)
     });
     
     const deleteMutation = useMutation({
@@ -409,7 +431,7 @@ function PropertyCard({ property, onAssign }) {
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteMutation.mutate(property.id)}>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteMutation.mutate(property._id || property.id)}>
                             {t('delete')}
                         </AlertDialogAction>
                     </AlertDialogFooter>
@@ -424,7 +446,7 @@ function PropertyCard({ property, onAssign }) {
                         <h3 className="font-bold text-lg">{property.name}</h3>
                         <div className="flex items-center text-xs opacity-90">
                             <MapPin className="w-3 h-3 mr-1"/>
-                            {property.address}
+                            {property.location}
                         </div>
                     </div>
                 </div>
@@ -478,7 +500,7 @@ function PropertyCard({ property, onAssign }) {
 // --- Add Property Dialog ---
 const propertySchema = z.object({
     name: z.string().min(2, "Name is required"),
-    address: z.string().min(5, "Address is required"),
+    location: z.string().min(5, "Location is required"),
     image: z.string().optional(),
 });
 function AddPropertyDialog() {
@@ -493,7 +515,7 @@ function AddPropertyDialog() {
         resolver: zodResolver(propertySchema),
         defaultValues: {
             name: "",
-            address: "",
+            location: "",
             image: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
         }
     });
@@ -555,7 +577,7 @@ function AddPropertyDialog() {
                   </FormControl>
                   <FormMessage />
                 </FormItem>)}/>
-            <FormField control={form.control} name="address" render={({ field }) => (<FormItem>
+            <FormField control={form.control} name="location" render={({ field }) => (<FormItem>
                   <FormLabel>{t('address')}</FormLabel>
                   <FormControl>
                     <Input placeholder={t('address_placeholder')} {...field}/>
@@ -637,7 +659,7 @@ function AssignCaretakerDialog({ property, open, onOpenChange }) {
 
     const handleAssign = () => {
         if (!selectedCaretaker) return;
-        mutation.mutate({ propertyId: property.id, caretakerId: selectedCaretaker });
+        mutation.mutate({ propertyId: property._id || property.id, caretakerId: selectedCaretaker });
     };
 
     return (
@@ -714,7 +736,7 @@ export default function PropertiesPage() {
       {isLoading ? (<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-72 w-full rounded-xl"/>)}
         </div>) : (<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-             {sortedProperties.map(prop => (<PropertyCard key={prop.id} property={prop} onAssign={setAssigningCaretaker}/>))}
+             {sortedProperties.map(prop => (<PropertyCard key={prop._id || prop.id} property={prop} onAssign={setAssigningCaretaker}/>))}
         </div>)}
         
         {assigningCaretaker && (

@@ -14,13 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTranslation } from "react-i18next";
 
 const tenantSchema = z.object({
-    name: z.string().min(2, "Name is required"),
-    email: z.string().email(),
-    phone: z.string().min(10, "Phone is required"),
+    name: z.string().min(2, "Name must be at least 2 characters"),
+    email: z.string().email("Invalid email address"),
+    phone: z.string().regex(/^\+?[\d\s-]{10,15}$/, "Invalid phone number format"),
     idType: z.enum(["national_id", "passport", "driving_license"]),
-    nationalId: z.string().min(5, "ID is required"),
-    unitId: z.string().min(1, "Unit is required"),
-    leaseStart: z.string(),
+    nationalId: z.string().min(5, "ID Number must be at least 5 characters"),
+    unitId: z.string().min(1, "Please select a unit"),
+    leaseStart: z.string().refine((date) => new Date(date).toString() !== 'Invalid Date', { message: "Invalid date" }),
 });
 
 export function AddTenantDialog() {
@@ -51,6 +51,7 @@ export function AddTenantDialog() {
             queryClient.invalidateQueries({ queryKey: ["units"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
             queryClient.invalidateQueries({ queryKey: ["reports_data"] });
+            queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
             setOpen(false);
             form.reset();
             toast({ title: t('tenant_added'), description: t('tenant_added_desc') });
@@ -63,7 +64,7 @@ export function AddTenantDialog() {
     function onSubmit(values) {
         mutation.mutate({
             ...values,
-            status: "active" // Default status for new tenants
+            status: "active"
         });
     }
 
@@ -170,7 +171,7 @@ export function AddTenantDialog() {
                                             <SelectItem value="none" disabled>{t('no_vacant_units')}</SelectItem>
                                         ) : (
                                             vacantUnits.map(unit => (
-                                                <SelectItem key={unit.id} value={unit.id}>
+                                                <SelectItem key={unit._id || unit.id} value={unit._id || unit.id}>
                                                     Unit {unit.unitNumber} ({unit.type}) - KES {unit.rentAmount}
                                                 </SelectItem>
                                             ))

@@ -15,26 +15,26 @@ import { usePreferences } from "@/lib/currency";
 const getStatusColor = (status) => {
     switch (status) {
         case "success":
-            return "bg-emerald-500/15 text-emerald-700 border-emerald-500/20";
+            return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
         case "warning":
-            return "bg-amber-500/15 text-amber-700 border-amber-500/20";
+            return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20";
         case "error":
-            return "bg-rose-500/15 text-rose-700 border-rose-500/20";
+            return "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/20";
         default:
-            return "bg-gray-500/15 text-gray-700";
+            return "bg-gray-500/15 text-gray-700 dark:text-gray-400";
     }
 };
 const getTypeColor = (type) => {
     const colors = {
-        payment: "bg-blue-500/10 text-blue-600",
-        tenant: "bg-purple-500/10 text-purple-600",
-        settings: "bg-orange-500/10 text-orange-600",
-        access: "bg-green-500/10 text-green-600",
-        reminder: "bg-pink-500/10 text-pink-600",
-        auth: "bg-indigo-500/10 text-indigo-600",
-        document: "bg-cyan-500/10 text-cyan-600",
+        payment: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+        tenant: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+        settings: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+        access: "bg-green-500/10 text-green-600 dark:text-green-400",
+        reminder: "bg-pink-500/10 text-pink-600 dark:text-pink-400",
+        auth: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+        document: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
     };
-    return colors[type] || "bg-gray-500/10 text-gray-600";
+    return colors[type] || "bg-gray-500/10 text-gray-600 dark:text-gray-400";
 };
 export default function ActivityLogsPage() {
     const { t } = useTranslation();

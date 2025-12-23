@@ -1,661 +1,299 @@
-// Mock API with LocalStorage Persistence
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Real API Implementation connected to MERN Backend
+import { toast } from "sonner"; // Assuming sonner is used, or replace with console for now if imports differ
 
-// Keys for localStorage - Versioned to force clear old data
-const KEYS = {
-  PROPERTIES: 'rental_properties_v2',
-  UNITS: 'rental_units_v2',
-  TENANTS: 'rental_tenants_v2',
-  PAYMENTS: 'rental_payments_v2',
-  NOTIFICATIONS: 'rental_notifications_v2',
-  ACTIVITY_LOGS: 'rental_activity_logs_v2',
-  DOCUMENTS: 'rental_documents_v2',
-  REMINDERS: 'rental_reminders_v2',
-  EXPENSES: 'rental_expenses_v2',
-  REMINDERS: 'rental_reminders_v2',
-  EXPENSES: 'rental_expenses_v2',
-  SETTINGS: 'rental_settings_v2',
-  CARETAKERS: 'rental_caretakers_v2'
-};
+export const API_URL = import.meta.env.VITE_API_DIR || 'http://localhost:5000/api';
 
-// Empty Defaults to initialize if storage is empty
-const DEFAULTS = {
-  PROPERTIES: [],
-  UNITS: [],
-  TENANTS: [],
-  PAYMENTS: [],
-  NOTIFICATIONS: [],
-  ACTIVITY_LOGS: [],
-  DOCUMENTS: [],
-  REMINDERS: [],
-  EXPENSES: [],
-  REMINDERS: [],
-  EXPENSES: [],
-  CARETAKERS: [
-      { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+254700000001' },
-      { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+254700000002' },
-      { id: '3', name: 'James Kamau', email: 'james@example.com', phone: '+254700000003' }
-  ],
-  REMINDERS: [],
-  EXPENSES: [],
-  REMINDERS: [],
-  EXPENSES: [],
-  CARETAKERS: [
-      { id: '1', name: 'John Doe', email: 'john@example.com', phone: '+254700000001' },
-      { id: '2', name: 'Jane Smith', email: 'jane@example.com', phone: '+254700000002' },
-      { id: '3', name: 'James Kamau', email: 'james@example.com', phone: '+254700000003' }
-  ],
-  SETTINGS: {
-    security: {
-      passwordLastChanged: new Date().toISOString(),
-      twoFactorEnabled: false,
-      twoFactorSecret: null
-    },
-    notifications: {
-      email: true,
-      sms: true,
-      push: true,
-      reminderDays: 3
-    },
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    currency: "USD",
-    language: "en",
-    integrations: {
-      mpesa: {
-        enabled: false,
-        consumerKey: '',
-        consumerSecret: '',
-        passkey: '',
-        paybill: '',
-        environment: 'sandbox'
-      },
-      sms: {
-        provider: 'africastalking',
-        apiKey: '',
-        senderId: '',
-        enabled: false
-      },
-      email: {
-        provider: 'smtp',
-        host: '',
-        port: 587,
-        user: '',
-        pass: '',
-        enabled: false
-      }
-    }
-  }
-};
-
-// Helper to get data from storage or defaults
-const getStorage = (key, defaultData) => {
-  const stored = localStorage.getItem(key);
-  if (!stored) {
-    localStorage.setItem(key, JSON.stringify(defaultData));
-    return defaultData;
-  }
-  return JSON.parse(stored);
-};
-
-const setStorage = (key, data) => {
-  localStorage.setItem(key, JSON.stringify(data));
+export const getAuthHeaders = () => {
+  const storedUser = localStorage.getItem("rental_user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  const token = user?.token;
+  
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
 };
 
 export const api = {
+  API_URL,
+  getAuthHeaders, // Expose for direct fetch use
   // Users
-  login: async (email, role) => {
-    await delay(500);
-    const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
-    
-    // Simulate 2FA check if enabled
-    if (settings.security && settings.security.twoFactorEnabled) {
-       // Ideally would return a specific state to UI to prompt for code
+  login: async (email, password) => { // NOTE: signature changed from (email, role)
+    try {
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Login failed');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        throw error;
     }
-    
-    return {
-      id: "1",
-      name: role === 'admin' ? "Admin User" : "Caretaker User",
-      email: email,
-      role: role,
-      role: role,
-      avatar: "https://github.com/shadcn.png" 
-    };
+  },
+
+  registerUser: async (userData) => {
+    try {
+        const response = await fetch(`${API_URL}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Registration failed');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
+  },
+
+  verifyEmail: async (email, otp) => {
+    try {
+        const response = await fetch(`${API_URL}/auth/verify-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, otp })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Verification failed');
+        }
+        
+        return await response.json();
+    } catch (error) {
+        throw error;
+    }
   },
 
   updateUser: async (updates) => {
-    await delay(300);
-    // In a real app, this would PUT/PATCH to /api/users/me
-    // For mock, we assume the auth context holds the "session" and we just return the updates
-    // so the context can merge them.
-    return updates;
+    // Placeholder - Logic needs backend route
+    return updates; 
   },
   
   changePassword: async (oldPassword, newPassword) => {
-      await delay(800);
-      // Mock validation
-      if (oldPassword.length < 4) throw new Error("Incorrect current password");
-      if (newPassword.length < 6) throw new Error("New password must be at least 6 characters");
-      
-      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
-      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
-      
-      settings.security.passwordLastChanged = new Date().toISOString();
-      setStorage(KEYS.SETTINGS, settings);
-      
+      // Placeholder
       return true;
   },
   
-  enable2FA: async () => {
-      await delay(500);
-      // Generate mock secret
-      const secret = "JBSWY3DPEHPK3PXP"; 
-      const qrCode = `otpauth://totp/Dwello:Admin?secret=${secret}&issuer=Dwello`;
-      return { secret, qrCode };
-  },
-  
-  verifyAndEnable2FA: async (token) => {
-      await delay(600);
-      if (token !== "123456") throw new Error("Invalid verification code"); // Mock check
-      
-      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
-      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
-      
-      settings.security.twoFactorEnabled = true;
-      settings.security.twoFactorSecret = "JBSWY3DPEHPK3PXP";
-      setStorage(KEYS.SETTINGS, settings);
-      
-      return true;
-  },
-  
-  disable2FA: async (password) => {
-      await delay(500);
-      if (password.length < 4) throw new Error("Incorrect password");
-      
-      const settings = getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
-      if (!settings.security) settings.security = DEFAULTS.SETTINGS.security;
-      
-      settings.security.twoFactorEnabled = false;
-      settings.security.twoFactorSecret = null;
-      setStorage(KEYS.SETTINGS, settings);
-      
-      return true;
-  },
-
   // Properties
   getProperties: async () => {
-    await delay(300);
-    return getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
+    const response = await fetch(`${API_URL}/properties`, { headers: getAuthHeaders() });
+    if (!response.ok) throw new Error("Failed to fetch properties");
+    return await response.json();
   },
   addProperty: async (prop) => {
-    await delay(300);
-    const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
-    const newProp = { 
-        ...prop, 
-        id: Math.random().toString(36).substr(2, 9),
-        units: 0,
-        occupancy: 0 
-    };
-    properties.push(newProp);
-    setStorage(KEYS.PROPERTIES, properties);
-    await api.logActivity("Add Property", `Added new property: ${newProp.name}`, "settings");
-    return newProp;
+    const response = await fetch(`${API_URL}/properties`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(prop)
+    });
+    if (!response.ok) throw new Error("Failed to add property");
+    return await response.json();
   },
   updateProperty: async (updatedProp) => {
-    await delay(300);
-    const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
-    const index = properties.findIndex(p => p.id === updatedProp.id);
-    if (index !== -1) {
-        properties[index] = { ...properties[index], ...updatedProp };
-        setStorage(KEYS.PROPERTIES, properties);
-        await api.logActivity("Update Property", `Updated property details: ${updatedProp.name}`, "property");
-        return properties[index];
-    }
-    throw new Error("Property not found");
+    const response = await fetch(`${API_URL}/properties/${updatedProp.id}`, { // Assuming id is reachable
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(updatedProp)
+    });
+    if (!response.ok) throw new Error("Failed to update property");
+    return await response.json();
   },
-
-  getCaretakers: async () => {
-      await delay(400);
-      return getStorage(KEYS.CARETAKERS, DEFAULTS.CARETAKERS);
+  deleteProperty: async (id) => {
+    const response = await fetch(`${API_URL}/properties/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
+    return response.ok;
   },
   
-  assignCaretaker: async (propertyId, caretakerId) => {
-      await delay(500);
-      const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
-      const caretakers = getStorage(KEYS.CARETAKERS, DEFAULTS.CARETAKERS);
-      
-      const propertyIndex = properties.findIndex(p => p.id === propertyId);
-      if (propertyIndex === -1) throw new Error("Property not found");
-      
-      const caretaker = caretakers.find(c => c.id === caretakerId);
-      if (!caretaker) throw new Error("Caretaker not found");
-      
-      properties[propertyIndex] = { ...properties[propertyIndex], caretakerId: caretaker.id, caretakerName: caretaker.name };
-      setStorage(KEYS.PROPERTIES, properties);
-      await api.logActivity("Assign Caretaker", `Assigned ${caretaker.name} to property`, "property");
-      
-      return properties[propertyIndex];
-  },
-
-  deleteProperty: async (id) => {
-    await delay(300);
-    const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
-    const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-    const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-    
-    // Find units associated with property
-    const propertyUnitIds = units.filter(u => u.propertyId === id).map(u => u.id);
-    
-    // Filter out tenants linked to these units
-    const newTenants = tenants.filter(t => {
-        const tenantUnitId = typeof t.unitId === 'object' ? t.unitId.id : t.unitId;
-        return !propertyUnitIds.includes(tenantUnitId);
-    });
-    
-    // Filter out units for this property
-    const newUnits = units.filter(u => u.propertyId !== id);
-    
-    // Filter out property
-    const propName = properties.find(p => p.id === id)?.name || "Unknown";
-    const newProperties = properties.filter(p => p.id !== id);
-    
-    setStorage(KEYS.TENANTS, newTenants);
-    setStorage(KEYS.UNITS, newUnits);
-    setStorage(KEYS.PROPERTIES, newProperties);
-    
-    await api.logActivity("Delete Property", `Deleted property: ${propName}`, "property");
-    
-    return true;
-  },
-
-  // Units
+  // Units (Real)
   getUnits: async (propertyId) => {
-    await delay(300);
-    const allUnits = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-    if (!propertyId) return allUnits;
-    return allUnits.filter(u => u.propertyId === propertyId);
+    let url = `${API_URL}/units`;
+    if (propertyId) url += `?propertyId=${propertyId}`;
+    const response = await fetch(url, { headers: getAuthHeaders() });
+    if (!response.ok) return []; // Fallback empty
+    return await response.json();
   },
   addUnit: async (unit) => {
-      await delay(300);
-      const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-      const newUnit = { ...unit, id: Math.random().toString(36).substr(2, 9), status: 'vacant' };
-      units.push(newUnit);
-      setStorage(KEYS.UNITS, units);
-      await api.logActivity("Add Unit", `Added unit ${unit.unitNumber}`, "unit");
-      return newUnit;
+    const response = await fetch(`${API_URL}/units`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(unit)
+    });
+    if (!response.ok) throw new Error("Failed to add unit");
+    return await response.json();
   },
   updateUnit: async (unit) => {
-      await delay(300);
-      const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-      const index = units.findIndex(u => u.id === unit.id);
-      if (index !== -1) {
-          units[index] = { ...units[index], ...unit };
-          setStorage(KEYS.UNITS, units);
-          await api.logActivity("Update Unit", `Updated unit ${unit.unitNumber}`, "unit");
-          return units[index];
-      }
-      throw new Error("Unit not found");
+     const response = await fetch(`${API_URL}/units/${unit.id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(unit)
+    });
+    if (!response.ok) throw new Error("Failed to update unit");
+    return await response.json();
   },
   deleteUnit: async (id) => {
-      await delay(300);
-      const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-      const unitNum = units.find(u => u.id === id)?.unitNumber || "Unknown";
-      const newUnits = units.filter(u => u.id !== id);
-      setStorage(KEYS.UNITS, newUnits);
-      await api.logActivity("Delete Unit", `Deleted unit ${unitNum}`, "unit");
-      return true;
+     const response = await fetch(`${API_URL}/units/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
+    return response.ok;
   },
 
-  // Tenants
-  getTenants: async () => {
-    await delay(300);
-    const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-    const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-    // Enrich tenant with unit object for display if unitId exists
-    return tenants.map(t => {
-        const unit = units.find(u => u.id === t.unitId);
-        return {
-            ...t,
-            unitId: unit ? { ...unit, unitNumber: unit.unitNumber || unit.number } : t.unitId 
-        };
+  // Caretakers
+  getCaretakers: async () => {
+    const response = await fetch(`${API_URL}/users?role=caretaker`, { headers: getAuthHeaders() });
+    if (!response.ok) return [];
+    return await response.json();
+  },
+  assignCaretaker: async (propertyId, caretakerId) => {
+    const response = await fetch(`${API_URL}/properties/${propertyId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ caretakerId })
     });
+    if (!response.ok) throw new Error("Failed to assign caretaker");
+    return await response.json();
+  },
+
+  // Tenants - REAL
+  getTenants: async () => {
+    const response = await fetch(`${API_URL}/tenants`, { headers: getAuthHeaders() });
+    if (!response.ok) throw new Error("Failed to fetch tenants");
+    return await response.json();
   },
   addTenant: async (tenant) => {
-    await delay(300);
-    const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-    const newTenant = { ...tenant, id: Math.random().toString(36).substr(2, 9) };
-    tenants.push(newTenant);
-    setStorage(KEYS.TENANTS, tenants);
-    await api.logActivity("Register Tenant", `Registered new tenant: ${newTenant.name}`, "tenant");
-    
-    // Update unit status to occupied
-    if (tenant.unitId) {
-        const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-        const updatedUnits = units.map(u => u.id === tenant.unitId ? { ...u, status: 'occupied' } : u);
-        setStorage(KEYS.UNITS, updatedUnits);
-    }
-    
-    return newTenant;
+    const response = await fetch(`${API_URL}/tenants`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(tenant)
+    });
+    if (!response.ok) throw new Error("Failed to add tenant");
+    return await response.json();
   },
   updateTenant: async (tenant) => {
-      await delay(300);
-      const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-      const index = tenants.findIndex(t => t.id === tenant.id);
-      
-      if (index !== -1) {
-          // If unit changed, handle occupancy
-          const oldUnitId = typeof tenants[index].unitId === 'object' ? tenants[index].unitId.id : tenants[index].unitId;
-          const newUnitId = typeof tenant.unitId === 'object' ? tenant.unitId.id : tenant.unitId;
-
-          if (oldUnitId !== newUnitId) {
-             const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-             // Vacate old
-             if (oldUnitId) {
-                 const uIndex = units.findIndex(u => u.id === oldUnitId);
-                 if (uIndex !== -1) units[uIndex].status = 'vacant';
-             }
-             // Occupy new
-             if (newUnitId) {
-                 const uIndex = units.findIndex(u => u.id === newUnitId);
-                 if (uIndex !== -1) units[uIndex].status = 'occupied';
-             }
-             setStorage(KEYS.UNITS, units);
-          }
-
-          tenants[index] = { ...tenants[index], ...tenant };
-          setStorage(KEYS.TENANTS, tenants);
-          await api.logActivity("Update Tenant", `Updated tenant details: ${tenant.name}`, "tenant");
-          return tenants[index];
-      }
-      throw new Error("Tenant not found");
-  },
-  terminateLease: async (id) => {
-      await delay(300);
-      const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-      const index = tenants.findIndex(t => t.id === id);
-      if (index !== -1) {
-          const tenantName = tenants[index].name;
-          tenants[index].status = 'past';
-          tenants[index].leaseEnd = new Date().toISOString().split('T')[0];
-          setStorage(KEYS.TENANTS, tenants);
-          
-          // Vacate Unit
-          const unitId = typeof tenants[index].unitId === 'object' ? tenants[index].unitId.id : tenants[index].unitId;
-          if (unitId) {
-              const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-              const uIndex = units.findIndex(u => u.id === unitId);
-              if (uIndex !== -1) {
-                  units[uIndex].status = 'vacant';
-                  setStorage(KEYS.UNITS, units);
-              }
-          }
-          await api.logActivity("Terminate Lease", `Terminated lease for ${tenantName}`, "lease");
-          return true;
-      }
-      throw new Error("Tenant not found");
+     const response = await fetch(`${API_URL}/tenants/${tenant._id || tenant.id}`, { // Handle mongo _id
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(tenant)
+    });
+    if (!response.ok) throw new Error("Failed to update tenant");
+    return await response.json();
   },
   deleteTenant: async (id) => {
-      await delay(300);
-      const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-      const tenant = tenants.find(t => t.id === id);
-      
-      if (tenant) {
-          // Vacate Unit if active
-          if (tenant.status === 'active') {
-              const unitId = typeof tenant.unitId === 'object' ? tenant.unitId.id : tenant.unitId;
-              if (unitId) {
-                  const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-                  const uIndex = units.findIndex(u => u.id === unitId);
-                  if (uIndex !== -1) {
-                      units[uIndex].status = 'vacant';
-                      setStorage(KEYS.UNITS, units);
-                  }
-              }
-          }
-          
-          const newTenants = tenants.filter(t => t.id !== id);
-          setStorage(KEYS.TENANTS, newTenants);
-          await api.logActivity("Delete Tenant", `Deleted tenant: ${tenant.name}`, "tenant");
-          return true;
-      }
-      return false;
-  },
-
-  // Payments
-  getPayments: async () => {
-    await delay(300);
-    return getStorage(KEYS.PAYMENTS, DEFAULTS.PAYMENTS);
-  },
-  recordPayment: async (payment) => {
-    await delay(300);
-    const payments = getStorage(KEYS.PAYMENTS, DEFAULTS.PAYMENTS);
-    const newPayment = { ...payment, id: Math.random().toString(36).substr(2, 9), status: "Completed" };
-    payments.push(newPayment);
-    setStorage(KEYS.PAYMENTS, payments);
-    await api.logActivity("Record Payment", `Recorded payment of ${payment.amount} for tenant ID ${payment.tenantId}`, "payment");
-    return newPayment;
-  },
-
-  // Notifications
-  getNotifications: async () => {
-    await delay(200);
-    return getStorage(KEYS.NOTIFICATIONS, DEFAULTS.NOTIFICATIONS);
-  },
-  markNotificationRead: async (id) => {
-      const notes = getStorage(KEYS.NOTIFICATIONS, DEFAULTS.NOTIFICATIONS);
-      const updated = notes.map(n => n.id === id ? { ...n, read: true } : n);
-      setStorage(KEYS.NOTIFICATIONS, updated);
-      return updated;
-  },
-
-  // Dashboard Stats
-  getStats: async () => {
-    await delay(300);
-    const properties = getStorage(KEYS.PROPERTIES, DEFAULTS.PROPERTIES);
-    const units = getStorage(KEYS.UNITS, DEFAULTS.UNITS);
-    const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-    const payments = getStorage(KEYS.PAYMENTS, DEFAULTS.PAYMENTS);
-    
-    // Filter out orphaned units (units whose property doesn't exist)
-    const validUnits = units.filter(u => properties.some(p => p.id === u.propertyId));
-    
-    // Filter out orphaned tenants (tenants whose unit doesn't exist or is invalid)
-    const validTenants = tenants.filter(t => {
-        const unitId = typeof t.unitId === 'object' ? t.unitId.id : t.unitId;
-        return validUnits.some(u => u.id === unitId);
+     const response = await fetch(`${API_URL}/tenants/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
     });
-
-    const totalProperties = properties.length;
-    const totalUnits = validUnits.length;
-    const occupiedUnits = validUnits.filter(u => u.status === 'occupied').length;
-    const vacantUnits = totalUnits - occupiedUnits;
-
-    // Calculate collected vs outstanding
-    const collected = payments
-        .filter(p => p.status === 'Completed')
-        .reduce((acc, curr) => acc + (parseInt(curr.amount) || 0), 0);
-        
-    const outstanding = payments
-        .filter(p => p.status === 'Pending')
-        .reduce((acc, curr) => acc + (parseInt(curr.amount) || 0), 0);
-
-    // Estimate expected monthly rent from VALID occupied units
-    const expectedRent = validUnits
-        .filter(u => u.status === 'occupied')
-        .reduce((acc, curr) => acc + (parseInt(curr.rentAmount) || 0), 0);
-        
-    return {
-      totalProperties,
-      totalUnits,
-      occupiedUnits,
-      vacantUnits,
-      occupancyRate: totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0,
-      collectedThisMonth: collected,
-      outstandingAmount: outstanding,
-      expectedMonthlyRent: expectedRent
-    };
+    return response.ok;
   },
 
-  // Tools & Analytics
-  getActivityLogs: async () => {
-      await delay(300);
-      return getStorage(KEYS.ACTIVITY_LOGS, DEFAULTS.ACTIVITY_LOGS);
+  // Payments (Real)
+  getPayments: async () => {
+    const response = await fetch(`${API_URL}/payments`, { headers: getAuthHeaders() });
+    if (!response.ok) return [];
+    const data = await response.json();
+    // Transform to match frontend expectation (tenantId as name string for display)
+    return data.map(p => ({
+        ...p,
+        id: p._id, // Ensure ID is available as .id
+        tenantId: p.tenantId?.name || "Unknown",
+        unitId: p.unitId // Keep as object or ID depending on population
+    }));
   },
-  logActivity: async (action, description, type, user = "Admin User") => {
-      const logs = getStorage(KEYS.ACTIVITY_LOGS, DEFAULTS.ACTIVITY_LOGS);
-      const newLog = {
-          id: Math.random().toString(36).substr(2, 9),
-          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          user,
-          action,
-          description,
-          status: 'success',
-          type
-      };
-      logs.unshift(newLog); // Add to top
-      setStorage(KEYS.ACTIVITY_LOGS, logs);
-      return newLog;
-  },
-
-  getDocuments: async () => {
-      await delay(300);
-      return getStorage(KEYS.DOCUMENTS, DEFAULTS.DOCUMENTS);
-  },
-  addDocument: async (doc) => {
-      await delay(300);
-      const docs = getStorage(KEYS.DOCUMENTS, DEFAULTS.DOCUMENTS);
-      const newDoc = {
-          ...doc,
-          id: Math.random().toString(36).substr(2, 9),
-          uploadDate: new Date().toISOString().split('T')[0],
-          size: "1.2 MB" // Mock size
-      };
-      docs.push(newDoc);
-      setStorage(KEYS.DOCUMENTS, docs);
-      return newDoc;
-  },
-
-  getReminders: async () => {
-      await delay(300);
-      return getStorage(KEYS.REMINDERS, DEFAULTS.REMINDERS);
-  },
-  addReminder: async (reminder) => {
-      await delay(300);
-      const reminders = getStorage(KEYS.REMINDERS, DEFAULTS.REMINDERS);
-      const newReminder = { ...reminder, id: Math.random().toString(36).substr(2, 9), status: 'pending' };
-      reminders.push(newReminder);
-      setStorage(KEYS.REMINDERS, reminders);
-      return newReminder;
-  },
-
-  getExpenses: async () => {
-    await delay(300);
-    return getStorage(KEYS.EXPENSES, DEFAULTS.EXPENSES);
-  },
-  addExpense: async (expense) => {
-    await delay(300);
-    const expenses = getStorage(KEYS.EXPENSES, DEFAULTS.EXPENSES);
-    const newExpense = { 
-        ...expense, 
-        id: Math.random().toString(36).substr(2, 9),
-        date: new Date().toISOString().split('T')[0]
-    };
-    expenses.push(newExpense);
-    setStorage(KEYS.EXPENSES, expenses);
-    return newExpense;
+  recordPayment: async (paymentData) => {
+    const response = await fetch(`${API_URL}/payments`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentData)
+    });
+    if (!response.ok) throw new Error("Failed to record payment");
+    return await response.json();
   },
   
-  // Settings
+  emailReceipt: async (paymentId) => {
+      const response = await fetch(`${API_URL}/payments/${paymentId}/email`, {
+          method: 'POST',
+          headers: getAuthHeaders()
+      });
+      if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "Failed to send email");
+      }
+      return await response.json();
+  },
+  getNotifications: async () => [],
+  getStats: async () => {
+    const response = await fetch(`${API_URL}/dashboard/stats`, { headers: getAuthHeaders() });
+    if (!response.ok) return {}; 
+    return await response.json();
+  },
+  getActivityLogs: async () => [],
+  logActivity: async () => {},
+  getDocuments: async () => [],
+  addDocument: async () => {},
+  getReminders: async () => {
+      const response = await fetch(`${API_URL}/reminders`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+  },
+  addReminder: async (reminderData) => {
+      const response = await fetch(`${API_URL}/reminders`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(reminderData)
+      });
+      if (!response.ok) throw new Error("Failed to create reminder");
+      return await response.json();
+  },
+  deleteReminder: async (id) => {
+      await fetch(`${API_URL}/reminders/${id}`, {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+      });
+  },
+  getExpenses: async () => [],
   getSettings: async () => {
-      await delay(300);
-      return getStorage(KEYS.SETTINGS, DEFAULTS.SETTINGS);
+    const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders() });
+    if (!response.ok) return {}; // Return empty if failed or not set up
+    return await response.json();
   },
-  updateSettings: async (newSettings) => {
-      await delay(500);
-      setStorage(KEYS.SETTINGS, newSettings);
-      await api.logActivity("Update Settings", "Updated system and account settings", "settings");
-      return newSettings;
+  updateSettings: async (settings) => {
+    const response = await fetch(`${API_URL}/settings`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(settings)
+    });
+    if (!response.ok) throw new Error("Failed to update settings");
+    return await response.json();
   },
-
+  testSMTP: async (config) => {
+    const response = await fetch(`${API_URL}/settings/test-smtp`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(config)
+    });
+    if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "SMTP Test Failed");
+    }
+    return await response.json();
+  },
   getReportsData: async () => {
-    await delay(500);
-    // Derive real data for reports
-    const payments = getStorage(KEYS.PAYMENTS, DEFAULTS.PAYMENTS);
-    const tenants = getStorage(KEYS.TENANTS, DEFAULTS.TENANTS);
-    const expenses = getStorage(KEYS.EXPENSES, DEFAULTS.EXPENSES);
-    
-    // Revenue Data (Group by month - simplified for demo)
-    const revenueMap = {};
-    payments.forEach(p => {
-        const month = new Date(p.date).toLocaleString('default', { month: 'short' });
-        if (!revenueMap[month]) revenueMap[month] = { month, collected: 0, expected: 0 };
-        if (p.status === 'Completed') revenueMap[month].collected += parseInt(p.amount);
-        // Assuming expected is same as collected for completed, and amount for pending (simplified)
-        revenueMap[month].expected += parseInt(p.amount); 
-    });
-    // Fill in last 6 months if empty
-    // Generate last 6 months dynamically
-    const months = [];
-    for (let i = 5; i >= 0; i--) {
-        const d = new Date();
-        d.setMonth(d.getMonth() - i);
-        months.push(d.toLocaleString('default', { month: 'short' }));
-    }
-    const revenueData = months.map(m => revenueMap[m] || { month: m, collected: 0, expected: 0 });
-
-    // Tenant Data (Real Logic)
-    const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
-    let paidCount = 0;
-    let partialCount = 0;
-    let overdueCount = 0;
-
-    tenants.forEach(t => {
-        // Find payments for this tenant for this month
-        const tenantPayments = payments.filter(p => p.tenantId === t.id && p.date.startsWith(currentMonthStr));
-        const totalPaid = tenantPayments.filter(p => p.status === 'Completed').reduce((acc, p) => acc + (parseInt(p.amount)||0), 0);
-        const hasPending = tenantPayments.some(p => p.status === 'Pending');
-        
-        // Simple logic: if paid > 0, they are paid (or partial). If 0, overdue.
-        // In real app, compare vs unit rent.
-        if (totalPaid > 0) {
-            paidCount++;
-        } else if (hasPending) {
-            partialCount++;
-        } else {
-            overdueCount++;
-        }
-    });
-
-    const tenantData = [
-        { name: "Paid", value: paidCount, fill: "hsl(var(--chart-2))" }, // Emerald
-        { name: "Partial", value: partialCount, fill: "hsl(var(--chart-4))" }, // Amber
-        { name: "Overdue", value: overdueCount, fill: "hsl(var(--chart-1))" }, // Rose
-    ];
-    
-    // Avoid empty pie chart if no tenants
-    if (tenants.length === 0) {
-         tenantData[0].value = 1; 
-         tenantData[0].name = "No Tenants";
-         tenantData[0].fill = "#e5e7eb";
-    }
-
-    // Expenses
-    const expenseData = expenses.reduce((acc, curr) => {
-        const month = new Date(curr.date).toLocaleString('default', { month: 'short' });
-        if (!acc[month]) acc[month] = { month, amount: 0 };
-        acc[month].amount += parseInt(curr.amount);
-        return acc;
-    }, {});
-    const formattedExpenseData = months.map(m => expenseData[m] || { month: m, amount: 0 });
-
-    return { revenueData, tenantData, expenseData: formattedExpenseData };
+    const response = await fetch(`${API_URL}/reports`, { headers: getAuthHeaders() });
+    if (!response.ok) return {};
+    return await response.json();
   },
-
-  resetData: async () => {
-    await delay(500);
-    Object.values(KEYS).forEach(key => {
-        localStorage.removeItem(key);
-    });
-    window.location.reload();
-  }
+  resetData: async () => { localStorage.clear(); window.location.reload(); }
 };
-

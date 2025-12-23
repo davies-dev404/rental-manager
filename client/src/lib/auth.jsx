@@ -10,7 +10,15 @@ export function AuthProvider({ children }) {
         // Simulate session check
         const storedUser = localStorage.getItem("rental_user");
         if (storedUser) {
-            setUser(JSON.parse(storedUser));
+            const parsed = JSON.parse(storedUser);
+            // Check if this is a real user with a token, or old mock data
+            if (parsed && parsed.token) {
+                setUser(parsed);
+            } else {
+                console.log("Detecting stale mock user, clearing session.");
+                localStorage.removeItem("rental_user");
+                setUser(null);
+            }
         }
         setIsLoading(false);
     }, []);

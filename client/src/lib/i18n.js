@@ -422,7 +422,11 @@ const resources = {
       "activity_history": "Activity History",
       "activity_logs": "Activity Logs",
       "select_type": "Select Type",
-      "active": "Active"
+      "active": "Active",
+      "edit_tenant": "Edit Tenant",
+      "no_unit_assigned": "No Unit Assigned",
+      "assign_unit": "Assign Unit",
+      "edit_unit_desc": "Make changes to the unit here. Click save when you're done."
     }
   },
   fr: {

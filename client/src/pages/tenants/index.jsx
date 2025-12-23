@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Protect, PERMISSIONS } from "@/lib/access-control";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { generateCSVReport } from "@/lib/reports";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Filter, Phone, Mail, FileText, MoreHorizontal, Loader2, Save, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -49,7 +50,7 @@ function ViewLeaseDialog({ tenant, open, onOpenChange }) {
                     <div className="text-center mb-6">
                         <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg uppercase tracking-widest border-b pb-4">{t('lease_agreement')}</h3>
                     </div>
-                    {`${t('landlord')}: Dwello Inc.\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: typeof tenant.unitId === 'object' ? (tenant.unitId.unitNumber || 'N/A') : tenant.unitId })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: tenant.leaseStart })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
+                    {`${t('landlord')}: Dwello Inc.\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A') })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: tenant.leaseStart })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
                 </div>
                 <DialogFooter className="gap-2">
                      <Button variant="outline" size="sm"><Printer className="w-4 h-4 mr-2"/> {t('print')}</Button>
@@ -74,7 +75,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
             phone: tenant?.phone || "",
             idType: tenant?.idType || "national_id",
             nationalId: tenant?.nationalId || "",
-            unitId: typeof tenant?.unitId === 'object' ? tenant.unitId.id : (tenant?.unitId || ""),
+            unitId: (tenant?.unitId && typeof tenant?.unitId === 'object') ? (tenant.unitId._id || tenant.unitId.id) : (tenant?.unitId || "no_unit"),
             leaseStart: tenant?.leaseStart || ""
         }
     });
@@ -93,7 +94,9 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
     });
 
     function onSubmit(values) {
-        mutation.mutate({ ...values, id: tenant.id });
+        const payload = { ...values, id: tenant._id || tenant.id };
+        if (payload.unitId === "no_unit") payload.unitId = "";
+        mutation.mutate(payload);
     }
 
     return (<Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,6 +156,35 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                                 <FormMessage />
                                 </FormItem>)}/>
                         </div>
+                        
+                        <FormField control={form.control} name="unitId" render={({ field }) => {
+                             const { data: units } = useQuery({ queryKey: ["units"], queryFn: () => api.getUnits() });
+                             const currentUnitId = (tenant?.unitId && typeof tenant?.unitId === 'object') ? tenant.unitId._id : tenant?.unitId;
+                             // maintain current unit in list + vacant ones
+                             const availableUnits = units?.filter(u => u.status === 'vacant' || u._id === currentUnitId) || [];
+
+                             return (
+                            <FormItem>
+                                <FormLabel>{t('assign_unit')}</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder={t('select_unit_placeholder') || "Select a unit"}/>
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        <SelectItem value="no_unit">{t('no_unit_assigned') || "No Unit"}</SelectItem>
+                                        {availableUnits.map(unit => (
+                                            <SelectItem key={unit._id || unit.id} value={unit._id || unit.id}>
+                                                Unit {unit.unitNumber} ({unit.type}) - {unit.rentAmount}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                         )}}/>
+
                         <Button type="submit" disabled={mutation.isPending} className="w-full">
                             {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                             {t('save_changes')}
@@ -183,6 +215,7 @@ export default function TenantsPage() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["tenants"] });
             queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             toast({ title: t('tenant_deleted'), description: t('tenant_deleted_desc') });
         }
     });
@@ -192,6 +225,7 @@ export default function TenantsPage() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["tenants"] });
             queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             toast({ title: t('lease_terminated'), description: t('lease_terminated_desc') });
         }
     });
@@ -213,8 +247,8 @@ export default function TenantsPage() {
           <p className="text-muted-foreground mt-1">{t('tenants_desc')}</p>
         </div>
         <div className="flex items-center gap-2">
-            <Button variant="outline" className="shadow-sm">
-                <Download className="w-4 h-4 mr-2"/> {t('export')}
+            <Button variant="outline" onClick={() => generateCSVReport('tenants')}>
+                <Download className="w-4 h-4 mr-2"/> {t('export_csv')}
             </Button>
             <AddTenantDialog />
         </div>
@@ -243,17 +277,18 @@ export default function TenantsPage() {
                         <TableHead>{t('contact')}</TableHead>
                         <TableHead>{t('unit')}</TableHead>
                         <TableHead>{t('lease_status')}</TableHead>
+                        <TableHead>{t('payment_status')}</TableHead>
                         <TableHead className="text-right">{t('actions')}</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {isLoading ? (<TableRow>
-                            <TableCell colSpan={5} className="h-24 text-center">{t('loading')}</TableCell>
+                            <TableCell colSpan={6} className="h-24 text-center">{t('loading')}</TableCell>
                         </TableRow>) : tenants?.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">{t('no_tenants')}</TableCell>
+                            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">{t('no_tenants')}</TableCell>
                         </TableRow>
-                        ) : tenants.map((tenant) => (<TableRow key={tenant.id} className="hover:bg-muted/50 transition-colors">
+                        ) : (tenants || []).map((tenant) => (<TableRow key={tenant._id || tenant.id} className="hover:bg-muted/50 transition-colors">
                             <TableCell>
                                 <div className="flex items-center gap-3">
                                     <Avatar className="h-9 w-9 border border-border">
@@ -277,7 +312,7 @@ export default function TenantsPage() {
                             </TableCell>
                             <TableCell>
                                 <Badge variant="outline" className="bg-background font-mono">
-                                    {typeof tenant.unitId === 'object' ? (tenant.unitId.unitNumber || tenant.unitId.number || 'N/A') : tenant.unitId}
+                                    {(tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || tenant.unitId.number || 'N/A') : (tenant.unitId || 'N/A')}
                                 </Badge>
                             </TableCell>
                             <TableCell>
@@ -288,6 +323,15 @@ export default function TenantsPage() {
                                 `}>
                                     <span className="w-1.5 h-1.5 rounded-full bg-current mr-2"/>
                                     <span className="capitalize">{t(tenant.status)}</span>
+                                </Badge>
+                            </TableCell>
+                            <TableCell>
+                                <Badge variant="outline" className={
+                                    tenant.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    tenant.paymentStatus === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                    'bg-red-50 text-red-700 border-red-200'
+                                }>
+                                    {tenant.paymentStatus ? t(tenant.paymentStatus) : t('unpaid')}
                                 </Badge>
                             </TableCell>
                             <TableCell className="text-right">
@@ -321,7 +365,7 @@ export default function TenantsPage() {
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                         <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => terminateMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
+                                                        <AlertDialogAction onClick={() => terminateMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">
                                                             {t('terminate')}
                                                         </AlertDialogAction>
                                                     </AlertDialogFooter>
@@ -345,7 +389,7 @@ export default function TenantsPage() {
                                                     </AlertDialogHeader>
                                                     <AlertDialogFooter>
                                                         <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => deleteMutation.mutate(tenant.id)} className="bg-rose-600 hover:bg-rose-700">
+                                                        <AlertDialogAction onClick={() => deleteMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">
                                                             {t('delete')}
                                                         </AlertDialogAction>
                                                     </AlertDialogFooter>

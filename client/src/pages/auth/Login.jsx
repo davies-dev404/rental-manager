@@ -21,18 +21,35 @@ export default function LoginPage() {
     const [isSignup, setIsSignup] = useState(false);
     
     // Login State
-    const [adminEmail, setAdminEmail] = useState("admin@rental.com");
-    const [caretakerEmail, setCaretakerEmail] = useState("john@rental.com");
+    // Login State
+    const [adminEmail, setAdminEmail] = useState("");
+    const [adminPassword, setAdminPassword] = useState("");
+    const [caretakerEmail, setCaretakerEmail] = useState("");
+    const [caretakerPassword, setCaretakerPassword] = useState("");
     
     // Signup State
-    const [signupData, setSignupData] = useState({ name: "", email: "", password: "", role: "admin" });
+    const [signupData, setSignupData] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "admin" });
     const [showOTP, setShowOTP] = useState(false);
     const [otp, setOtp] = useState("");
 
-    const handleLogin = async (role) => {
+    const handleLogin = async (role = null) => {
         setIsLoading(true);
         try {
-            await login(role === "admin" ? adminEmail : caretakerEmail, role);
+            let email, password;
+            
+            if (role === "admin") {
+                email = adminEmail;
+                password = adminPassword;
+            } else if (role === "caretaker") {
+                email = caretakerEmail;
+                password = caretakerPassword;
+            } else {
+                // Post-signup auto-login
+                email = signupData.email;
+                password = signupData.password;
+            }
+
+            await login(email, password);
             setLocation("/");
         } catch (error) {
             // Error handled in auth context
@@ -42,31 +59,47 @@ export default function LoginPage() {
     };
 
     const initiateSignup = async () => {
-        if (!signupData.name || !signupData.email || !signupData.password) {
+        if (!signupData.name || !signupData.email || !signupData.password || !signupData.confirmPassword) {
             toast({ variant: "destructive", title: "Error", description: "Please fill in all fields" });
             return;
         }
+
+        if (signupData.password !== signupData.confirmPassword) {
+            toast({ variant: "destructive", title: "Error", description: "Passwords do not match" });
+            return;
+        }
+
         setIsLoading(true);
-        // Simulate sending OTP
-        await new Promise(r => setTimeout(r, 1000));
-        setIsLoading(false);
-        setShowOTP(true);
-        toast({ title: "Verification Code Sent", description: "Please check your email for the code (use 123456)" });
+        try {
+            // 1. REGISTER (sends OTP)
+            await api.registerUser(signupData);
+            
+            setIsLoading(false);
+            setShowOTP(true);
+            toast({ title: "Verification Code Sent", description: "Please check your email/console for the code." });
+        } catch (error) {
+            setIsLoading(false);
+            toast({ variant: "destructive", title: "Signup Failed", description: error.message });
+        }
     };
 
     const verifyOTP = async () => {
-        if (otp !== "123456") {
-            toast({ variant: "destructive", title: "Invalid Code", description: "Please try again" });
+        if (otp.length < 6) {
+            toast({ variant: "destructive", title: "Invalid Code", description: "Code must be 6 digits" });
             return;
         }
         setIsLoading(true);
         try {
-            const newUser = await api.registerUser(signupData);
-            await login(newUser.email, newUser.role); // Auto login
+            // 2. VERIFY EMAIL
+            const response = await api.verifyEmail(signupData.email, otp);
+            
+            // 3. AUTO LOGIN (using the password they just set)
+            await login(signupData.email, signupData.password); 
+            
             toast({ title: "Account Created", description: "Welcome to Dwello!" });
             setLocation("/");
         } catch (error) {
-            toast({ variant: "destructive", title: "Signup Failed", description: error.message });
+            toast({ variant: "destructive", title: "Verification Failed", description: error.message });
         } finally {
             setIsLoading(false);
         }
@@ -103,6 +136,10 @@ export default function LoginPage() {
                                 <Input type="password" placeholder="••••••••" value={signupData.password} onChange={(e) => setSignupData({...signupData, password: e.target.value})} />
                             </div>
                             <div className="space-y-2">
+                                <Label>Confirm Password</Label>
+                                <Input type="password" placeholder="••••••••" value={signupData.confirmPassword} onChange={(e) => setSignupData({...signupData, confirmPassword: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
                                 <Label>Role</Label>
                                 <Tabs defaultValue="admin" onValueChange={(v) => setSignupData({...signupData, role: v})}>
                                     <TabsList className="grid w-full grid-cols-2">
@@ -115,7 +152,7 @@ export default function LoginPage() {
                         <CardFooter>
                             <Button className="w-full" onClick={initiateSignup} disabled={isLoading}>
                                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                                Verify Email
+                                Send Verification Code
                             </Button>
                         </CardFooter>
                     </Card>
@@ -133,7 +170,7 @@ export default function LoginPage() {
                         <div className="flex items-center justify-center py-4">
                              <div className="space-y-2">
                                 <Input className="text-center text-2xl tracking-widest font-mono" maxLength={6} placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} />
-                                <p className="text-xs text-center text-muted-foreground">Use code 123456</p>
+                                <p className="text-xs text-center text-muted-foreground">Check server console logs for code</p>
                              </div>
                         </div>
                         <DialogFooter>
@@ -178,8 +215,7 @@ export default function LoginPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="admin-pass">Password</Label>
-                      <Input id="admin-pass" type="password" value="password" disabled/>
-                      <p className="text-xs text-muted-foreground">Any password works for demo</p>
+                      <Input id="admin-pass" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="••••••••"/>
                     </div>
                   </CardContent>
                   <CardFooter className="flex flex-col gap-3">
@@ -204,7 +240,7 @@ export default function LoginPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="caretaker-pass">Password</Label>
-                      <Input id="caretaker-pass" type="password" value="password" disabled/>
+                      <Input id="caretaker-pass" type="password" value={caretakerPassword} onChange={(e) => setCaretakerPassword(e.target.value)} placeholder="••••••••"/>
                     </div>
                   </CardContent>
                   <CardFooter className="flex flex-col gap-3">
