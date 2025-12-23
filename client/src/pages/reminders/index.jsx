@@ -183,58 +183,11 @@ export default function RemindersPage() {
         </TabsList>
 
         <TabsContent value={activeTab} className="space-y-4">
-          {filteredReminders.map(reminder => (<ReminderCard key={reminder.id} reminder={reminder}/>))}
+          {filteredReminders.map((reminder, i) => (<ReminderCard key={reminder._id || reminder.id || i} reminder={reminder}/>))}
         </TabsContent>
       </Tabs>
 
-      {/* Notification Settings */}
-      <Card className="border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle>{t('service_configuration')}</CardTitle>
-          <CardDescription>{t('service_configuration_desc')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <h4 className="font-medium text-sm">{t('email_provider')}</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <Mail className="w-4 h-4 mr-2"/> Gmail / Google
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <Mail className="w-4 h-4 mr-2"/> SendGrid
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <Mail className="w-4 h-4 mr-2"/> Mailgun
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <Mail className="w-4 h-4 mr-2"/> SMTP (Active)
-              </Button>
-            </div>
-          </div>
+      {/* Notification Settings removed as it belongs in Settings page */}
 
-          <Separator />
-
-          <div className="space-y-4">
-            <h4 className="font-medium text-sm">{t('sms_provider')}</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <MessageSquare className="w-4 h-4 mr-2"/> Twilio
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <MessageSquare className="w-4 h-4 mr-2"/> Africa's Talking
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <MessageSquare className="w-4 h-4 mr-2"/> Nexmo/Vonage
-              </Button>
-              <Button variant="outline" className="h-10 justify-start" onClick={() => setLocation('/settings?tab=notifications')}>
-                <MessageSquare className="w-4 h-4 mr-2"/> AWS SNS
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="border-t bg-muted/20">
-          <Button onClick={() => setLocation('/settings?tab=notifications')}>{t('go_to_advanced')}</Button>
-        </CardFooter>
-      </Card>
     </div>);
 }

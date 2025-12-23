@@ -16,11 +16,16 @@ import { usePreferences } from "@/lib/currency";
 
 const paymentSchema = z.object({
     tenantId: z.string().min(1, "Tenant is required"),
-    amount: z.coerce.number().min(1, "Amount must be greater than 0"),
+    rentAmount: z.coerce.number().min(0).default(0),
+    depositAmount: z.coerce.number().min(0).default(0),
     date: z.string(),
     method: z.enum(["cash", "bank", "mobile_money", "lipa_na_mpesa"]),
     status: z.enum(["paid", "partial"]),
     monthCovered: z.string(),
+    nextPaymentDate: z.string().optional(),
+}).refine(data => data.rentAmount > 0 || data.depositAmount > 0, {
+    message: "At least one amount must be greater than 0",
+    path: ["rentAmount"]
 });
 
 export function RecordPaymentDialog() {
@@ -34,11 +39,13 @@ export function RecordPaymentDialog() {
         resolver: zodResolver(paymentSchema),
         defaultValues: {
             tenantId: "",
-            amount: 0,
+            rentAmount: 0,
+            depositAmount: 0,
             date: new Date().toISOString().split('T')[0],
             method: "mobile_money",
             status: "paid",
-            monthCovered: new Date().toISOString().slice(0, 7)
+            monthCovered: new Date().toISOString().slice(0, 7),
+            nextPaymentDate: ""
         }
     });
 
@@ -52,7 +59,7 @@ export function RecordPaymentDialog() {
             form.reset();
             
             // Simulate Email Sending
-            const tenant = tenants?.find(t => t.id === variables.tenantId);
+            const tenant = tenants?.find(t => (t._id || t.id) === variables.tenantId);
             const tenantEmail = tenant?.email || "tenant@example.com";
             
             toast({ 
@@ -66,11 +73,11 @@ export function RecordPaymentDialog() {
     });
 
     function onSubmit(values) {
-        const tenant = tenants?.find(t => t.id === values.tenantId);
+        const tenant = tenants?.find(t => (t._id || t.id) === values.tenantId);
         if (!tenant) return;
         mutation.mutate({
             ...values,
-            unitId: tenant.unitId
+            unitId: typeof tenant.unitId === 'object' ? (tenant.unitId._id || tenant.unitId.id) : tenant.unitId
         });
     }
 
@@ -99,7 +106,7 @@ export function RecordPaymentDialog() {
                                     </FormControl>
                                     <SelectContent>
                                         {tenants?.map(tenant => (
-                                            <SelectItem key={tenant.id} value={tenant.id}>
+                                            <SelectItem key={tenant._id || tenant.id} value={tenant._id || tenant.id}>
                                                 {tenant.name} (Unit {typeof tenant.unitId === 'object' ? (tenant.unitId.unitNumber || 'N/A') : tenant.unitId?.toString().replace('un', '')})
                                             </SelectItem>
                                         ))}
@@ -110,20 +117,49 @@ export function RecordPaymentDialog() {
                         )}/>
                         
                         <div className="grid grid-cols-2 gap-4">
-                            <FormField control={form.control} name="amount" render={({ field }) => (
+                            <FormField control={form.control} name="rentAmount" render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>{t('amount')} ({currency})</FormLabel>
+                                    <FormLabel>{t('rent_amount') || "Rent Amount"} ({currency})</FormLabel>
                                     <FormControl>
                                         <Input type="number" {...field}/>
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}/>
-                             <FormField control={form.control} name="date" render={({ field }) => (
+                             <FormField control={form.control} name="depositAmount" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>{t('deposit_amount') || "Deposit Amount"} ({currency})</FormLabel>
+                                    <FormControl>
+                                        <Input type="number" {...field}/>
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}/>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField control={form.control} name="date" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{t('date')}</FormLabel>
                                     <FormControl>
-                                        <Input type="date" {...field}/>
+                                        <Input 
+                                            type="date" 
+                                            {...field} 
+                                            value={field.value ? field.value.split('T')[0] : ""}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}/>
+                             <FormField control={form.control} name="nextPaymentDate" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>{t('next_rent_due') || "Next Payment Due"}</FormLabel>
+                                    <FormControl>
+                                        <Input 
+                                            type="date" 
+                                            {...field} 
+                                            value={field.value && !isNaN(new Date(field.value).getTime()) ? new Date(field.value).toISOString().split('T')[0] : ""}
+                                        />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -134,7 +170,7 @@ export function RecordPaymentDialog() {
                              <FormField control={form.control} name="method" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{t('payment_method')}</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl>
                                             <SelectTrigger>
                                                 <SelectValue />
@@ -153,7 +189,7 @@ export function RecordPaymentDialog() {
                              <FormField control={form.control} name="status" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{t('status')}</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <Select onValueChange={field.onChange} value={field.value}>
                                         <FormControl>
                                             <SelectTrigger>
                                                 <SelectValue />
@@ -164,6 +200,22 @@ export function RecordPaymentDialog() {
                                             <SelectItem value="partial">{t('partial_payment')}</SelectItem>
                                         </SelectContent>
                                     </Select>
+                                    <FormMessage />
+                                </FormItem>
+                            )}/>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4">
+                             <FormField control={form.control} name="monthCovered" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>{t('month_covered') || "Month/Period"}</FormLabel>
+                                    <FormControl>
+                                        <Input 
+                                            type="month" 
+                                            {...field} 
+                                            value={field.value && field.value.length >= 7 ? field.value.slice(0, 7) : field.value}
+                                        />
+                                    </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}/>

@@ -44,6 +44,9 @@ export default function ReportsPage() {
               <SelectItem value="1year">{t('last_1_year')}</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={() => generateCSVReport('payments')}>
+            <FileText className="w-4 h-4 mr-2"/> {t('export_csv')}
+          </Button>
           <Button variant="outline" onClick={() => exportToPDF()}>
             <Download className="w-4 h-4 mr-2"/> {t('export_pdf')}
           </Button>

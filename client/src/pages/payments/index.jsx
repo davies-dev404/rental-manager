@@ -103,14 +103,48 @@ const printReceipt = (payment, currency) => {
 };
 
 import { RecordPaymentDialog } from "@/components/dialogs/RecordPaymentDialog";
+import Receipt from "@/components/Receipt";
+
 export default function PaymentsPage() {
     const { t } = useTranslation();
     const { data: payments, isLoading } = useQuery({
         queryKey: ["payments"],
         queryFn: api.getPayments,
     });
+    const { data: settings } = useQuery({
+        queryKey: ["settings"],
+        queryFn: api.getSettings
+    });
+
     const { formatCurrency, currency } = usePreferences();
     const [sortBy, setSortBy] = useState("date");
+    // const [receiptPayment, setReceiptPayment] = useState(null); // No longer needed for CSS print
+
+    const handlePrintReceipt = async (payment) => {
+        try {
+            toast({ title: t('generating_pdf'), description: t('please_wait') });
+            // Fetch PDF blob directly
+            const response = await fetch(`${api.API_URL}/payments/${payment._id}/pdf`, {
+                headers: api.getAuthHeaders()
+            });
+
+            if (!response.ok) throw new Error("Failed to generate PDF");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            
+            // Open in new tab for printing
+            const printWindow = window.open(url, '_blank');
+            if (printWindow) {
+                printWindow.focus();
+                // printWindow.print(); // Optional: Auto-trigger print
+            } else {
+                 toast({ variant: "destructive", title: t('error'), description: "Pop-up blocked. Please allow pop-ups." });
+            }
+        } catch (error) {
+             toast({ variant: "destructive", title: t('error'), description: error.message });
+        }
+    };
     const sortedPayments = payments ? [...payments].sort((a, b) => {
         switch (sortBy) {
             case "date":
@@ -126,14 +160,21 @@ export default function PaymentsPage() {
 
     // Helper for email receipt toast
     const { toast } = useToast();
-    const handleEmailReceipt = (payment) => {
-         toast({ 
-            title: t('receipt_sent'), 
-            description: t('receipt_sent_desc') 
-        });
+    const [sendingEmailId, setSendingEmailId] = useState(null);
+    const handleEmailReceipt = async (payment) => {
+        try {
+            setSendingEmailId(payment._id || payment.id);
+            toast({ title: t('sending_email'), description: t('please_wait') });
+            await api.emailReceipt(payment._id || payment.id);
+            toast({ title: t('success'), description: t('receipt_sent_desc') });
+        } catch (error) {
+            toast({ variant: "destructive", title: t('error'), description: error.message });
+        } finally {
+            setSendingEmailId(null);
+        }
     };
 
-    return (<div className="space-y-8">
+    return (<div className="space-y-8 print:hidden">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
             <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">{t('payments')}</h2>
@@ -186,7 +227,7 @@ export default function PaymentsPage() {
                 <TableBody>
                     {isLoading ? (<TableRow>
                             <TableCell colSpan={7} className="h-24 text-center">{t('loading')}</TableCell>
-                        </TableRow>) : sortedPayments.map((payment) => (<TableRow key={payment.id} className="hover:bg-muted/50 transition-colors">
+                        </TableRow>) : sortedPayments.map((payment) => (<TableRow key={payment._id || payment.id} className="hover:bg-muted/50 transition-colors">
                             <TableCell className="font-medium text-sm">{payment.date}</TableCell>
                             <TableCell className="text-muted-foreground text-xs uppercase tracking-wide">
                                 {payment.tenantId}
@@ -210,11 +251,11 @@ export default function PaymentsPage() {
                             </TableCell>
                             <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => printReceipt(payment, currency)}>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handlePrintReceipt(payment)}>
                                         <Printer className="w-4 h-4"/>
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEmailReceipt(payment)}>
-                                        <Mail className="w-4 h-4"/>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEmailReceipt(payment)} disabled={sendingEmailId === (payment._id || payment.id)}>
+                                        {sendingEmailId === (payment._id || payment.id) ? <Loader2 className="w-4 h-4 animate-spin"/> : <Mail className="w-4 h-4"/>}
                                     </Button>
                                 </div>
                             </TableCell>
@@ -223,5 +264,8 @@ export default function PaymentsPage() {
             </Table>
         </CardContent>
       </Card>
+
+      
+
     </div>);
 }
