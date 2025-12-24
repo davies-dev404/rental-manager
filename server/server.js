@@ -22,7 +22,12 @@ app.use(limiter);
 
 // Standard Middleware
 app.use(cors({
-    origin: true, // Allow any origin in development
+    origin: [
+        'http://localhost:5173', 
+        'https://rental-manager-2sto.vercel.app', 
+        'https://rental-manager-sikj.onrender.com',
+        'https://rental-manager-seven.vercel.app'
+    ],
     credentials: true
 }));
 app.use(express.json());
