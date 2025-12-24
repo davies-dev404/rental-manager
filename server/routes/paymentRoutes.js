@@ -159,11 +159,21 @@ router.post('/:id/email', protect, async (req, res) => {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id });
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
-        await sendReceiptEmail(req.params.id);
-        res.json({ message: 'Receipt email sent successfully' });
+        try {
+            await sendReceiptEmail(req.params.id);
+            res.json({ message: 'Receipt email sent successfully' });
+        } catch (emailError) {
+             console.error("Inner Email/PDF Error:", emailError);
+             // Check if it's a timeout
+             if (emailError.code === 'ETIMEDOUT') {
+                 return res.status(504).json({ message: 'Email connection timed out. Check SMTP settings.', error: emailError.message });
+             }
+             res.status(500).json({ message: `Failed to send email: ${emailError.message}`, error: emailError.message });
+        }
+
     } catch (error) {
-        console.error("Resend Email Error:", error);
-        res.status(500).json({ message: `Failed to send email: ${error.message}`, error: error.message });
+        console.error("Resend Email Route Error:", error);
+        res.status(500).json({ message: `System error: ${error.message}`, error: error.message });
     }
 });
 
