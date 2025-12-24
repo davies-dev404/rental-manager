@@ -105,8 +105,16 @@ router.post('/', protect, async (req, res) => {
     if (rAmt > 0 && dAmt > 0) paymentType = 'Combined';
     else if (dAmt > 0) paymentType = 'Deposit';
 
+    const Tenant = require('../models/Tenant');
+    const tenant = await Tenant.findById(tenantId);
+    
+    if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+    }
+
     const payment = await Payment.create({
         tenantId,
+        unitId: tenant.unitId,
         amount: totalAmount,
         rentAmount: rAmt,
         depositAmount: dAmt,

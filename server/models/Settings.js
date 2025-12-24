@@ -8,6 +8,10 @@ const settingsSchema = new mongoose.Schema({
   orgAddress: { type: String, default: '' },
   taxId: { type: String, default: '' },
   
+  // App Preferences
+  currency: { type: String, default: 'USD' },
+  timezone: { type: String, default: 'UTC' },
+  
   // Notification Settings (toggles)
   notifications: {
       email: { type: Boolean, default: true },

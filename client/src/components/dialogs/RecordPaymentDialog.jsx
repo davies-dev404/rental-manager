@@ -55,6 +55,7 @@ export function RecordPaymentDialog() {
             queryClient.invalidateQueries({ queryKey: ["payments"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
             queryClient.invalidateQueries({ queryKey: ["reports_data"] });
+            queryClient.invalidateQueries({ queryKey: ["tenants"] });
             setOpen(false);
             form.reset();
             
