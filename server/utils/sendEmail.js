@@ -12,7 +12,7 @@ const sendEmail = async (options) => {
       const settings = await Settings.findOne();
       const smtpSettings = settings?.integrations?.email?.smtp;
       
-      if (smtpSettings) {
+      if (smtpSettings && smtpSettings.host) {
           const secure = smtpSettings.port === 465;
           console.log(`Configuring SMTP Transport: ${smtpSettings.host}:${smtpSettings.port} (Secure: ${secure})`);
           transporter = nodemailer.createTransport({
