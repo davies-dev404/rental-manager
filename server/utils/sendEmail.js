@@ -23,8 +23,10 @@ const sendEmail = async (options) => {
               user: smtpSettings.user,
               pass: smtpSettings.pass,
             },
-            connectionTimeout: 10000, // Fail faster (10s) instead of waiting 2 mins
-            greetingTimeout: 10000
+            connectionTimeout: 30000, // Wait 30s
+            greetingTimeout: 30000,
+            debug: true, // Show debug logs
+            logger: true // Log to console
           });
           fromEmail = smtpSettings.fromEmail || fromEmail;
           fromName = settings.orgName || fromName; // Use Org Name as Sender Name
@@ -44,6 +46,10 @@ const sendEmail = async (options) => {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
         },
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        debug: true,
+        logger: true
       });
       console.log("Using .env SMTP Settings");
   }
