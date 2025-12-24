@@ -38,10 +38,13 @@ const sendEmail = async (options) => {
 
   // 2. Fallback to Env if no DB settings found
   if (!transporter && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      console.log("Configuring SMTP Transport from ENV");
+      const envPort = process.env.SMTP_PORT || 587;
+      const envSecure = parseInt(envPort) === 465;
+      console.log(`Configuring SMTP Transport from ENV: ${process.env.SMTP_HOST}:${envPort} (Secure: ${envSecure})`);
       transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT || 587,
+        port: envPort,
+        secure: envSecure,
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
