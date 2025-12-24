@@ -70,6 +70,10 @@ const getReceiptEmailBody = (payment, tenantName, settings) => {
                     <td style="padding-bottom: 10px; color: #0f172a; font-size: 16px; text-align: right;">${date}</td>
                 </tr>
                 <tr>
+                    <td style="padding-bottom: 10px; color: #64748b; font-size: 14px;">Time</td>
+                    <td style="padding-bottom: 10px; color: #0f172a; font-size: 16px; text-align: right;">${new Date(payment.date).toLocaleTimeString()}</td>
+                </tr>
+                <tr>
                     <td style="color: #64748b; font-size: 14px;">Reference ID</td>
                     <td style="color: #0f172a; font-size: 14px; text-align: right; font-family: monospace;">${payment._id}</td>
                 </tr>

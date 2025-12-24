@@ -23,8 +23,18 @@ const EXCHANGE_RATES = {
 };
 
 export function PreferencesProvider({ children }) {
-    const [currency, setCurrency] = useState("USD");
-    const [timezone, setTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    const [currency, setCurrency] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem("rental_currency") || "USD";
+        }
+        return "USD";
+    });
+    const [timezone, setTimezone] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem("rental_timezone") || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        }
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    });
 
     useEffect(() => {
         const loadPrefs = async () => {

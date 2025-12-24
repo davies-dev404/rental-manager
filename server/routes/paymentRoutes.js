@@ -163,7 +163,7 @@ router.post('/:id/email', protect, async (req, res) => {
         res.json({ message: 'Receipt email sent successfully' });
     } catch (error) {
         console.error("Resend Email Error:", error);
-        res.status(500).json({ message: 'Failed to send email', error: error.message });
+        res.status(500).json({ message: `Failed to send email: ${error.message}`, error: error.message });
     }
 });
 

@@ -35,6 +35,10 @@ router.put('/', async (req, res) => {
         if (req.body.orgAddress) settings.orgAddress = req.body.orgAddress;
         if (req.body.taxId) settings.taxId = req.body.taxId;
         
+        // App Preferences
+        if (req.body.currency) settings.currency = req.body.currency;
+        if (req.body.timezone) settings.timezone = req.body.timezone;
+        
         if (req.body.notifications) settings.notifications = req.body.notifications;
         
         // Handle Integrations (Deep Merge or Replacement)
