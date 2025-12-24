@@ -31,6 +31,10 @@ export default function Settings() {
     const { currency, changeCurrency, currencies, timezone, changeTimezone } = usePreferences();
     const { theme, setTheme } = useTheme();
     const timezones = Intl.supportedValuesOf('timeZone');
+    if (!timezones.includes("Africa/Nairobi")) {
+        timezones.push("Africa/Nairobi");
+        timezones.sort();
+    }
     const [activeTab, setActiveTab] = useState("account");
 
     useEffect(() => {
