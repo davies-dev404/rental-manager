@@ -23,10 +23,11 @@ const sendEmail = async (options) => {
               user: smtpSettings.user,
               pass: smtpSettings.pass,
             },
-            connectionTimeout: 30000, // Wait 30s
+            connectionTimeout: 30000,
             greetingTimeout: 30000,
             debug: true, // Show debug logs
-            logger: true // Log to console
+            logger: true, // Log to console
+            family: 4 // Force IPv4 to prevent timeouts
           });
           fromEmail = smtpSettings.fromEmail || fromEmail;
           fromName = settings.orgName || fromName; // Use Org Name as Sender Name
@@ -52,7 +53,8 @@ const sendEmail = async (options) => {
         connectionTimeout: 30000,
         greetingTimeout: 30000,
         debug: true,
-        logger: true
+        logger: true,
+        family: 4 // Force IPv4
       });
       console.log("Using .env SMTP Settings");
   }
