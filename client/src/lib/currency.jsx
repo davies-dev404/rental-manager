@@ -58,9 +58,8 @@ export function PreferencesProvider({ children }) {
     };
 
     const formatCurrency = (amount) => {
-        const { rate, symbol, digits } = EXCHANGE_RATES[currency];
-        const converted = amount * rate;
-        return `${symbol} ${converted.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+        const { symbol, digits } = EXCHANGE_RATES[currency];
+        return `${symbol} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
     };
 
     const formatDate = (date, formatStr = 'PPP') => {
