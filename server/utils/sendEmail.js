@@ -12,26 +12,30 @@ const sendEmail = async (options) => {
       const settings = await Settings.findOne();
       const smtpSettings = settings?.integrations?.email?.smtp;
       
-      if (smtpSettings && smtpSettings.user && smtpSettings.pass) {
+      const secure = smtpSettings.port === 465;
+          console.log(`Configuring SMTP Transport: ${smtpSettings.host}:${smtpSettings.port} (Secure: ${secure})`);
           transporter = nodemailer.createTransport({
             host: smtpSettings.host,
             port: smtpSettings.port,
-            secure: smtpSettings.port === 465,
+            secure: secure,
             auth: {
               user: smtpSettings.user,
               pass: smtpSettings.pass,
             },
+            connectionTimeout: 10000, // Fail faster (10s) instead of waiting 2 mins
+            greetingTimeout: 10000
           });
           fromEmail = smtpSettings.fromEmail || fromEmail;
           fromName = settings.orgName || fromName; // Use Org Name as Sender Name
           console.log("Using Database SMTP Settings");
       }
   } catch (dbErr) {
-      console.error("Failed to fetch settings for email:", dbErr);
+      console.error("Failed to fetch settings for email:", dbErr.message);
   }
 
   // 2. Fallback to Env if no DB settings found
   if (!transporter && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      console.log("Configuring SMTP Transport from ENV");
       transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: process.env.SMTP_PORT || 587,
