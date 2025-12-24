@@ -29,28 +29,46 @@ const generateReceiptPDF = (payment, settings) => {
             const secondaryColor = '#64748b';
             const accentColor = '#10b981';
 
+
+            // --- Watermark (Background) ---
+            doc.save();
+            doc.rotate(-45, { origin: [300, 400] });
+            doc.fontSize(100).fillColor('#f1f5f9').opacity(0.5).text('DWELLO', 100, 400, { align: 'center', width: 400 });
+            doc.restore();
+
+            // --- Header With Logo ---
+            const logoPath = require('path').join(__dirname, '../assets/logo.png');
+            try {
+                doc.image(logoPath, 50, 45, { width: 80 }); 
+            } catch (e) {
+                console.warn("Logo not found:", e.message);
+                // Fallback text if logo missing
+                 doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text('Dwello', 50, 55);
+            }
+
             // --- Business Info (Top Right) ---
-            const businessName = settings?.orgName || "Rental Manager";
-            const businessEmail = settings?.orgEmail || "";
+            const businessName = settings?.orgName || "Dwello"; // Default to Dwello
+            const businessEmail = settings?.orgEmail || "support@dwello.com";
             const businessPhone = settings?.orgPhone || "";
             const businessAddress = settings?.orgAddress || "";
 
-            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text(businessName || "M", { align: 'right' });
+            doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, { align: 'right' });
             if (businessEmail) doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text(businessEmail, { align: 'right' });
             if (businessPhone) doc.text(businessPhone, { align: 'right' });
             if (businessAddress) doc.text(businessAddress, { align: 'right' });
 
-            // --- Title (Top Left) ---
-            doc.moveUp(3); 
-            doc.fontSize(30).font('Helvetica-Bold').fillColor(primaryColor).text('RECEIPT', { align: 'left' });
+            // --- Title ---
+            doc.moveDown(4); // Move past logo
+            doc.fontSize(24).font('Helvetica-Bold').fillColor(primaryColor).text('PAYMENT RECEIPT', 50, doc.y, { align: 'left', characterSpacing: 2 });
+            
             if (payment._id) {
-                doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text(`Payment ID: #${payment._id.toString().substring(0, 8).toUpperCase()}`, { align: 'left' });
+                doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text(`#${payment._id.toString().substring(0, 8).toUpperCase()}`, { align: 'left' });
             }
             
-            doc.moveDown(2);
+            doc.moveDown(1.5);
 
             // --- Divider ---
-            doc.strokeColor('#e2e8f0').lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+            doc.strokeColor('#e2e8f0').lineWidth(2).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
             doc.moveDown(2);
 
             // --- Main Info Grid ---
@@ -82,34 +100,36 @@ const generateReceiptPDF = (payment, settings) => {
             doc.moveDown(3);
 
             // --- Amount Box ---
-            doc.rect(50, doc.y, 495, 80).fill('#f8fafc'); 
-            let amountY = doc.y + 15;
+            doc.rect(50, doc.y, 495, 100).fill('#f8fafc'); 
+            let amountY = doc.y + 20;
             
             doc.fillColor(primaryColor);
             
             // Rent Row
             if (payment.rentAmount > 0) {
-                doc.fontSize(10).font('Helvetica').text('Rent Amount', 70, amountY);
+                doc.fontSize(10).font('Helvetica').text('Rent Payment', 70, amountY);
                 doc.text(`${payment.rentAmount.toLocaleString()}`, 450, amountY, { align: 'right' });
-                amountY += 15;
+                amountY += 20;
             }
 
             // Deposit Row
             if (payment.depositAmount > 0) {
                 doc.fontSize(10).font('Helvetica').text('Security Deposit', 70, amountY);
                 doc.text(`${payment.depositAmount.toLocaleString()}`, 450, amountY, { align: 'right' });
-                amountY += 15;
+                amountY += 20;
             }
 
             // Total Row
-            doc.fontSize(12).font('Helvetica-Bold').text('TOTAL PAID', 70, amountY + 5);
+            doc.strokeColor('#e2e8f0').lineWidth(1).moveTo(70, amountY + 5).lineTo(525, amountY + 5).stroke();
+            doc.fontSize(14).font('Helvetica-Bold').text('TOTAL PAID', 70, amountY + 15);
             const amount = typeof payment.amount === 'number' ? payment.amount.toLocaleString() : '0';
-            doc.fontSize(18).font('Helvetica-Bold').fillColor(accentColor).text(`${amount}`, 450, amountY + 2, { align: 'right' });
+            doc.fontSize(20).font('Helvetica-Bold').fillColor(accentColor).text(`${amount}`, 450, amountY + 10, { align: 'right' });
 
-            doc.moveDown(5);
+            doc.moveDown(8);
 
             // --- Footer ---
-            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for your payment!', { align: 'center' });
+            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for choosing Dwello!', { align: 'center' });
+            doc.fontSize(8).text('Computer generated receipt, no signature required.', { align: 'center' });
             
             doc.end();
         } catch (error) {
