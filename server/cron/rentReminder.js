@@ -64,20 +64,44 @@ async function processReminder(reminder) {
 }
 
 async function sendNotification(tenant, reminder) {
-    console.log(`📧 Sending ${reminder.method} to ${tenant.name}: ${reminder.title}`);
+    console.log(`📣 Processing notification for ${tenant.name}: ${reminder.title}`);
     
-    if (reminder.method === 'email') {
-        try {
-            await sendEmail({
+    try {
+        // Fetch global settings to see what channels are enabled
+        const settings = await require('../models/Settings').findOne();
+        const notifications = settings?.notifications || {};
+
+        // 1. Email (Default)
+        if (notifications.email !== false) { // Default to true if undefined
+             await sendEmail({
                 email: tenant.email,
                 subject: reminder.title,
                 message: `<p>Hello ${tenant.name},</p><p>${reminder.description || reminder.title}</p><p>Thank you,<br>Rental Management</p>`
             });
-        } catch (err) {
-            console.error("Failed to send email:", err.message);
         }
+
+        // 2. SMS
+        if (notifications.sms === true && tenant.phone) {
+             const sendSMS = require('../utils/sendSMS');
+             await sendSMS({
+                 phone: tenant.phone,
+                 message: `${reminder.title}: ${reminder.description || ''} - Rental Management`
+             });
+        }
+
+        // 3. WhatsApp
+        // Check if either specific whatsapp toggle or just generally enabled if we had one
+        if (notifications.whatsapp === true && tenant.phone) {
+             const sendWhatsApp = require('../utils/sendWhatsApp');
+             await sendWhatsApp({
+                 phone: tenant.phone,
+                 message: `*${reminder.title}*\n\n${reminder.description || ''}\n\n_Rental Management_`
+             });
+        }
+
+    } catch (err) {
+        console.error("Failed to send notification:", err.message);
     }
-    // SMS logic would go here
 }
 
 module.exports = startRentReminders;

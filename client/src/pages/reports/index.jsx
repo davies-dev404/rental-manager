@@ -12,6 +12,8 @@ import { useTranslation } from "react-i18next";
 import { exportToPDF, generateCSVReport } from "@/lib/reports";
 import { usePreferences } from "@/lib/currency";
 
+import { TaxCalculator } from "@/components/tools/TaxCalculator";
+
 export default function ReportsPage() {
     const { t } = useTranslation();
     const { formatCurrency } = usePreferences();
@@ -58,6 +60,7 @@ export default function ReportsPage() {
           <TabsTrigger value="revenue">{t('revenue')}</TabsTrigger>
           <TabsTrigger value="tenants">{t('tenant_status')}</TabsTrigger>
           <TabsTrigger value="expenses">{t('expenses')}</TabsTrigger>
+          <TabsTrigger value="kra">{t('kra_services') || "KRA Services"}</TabsTrigger>
           <TabsTrigger value="summary">{t('summary')}</TabsTrigger>
         </TabsList>
 
@@ -206,6 +209,22 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="kra" className="space-y-4">
+             <div className="grid gap-6 md:grid-cols-2">
+                 <TaxCalculator />
+                 <Card className="border-border/50">
+                    <CardHeader>
+                        <CardTitle>{t('kra_info_title') || "About Monthly Rental Income (MRI)"}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 text-sm text-muted-foreground">
+                        <p>{t('kra_info_1') || "MRI is a tax payable by resident persons (individual or company) on rental income earned in Kenya."}</p>
+                        <p>{t('kra_info_2') || "The rate is 7.5% of the gross rent received. No expenses are deducted."}</p>
+                        <p>{t('kra_info_3') || "Returns are filed monthly via iTax on or before the 20th of the following month."}</p>
+                    </CardContent>
+                 </Card>
+             </div>
         </TabsContent>
 
         <TabsContent value="summary" className="space-y-4">

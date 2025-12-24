@@ -6,7 +6,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Get All Expenses
 router.get('/', protect, async (req, res) => {
     try {
-        const expenses = await Expense.find().sort({ date: -1 });
+        const expenses = await Expense.find({ user: req.user.id }).sort({ date: -1 });
         res.json(expenses);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -16,7 +16,7 @@ router.get('/', protect, async (req, res) => {
 // Add Expense
 router.post('/', protect, async (req, res) => {
     try {
-        const expense = await Expense.create(req.body);
+        const expense = await Expense.create({ ...req.body, user: req.user.id });
         res.status(201).json(expense);
     } catch (error) {
         res.status(400).json({ message: error.message });
@@ -26,7 +26,7 @@ router.post('/', protect, async (req, res) => {
 // Delete Expense
 router.delete('/:id', protect, async (req, res) => {
     try {
-         await Expense.findByIdAndDelete(req.params.id);
+         await Expense.findOneAndDelete({ _id: req.params.id, user: req.user.id });
          res.json({ message: 'Expense deleted' });
     } catch (error) {
         res.status(500).json({ message: error.message });

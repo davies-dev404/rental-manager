@@ -8,10 +8,10 @@ const { protect } = require('../middleware/authMiddleware');
 // Get Dashboard Stats
 router.get('/stats', protect, async (req, res) => {
   try {
-    const totalProperties = await Property.countDocuments();
-    const totalUnits = await Unit.countDocuments();
-    const occupiedUnits = await Unit.countDocuments({ status: 'occupied' });
-    const vacantUnits = await Unit.countDocuments({ status: 'vacant' });
+    const totalProperties = await Property.countDocuments({ user: req.user.id });
+    const totalUnits = await Unit.countDocuments({ user: req.user.id });
+    const occupiedUnits = await Unit.countDocuments({ status: 'occupied', user: req.user.id });
+    const vacantUnits = await Unit.countDocuments({ status: 'vacant', user: req.user.id });
     
     // Occupancy Rate
     const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
@@ -25,8 +25,9 @@ router.get('/stats', protect, async (req, res) => {
     endOfMonth.setMonth(endOfMonth.getMonth() + 1);
 
     const payments = await Payment.find({
+        user: req.user.id,
         date: { $gte: startOfMonth, $lt: endOfMonth },
-        status: { $in: ['paid', 'partial'] } // Only count actual revenue
+        status: { $in: ['paid', 'partial', 'Completed'] } // Include Completed for M-Pesa
     });
 
     const collectedThisMonth = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -38,7 +39,7 @@ router.get('/stats', protect, async (req, res) => {
     
     // Calculate Expected Revenue (Sum of rent of ACTIVE TENANTS only to be accurate)
     const Tenant = require('../models/Tenant'); // Ensure Tenant model is imported
-    const activeTenants = await Tenant.find({ status: 'active' }).populate('unitId');
+    const activeTenants = await Tenant.find({ status: 'active', user: req.user.id }).populate('unitId');
     const expectedMonthlyRent = activeTenants.reduce((sum, t) => sum + (t.unitId?.rentAmount || 0), 0);
     
     // Outstanding = Expected - Collected

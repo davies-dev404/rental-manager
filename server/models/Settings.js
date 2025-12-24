@@ -12,6 +12,7 @@ const settingsSchema = new mongoose.Schema({
   notifications: {
       email: { type: Boolean, default: true },
       sms: { type: Boolean, default: false },
+      whatsapp: { type: Boolean, default: false },
       rentReminders: { type: Boolean, default: true }
   },
 
@@ -45,6 +46,15 @@ const settingsSchema = new mongoose.Schema({
           africastalking: {
               username: { type: String, default: '' },
               apiKey: { type: String, default: '' }
+          }
+      },
+      whatsapp: {
+          enabled: { type: Boolean, default: false },
+          provider: { type: String, default: 'twilio' },
+          twilio: {
+              accountSid: { type: String, default: '' },
+              authToken: { type: String, default: '' },
+              fromNumber: { type: String, default: '' } // e.g., whatsapp:+14155238886
           }
       },
       mpesa: {

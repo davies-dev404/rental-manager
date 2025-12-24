@@ -9,7 +9,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Get all tenants with payment status
 router.get('/', protect, async (req, res) => {
   try {
-    const tenants = await Tenant.find().populate('unitId', 'unitNumber rentAmount');
+    const tenants = await Tenant.find({ user: req.user.id }).populate('unitId', 'unitNumber rentAmount');
     
     // Get current month date range
     const now = new Date();
@@ -18,6 +18,7 @@ router.get('/', protect, async (req, res) => {
 
     // Fetch payments for this month
     const payments = await Payment.find({
+        user: req.user.id,
         date: { $gte: startOfMonth, $lte: endOfMonth }
     });
 
@@ -55,7 +56,7 @@ router.post('/', protect, async (req, res) => {
   try {
     if (req.body.unitId === "") delete req.body.unitId;
     
-    const tenant = await Tenant.create(req.body);
+    const tenant = await Tenant.create({ ...req.body, user: req.user.id });
 
     // If unit assigned, update unit status to occupied
     if (tenant.unitId) {
@@ -79,7 +80,7 @@ router.put('/:id', protect, async (req, res) => {
     if (req.body.unitId === "") {
         req.body.unitId = null;
     }
-    const originalTenant = await Tenant.findById(req.params.id);
+    const originalTenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!originalTenant) return res.status(404).json({ message: 'Tenant not found' });
 
     // Handle unit swap/removal logic
@@ -94,7 +95,7 @@ router.put('/:id', protect, async (req, res) => {
         }
     }
 
-    const tenant = await Tenant.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
     res.json(tenant);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -104,7 +105,7 @@ router.put('/:id', protect, async (req, res) => {
 // Delete tenant
 router.delete('/:id', protect, async (req, res) => {
   try {
-    const tenant = await Tenant.findById(req.params.id);
+    const tenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
     // Vacate unit if active

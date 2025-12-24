@@ -4,6 +4,7 @@ const propertySchema = new mongoose.Schema({
   name: { type: String, required: true },
   location: { type: String, required: true },
   type: { type: String, default: 'Apartment' },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   caretakerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Optional
   image: { type: String },
   createdAt: { type: Date, default: Date.now }

@@ -10,7 +10,7 @@ const reminderSchema = new mongoose.Schema({
     required: true
   },
   method: {
-    type: String, // email, sms
+    type: String, // email, sms, whatsapp
     required: true
   },
   frequency: {
@@ -29,6 +29,7 @@ const reminderSchema = new mongoose.Schema({
     enum: ['pending', 'sent', 'overdue'],
     default: 'pending'
   },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: {
     type: Date,
     default: Date.now

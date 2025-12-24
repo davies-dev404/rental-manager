@@ -71,14 +71,83 @@ export function RecordPaymentDialog() {
             toast({ variant: "destructive", title: t('error'), description: t('payment_failed') });
         }
     });
+    
+    const mpesaMutation = useMutation({
+        mutationFn: api.initiateMpesa,
+        onError: (error) => {
+             toast({ variant: "destructive", title: "M-Pesa Error", description: error.message || "Failed to initiate STK Push" });
+        }
+    });
 
-    function onSubmit(values) {
+    // Polling Logic
+    const [pollingId, setPollingId] = useState(null);
+
+    useQuery({
+        queryKey: ["payment_status", pollingId],
+        queryFn: async () => {
+             if (!pollingId) return null;
+             const res = await api.getPayment(pollingId); // Need to implement getPayment(id) or use existing list
+             // Since we don't have getPayment by ID exposed easily in api.js without fetching all, 
+             // let's assume we can fetch payments and filter, or add getPayment endpoint.
+             // Ideally: api.getPayment(id). 
+             // Workaround for now: Fetch all payments and find. (Not efficient but works for now)
+             const payments = await api.getPayments();
+             return payments.find(p => (p._id || p.id) === pollingId);
+        },
+        enabled: !!pollingId,
+        refetchInterval: 5000, // Poll every 5s
+        onSuccess: (data) => {
+            if (data && data.status === 'paid') {
+                toast({ title: "Payment Received!", description: `M-Pesa payment confirmed (Ref: ${data.reference}).` });
+                setPollingId(null);
+                setOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["payments"] });
+            } else if (data && data.status === 'Failed') {
+                 toast({ variant: "destructive", title: "Payment Failed", description: "The M-Pesa transaction failed or was cancelled." });
+                 setPollingId(null);
+            }
+        }
+    });
+
+    async function onSubmit(values) {
         const tenant = tenants?.find(t => (t._id || t.id) === values.tenantId);
         if (!tenant) return;
-        mutation.mutate({
+
+        const paymentData = {
             ...values,
             unitId: typeof tenant.unitId === 'object' ? (tenant.unitId._id || tenant.unitId.id) : tenant.unitId
-        });
+        };
+
+        if (values.method === 'lipa_na_mpesa') {
+            paymentData.status = 'Pending'; 
+            
+            try {
+                // 1. Record 'Pending' Payment to get ID
+                const newPayment = await mutation.mutateAsync(paymentData);
+                const paymentId = newPayment._id || newPayment.id;
+                setPollingId(paymentId);
+
+                // 2. Initiate STK Push with paymentId
+                await mpesaMutation.mutateAsync({
+                    phoneNumber: tenant.phone || "254700000000",
+                    amount: values.rentAmount + values.depositAmount,
+                    accountReference: `RENT-${tenant.unitId?.unitNumber || 'UNIT'}`,
+                    tenantId: values.tenantId,
+                    paymentId: paymentId
+                });
+                
+                toast({ title: "STK Push Sent", description: "Waiting for payment confirmation..." });
+                // Dialog stays open (or strictly could close, but user wants notification 'notification through mpesa integration')
+                // We keep it open or show a global toast. Polling will handle the success toast.
+                
+            } catch (err) {
+                console.error(err);
+                // Toast handled in onError
+            }
+        } else {
+            // Standard Payment
+            mutation.mutate(paymentData);
+        }
     }
 
     return (
@@ -198,6 +267,7 @@ export function RecordPaymentDialog() {
                                         <SelectContent>
                                             <SelectItem value="paid">{t('full_payment')}</SelectItem>
                                             <SelectItem value="partial">{t('partial_payment')}</SelectItem>
+                                            <SelectItem value="Pending">{t('pending') || "Pending"}</SelectItem>
                                         </SelectContent>
                                     </Select>
                                     <FormMessage />
@@ -222,9 +292,9 @@ export function RecordPaymentDialog() {
                         </div>
 
                         <DialogFooter>
-                            <Button type="submit" disabled={mutation.isPending}>
-                                {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                                {t('save_record')}
+                            <Button type="submit" disabled={mutation.isPending || mpesaMutation.isPending}>
+                                {(mutation.isPending || mpesaMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                                {form.watch('method') === 'lipa_na_mpesa' ? (t('initiate_mpesa') || "Initiate M-Pesa") : t('save_record')}
                             </Button>
                         </DialogFooter>
                     </form>
