@@ -125,11 +125,12 @@ const generateReceiptPDF = (payment, settings) => {
             const amount = typeof payment.amount === 'number' ? payment.amount.toLocaleString() : '0';
             doc.fontSize(20).font('Helvetica-Bold').fillColor(accentColor).text(`${amount}`, 450, amountY + 10, { align: 'right' });
 
-            doc.moveDown(8);
-
+            // Ensure we don't overflow
+            const footerY = 750; // Fixed position near bottom of A4 (approx 842 height)
+            
             // --- Footer ---
-            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for choosing Dwello!', { align: 'center' });
-            doc.fontSize(8).text('Computer generated receipt, no signature required.', { align: 'center' });
+            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for choosing Dwello!', 50, footerY, { align: 'center', width: 500 });
+            doc.fontSize(8).text('Computer generated receipt, no signature required.', 50, footerY + 15, { align: 'center', width: 500 });
             
             doc.end();
         } catch (error) {

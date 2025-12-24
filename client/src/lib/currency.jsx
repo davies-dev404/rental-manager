@@ -30,10 +30,25 @@ export function PreferencesProvider({ children }) {
         const loadPrefs = async () => {
             try {
                 const settings = await api.getSettings();
-                if (settings.currency) setCurrency(settings.currency);
-                if (settings.timezone) setTimezone(settings.timezone);
+                if (settings?.currency) {
+                    setCurrency(settings.currency);
+                    // Update local storage to match server
+                    localStorage.setItem("rental_currency", settings.currency);
+                } else {
+                     const storedCur = localStorage.getItem("rental_currency");
+                     if (storedCur) setCurrency(storedCur);
+                }
+
+                if (settings?.timezone) {
+                     setTimezone(settings.timezone);
+                     localStorage.setItem("rental_timezone", settings.timezone);
+                } else {
+                     const storedTZ = localStorage.getItem("rental_timezone");
+                     if (storedTZ) setTimezone(storedTZ);
+                }
             } catch (e) {
-                // Fallback to local storage if API fails (legacy support)
+                console.error("Failed to load settings", e);
+                // Fallback to local storage if API fails
                 const storedCur = localStorage.getItem("rental_currency");
                 const storedTZ = localStorage.getItem("rental_timezone");
                 if (storedCur) setCurrency(storedCur);
