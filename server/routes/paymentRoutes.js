@@ -6,6 +6,7 @@ const { protect } = require('../middleware/authMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
 const sendEmail = require('../utils/sendEmail');
 const logActivity = require('../utils/logActivity');
+const { getReceiptEmailBody } = require('../utils/emailTemplates');
 
 // Helper to send receipt
 const sendReceiptEmail = async (paymentId) => {
@@ -34,25 +35,12 @@ const sendReceiptEmail = async (paymentId) => {
         const pdfBuffer = await generateReceiptPDF(payment, settings);
         console.log("PDF generated, sending email...");
 
+        const emailHtml = getReceiptEmailBody(payment, payment.tenantId.name, settings);
+
         await sendEmail({
             email: payment.tenantId.email,
             subject: `Payment Receipt - ${payment._id.toString().substring(0, 8).toUpperCase()}`,
-            message: `
-                <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
-                    <h1 style="color: #0f172a;">Payment Receipt</h1>
-                    <p>Dear ${payment.tenantId.name},</p>
-                    <p>We have successfully received your payment. A PDF receipt is attached for your records.</p>
-                    
-                    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                        <p style="margin: 5px 0;"><strong>Amount:</strong> ${payment.amount}</p>
-                        <p style="margin: 5px 0;"><strong>Date:</strong> ${new Date(payment.date).toLocaleDateString()}</p>
-                        <p style="margin: 5px 0;"><strong>Unit:</strong> ${payment.unitId?.unitNumber || 'N/A'}</p>
-                        <p style="margin: 5px 0;"><strong>Reference:</strong> ${payment._id}</p>
-                    </div>
-                    
-                    <p>Thank you,<br>${settings.orgName || 'Rental Manager'}</p>
-                </div>
-            `,
+            message: emailHtml,
             attachments: [
                 {
                     filename: `Receipt-${payment._id.toString().substring(0, 8)}.pdf`,
