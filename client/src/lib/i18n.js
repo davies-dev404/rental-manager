@@ -426,7 +426,28 @@ const resources = {
       "edit_tenant": "Edit Tenant",
       "no_unit_assigned": "No Unit Assigned",
       "assign_unit": "Assign Unit",
-      "edit_unit_desc": "Make changes to the unit here. Click save when you're done."
+      "edit_unit_desc": "Make changes to the unit here. Click save when you're done.",
+      
+      "kra_services": "KRA Services",
+      "kra_tax_calculator": "MRI Tax Calculator",
+      "kra_tax_desc": "Calculate your Monthly Rental Income (MRI) Tax (7.5%).",
+      "gross_rent_income": "Gross Rent Income",
+      "calculate_tax": "Calculate Tax",
+      "tax_payable": "Tax Payable",
+      "kra_disclaimer": "This is an estimate based on the 7.5% rate.",
+      "file_return_auto": "Auto-File Return",
+      "file_returns_manual": "File Manually via iTax",
+      "kra_info_title": "Understanding Monthly Rental Income (MRI) Tax",
+      "kra_info_1": "MRI is a simplified tax regime for residential landlords earning between Kshs 288,000 and Kshs 15M annually.",
+      "kra_info_2": "The tax rate is 7.5% of gross rent. No expenses are allowed for deduction.",
+      "kra_info_3": "Returns are filed monthly on the iTax portal by the 20th of the following month. Late filing attracts penalties.",
+      "whatsapp_notifications": "WhatsApp Notifications",
+      "whatsapp_notifications_desc": "Manage WhatsApp notification settings via Twilio.",
+      "enable_whatsapp": "Enable WhatsApp",
+      "enable_whatsapp_desc": "Send rent reminders and receipts via WhatsApp.",
+      "whatsapp_provider_config": "WhatsApp Provider Configuration",
+      "whatsapp_number": "WhatsApp From Number",
+      "activate_twilio_whatsapp": "Activate Twilio WhatsApp"
     }
   },
   fr: {

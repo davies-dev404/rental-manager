@@ -3,7 +3,11 @@ const router = express.Router();
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const sendEmail = require('../utils/sendEmail');
+const sendSMS = require('../utils/sendSMS');
 const crypto = require('crypto');
+const { authenticator } = require('otplib');
+const QRCode = require('qrcode');
+const { protect } = require('../middleware/authMiddleware'); // Import protect!
 
 // Generate JWT
 const generateToken = (id) => {
@@ -25,21 +29,21 @@ router.post('/login', async (req, res) => {
 
     if (user && (await user.matchPassword(password))) {
       // Check verification
-      // OPTIONAL: Uncomment to Block login for unverified users
       if (!user.isVerified && user.role !== 'admin') { 
-         // For now, allow admin login even if not verified to avoid lockout during development
          // return res.status(401).json({ message: 'Please verify your email first' });
       }
 
       await logActivity(user, 'User Logged In', `User ${user.name} logged in successfully`, 'auth', 'success');
 
       res.json({
-        _id: user._id,
+        _id: user._id, // Keep _id primarily
+        id: user._id, // Add id alias for frontend
         name: user.name,
         email: user.email,
         role: user.role,
         avatar: user.avatar,
         token: generateToken(user._id),
+        twoFactorEnabled: user.twoFactorEnabled
       });
     } else {
       await logActivity('System', 'Login Failed', `Failed login attempt for ${email}`, 'auth', 'warning');
@@ -54,7 +58,7 @@ router.post('/login', async (req, res) => {
 // @route   POST /api/auth/register
 // @access  Public
 router.post('/register', async (req, res) => {
-  const { name, email, password, confirmPassword, role } = req.body;
+  const { name, email, phone, password, confirmPassword, role } = req.body;
 
   try {
       // 1. Validation
@@ -75,6 +79,7 @@ router.post('/register', async (req, res) => {
       const user = await User.create({
         name,
         email,
+        phone,
         password,
         role,
         otp,
@@ -90,19 +95,25 @@ router.post('/register', async (req, res) => {
               subject: 'Your Verification Code',
               message: `Your verification code is: ${otp}. It expires in 10 minutes.`
             });
+
+            // Send SMS
+            if (user.phone) {
+                await sendSMS({
+                    phone: user.phone,
+                    message: `Your Rental Manager verification code is: ${otp}`
+                });
+            }
             
             res.status(201).json({ 
                 message: 'Registration successful. Please verify your email.',
                 requiresVerification: true,
                 email: user.email,
-                // DEV HELPER: Return OTP to client in dev mode for easy testing
                 otp: process.env.NODE_ENV !== 'production' ? otp : undefined
             });
         } catch (emailError) {
              console.error("Email send failed:", emailError);
-             // Return success but warn about email
              res.status(201).json({ 
-                message: 'Account created but email failed. Contact support or check console logs.',
+                message: 'Account created but email failed.',
                 requiresVerification: true, 
                 email: user.email
             });
@@ -149,6 +160,76 @@ router.post('/verify-email', async (req, res) => {
 
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+});
+
+// 2FA Routes
+
+// @desc    Generate 2FA Secret
+// @route   POST /api/auth/2fa/enable
+// @access  Private
+router.post('/2fa/enable', protect, async (req, res) => {
+    try {
+        const secret = authenticator.generateSecret();
+        const otpauth = authenticator.keyuri(req.user.email, 'RentalManager', secret);
+        
+        // Save temporarily or check verify step to save?
+        // Usually, we save the secret but keep Enabled = false until verify
+        req.user.twoFactorSecret = secret;
+        await req.user.save();
+        
+        const qrCodeUrl = await QRCode.toDataURL(otpauth);
+        
+        res.json({
+            secret,
+            qrCodeUrl
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to generate 2FA secret" });
+    }
+});
+
+// @desc    Verify and Enable 2FA
+// @route   POST /api/auth/2fa/verify
+// @access  Private
+router.post('/2fa/verify', protect, async (req, res) => {
+    const { token } = req.body;
+    try {
+        if (!req.user.twoFactorSecret) {
+            return res.status(400).json({ message: "2FA initialization not found" });
+        }
+
+        const isValid = authenticator.verify({ token, secret: req.user.twoFactorSecret });
+
+        if (!isValid) {
+            return res.status(400).json({ message: "Invalid Code" });
+        }
+
+        req.user.twoFactorEnabled = true;
+        await req.user.save();
+
+        await logActivity(req.user, 'Security Update', '2FA Enabled', 'auth', 'success');
+
+        res.json({ message: "2FA Enabled Successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Verification failed" });
+    }
+});
+
+// @desc    Disable 2FA
+// @route   POST /api/auth/2fa/disable
+// @access  Private
+router.post('/2fa/disable', protect, async (req, res) => {
+    try {
+        req.user.twoFactorEnabled = false;
+        req.user.twoFactorSecret = undefined;
+        await req.user.save();
+        
+        await logActivity(req.user, 'Security Update', '2FA Disabled', 'auth', 'warning');
+        
+        res.json({ message: "2FA Disabled" });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to disable 2FA" });
     }
 });
 

@@ -9,7 +9,7 @@ const { protect, admin } = require('../middleware/authMiddleware');
 router.get('/', protect, async (req, res) => {
   try {
     const { propertyId } = req.query;
-    const query = propertyId ? { propertyId } : {};
+    const query = propertyId ? { propertyId, user: req.user.id } : { user: req.user.id };
     const units = await Unit.find(query);
     res.json(units);
   } catch (error) {
@@ -22,7 +22,7 @@ router.get('/', protect, async (req, res) => {
 // @access  Private (Admin)
 router.post('/', protect, admin, async (req, res) => {
   try {
-    const unit = await Unit.create(req.body);
+    const unit = await Unit.create({ ...req.body, user: req.user.id });
     res.status(201).json(unit);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -34,7 +34,7 @@ router.post('/', protect, admin, async (req, res) => {
 // @access  Private (Admin)
 router.put('/:id', protect, admin, async (req, res) => {
   try {
-    const unit = await Unit.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const unit = await Unit.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
     if (!unit) return res.status(404).json({ message: 'Unit not found' });
     res.json(unit);
   } catch (error) {
@@ -47,7 +47,7 @@ router.put('/:id', protect, admin, async (req, res) => {
 // @access  Private (Admin)
 router.delete('/:id', protect, admin, async (req, res) => {
   try {
-    const unit = await Unit.findById(req.params.id);
+    const unit = await Unit.findOne({ _id: req.params.id, user: req.user.id });
     if (!unit) return res.status(404).json({ message: 'Unit not found' });
     await unit.deleteOne();
     res.json({ message: 'Unit removed' });

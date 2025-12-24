@@ -8,7 +8,7 @@ const { protect, admin } = require('../middleware/authMiddleware');
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const properties = await Property.find().populate('caretakerId', 'name email');
+    const properties = await Property.find({ user: req.user.id }).populate('caretakerId', 'name email');
     res.json(properties);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -20,7 +20,7 @@ router.get('/', protect, async (req, res) => {
 // @access  Private (Admin/Caretaker)
 router.post('/', protect, async (req, res) => {
   try {
-    const property = await Property.create(req.body);
+    const property = await Property.create({ ...req.body, user: req.user.id });
     res.status(201).json(property);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -32,7 +32,7 @@ router.post('/', protect, async (req, res) => {
 // @access  Private
 router.put('/:id', protect, async (req, res) => {
   try {
-    const property = await Property.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const property = await Property.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
     if (!property) return res.status(404).json({ message: 'Property not found' });
     res.json(property);
   } catch (error) {
@@ -45,7 +45,7 @@ router.put('/:id', protect, async (req, res) => {
 // @access  Private (Admin only)
 router.delete('/:id', protect, admin, async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    const property = await Property.findOne({ _id: req.params.id, user: req.user.id });
     if (!property) return res.status(404).json({ message: 'Property not found' });
     
     await property.deleteOne();

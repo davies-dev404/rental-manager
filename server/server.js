@@ -59,6 +59,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reminders', require('./routes/reminderRoutes'));
 app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
+app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 
 app.get('/', (req, res) => {
     res.send('Rental Manager API is running...');

@@ -4,6 +4,7 @@ const tenantSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true },
   phone: { type: String, required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   idType: { type: String, enum: ['national_id', 'passport', 'driving_license'], default: 'national_id' },
   nationalId: { type: String, required: true },
   unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' },

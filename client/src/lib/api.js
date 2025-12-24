@@ -84,6 +84,35 @@ export const api = {
       // Placeholder
       return true;
   },
+
+  // 2FA
+  enable2FA: async () => {
+    const response = await fetch(`${API_URL}/auth/2fa/enable`, { 
+        method: 'POST',
+        headers: getAuthHeaders() 
+    });
+    if (!response.ok) throw new Error("Could not initiate 2FA setup");
+    return await response.json();
+  },
+  
+  verifyAndEnable2FA: async (token) => {
+    const response = await fetch(`${API_URL}/auth/2fa/verify`, { 
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+    });
+    if (!response.ok) throw new Error("Invalid 2FA code");
+    return await response.json();
+  },
+
+  disable2FA: async () => {
+    const response = await fetch(`${API_URL}/auth/2fa/disable`, { 
+        method: 'POST',
+        headers: getAuthHeaders() 
+    });
+    if (!response.ok) throw new Error("Could not disable 2FA");
+    return await response.json();
+  },
   
   // Properties
   getProperties: async () => {
@@ -212,6 +241,11 @@ export const api = {
         unitId: p.unitId // Keep as object or ID depending on population
     }));
   },
+  getPayment: async (id) => {
+      const response = await fetch(`${API_URL}/payments/${id}`, { headers: getAuthHeaders() });
+      if (!response.ok) throw new Error("Payment not found");
+      return await response.json();
+  },
   recordPayment: async (paymentData) => {
     const response = await fetch(`${API_URL}/payments`, {
         method: 'POST',
@@ -230,6 +264,19 @@ export const api = {
       if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.message || "Failed to send email");
+      }
+      return await response.json();
+  },
+  
+  initiateSTKPush: async (paymentData) => {
+      const response = await fetch(`${API_URL}/mpesa/stk-push`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(paymentData)
+      });
+      if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "STK Push Failed");
       }
       return await response.json();
   },
@@ -290,10 +337,28 @@ export const api = {
     }
     return await response.json();
   },
+
   getReportsData: async () => {
     const response = await fetch(`${API_URL}/reports`, { headers: getAuthHeaders() });
     if (!response.ok) return {};
     return await response.json();
+  },
+  getKraTaxReport: async (month) => {
+      let url = `${API_URL}/reports/kra-tax-report`;
+      if (month) url += `?month=${month}`;
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      if (!response.ok) throw new Error("Failed to fetch tax report");
+      return await response.json();
+  },
+  fileKraReturn: async (data) => {
+      // Placeholder for KRA filing API
+      const response = await fetch(`${API_URL}/reports/kra-file-return`, {
+          method: 'POST', 
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error("Failed to submit return");
+      return await response.json();
   },
   resetData: async () => { localStorage.clear(); window.location.reload(); }
 };

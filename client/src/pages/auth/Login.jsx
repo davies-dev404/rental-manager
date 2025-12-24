@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ export default function LoginPage() {
     const [caretakerPassword, setCaretakerPassword] = useState("");
     
     // Signup State
-    const [signupData, setSignupData] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "admin" });
+    const [signupData, setSignupData] = useState({ name: "", email: "", phone: "", password: "", confirmPassword: "", role: "admin" });
     const [showOTP, setShowOTP] = useState(false);
     const [otp, setOtp] = useState("");
 
@@ -58,6 +58,20 @@ export default function LoginPage() {
         }
     };
 
+    const [countdown, setCountdown] = useState(180); // 3 minutes in seconds
+
+    // Countdown Logic
+
+    useEffect(() => {
+        let timer;
+        if (showOTP && countdown > 0) {
+            timer = setInterval(() => {
+                setCountdown((prev) => prev - 1);
+            }, 1000);
+        }
+        return () => clearInterval(timer);
+    }, [showOTP, countdown]);
+
     const initiateSignup = async () => {
         if (!signupData.name || !signupData.email || !signupData.password || !signupData.confirmPassword) {
             toast({ variant: "destructive", title: "Error", description: "Please fill in all fields" });
@@ -76,7 +90,8 @@ export default function LoginPage() {
             
             setIsLoading(false);
             setShowOTP(true);
-            toast({ title: "Verification Code Sent", description: "Please check your email/console for the code." });
+            setCountdown(180); // Reset timer
+            toast({ title: "Verification Code Sent", description: "Please check your email/phone for the code." });
         } catch (error) {
             setIsLoading(false);
             toast({ variant: "destructive", title: "Signup Failed", description: error.message });
@@ -91,18 +106,24 @@ export default function LoginPage() {
         setIsLoading(true);
         try {
             // 2. VERIFY EMAIL
-            const response = await api.verifyEmail(signupData.email, otp);
+            await api.verifyEmail(signupData.email, otp);
             
-            // 3. AUTO LOGIN (using the password they just set)
-            await login(signupData.email, signupData.password); 
-            
-            toast({ title: "Account Created", description: "Welcome to Dwello!" });
-            setLocation("/");
+            // 3. NO AUTO LOGIN. Redirect to Login.
+            toast({ title: "Account Verified", description: "Please log in with your new credentials." });
+            setShowOTP(false);
+            setIsSignup(false);
+            setSignupData({ name: "", email: "", phone: "", password: "", confirmPassword: "", role: "admin" });
         } catch (error) {
             toast({ variant: "destructive", title: "Verification Failed", description: error.message });
         } finally {
             setIsLoading(false);
         }
+    };
+    
+    const formatTime = (seconds) => {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
     };
 
     if (isSignup) {
@@ -132,6 +153,10 @@ export default function LoginPage() {
                                 <Input type="email" placeholder="john@example.com" value={signupData.email} onChange={(e) => setSignupData({...signupData, email: e.target.value})} />
                             </div>
                             <div className="space-y-2">
+                                <Label>Phone Number</Label>
+                                <Input type="tel" placeholder="+254..." value={signupData.phone} onChange={(e) => setSignupData({...signupData, phone: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
                                 <Label>Password</Label>
                                 <Input type="password" placeholder="••••••••" value={signupData.password} onChange={(e) => setSignupData({...signupData, password: e.target.value})} />
                             </div>
@@ -142,7 +167,7 @@ export default function LoginPage() {
                             <div className="space-y-2">
                                 <Label>Role</Label>
                                 <Tabs defaultValue="admin" onValueChange={(v) => setSignupData({...signupData, role: v})}>
-                                    <TabsList className="grid w-full grid-cols-2">
+                                     <TabsList className="grid w-full grid-cols-2">
                                         <TabsTrigger value="admin">Landlord</TabsTrigger>
                                         <TabsTrigger value="caretaker">Caretaker</TabsTrigger>
                                     </TabsList>
@@ -152,7 +177,7 @@ export default function LoginPage() {
                         <CardFooter>
                             <Button className="w-full" onClick={initiateSignup} disabled={isLoading}>
                                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                                Send Verification Code
+                                Sign Up
                             </Button>
                         </CardFooter>
                     </Card>
@@ -164,13 +189,16 @@ export default function LoginPage() {
                         <DialogHeader>
                             <DialogTitle>Verify Email</DialogTitle>
                             <DialogDescription>
-                                We sent a code to {signupData.email}. Enter it below to verify your account.
+                                We sent a code to {signupData.email} {signupData.phone ? `and ${signupData.phone}` : ""}. Enter it below to verify your account.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="flex items-center justify-center py-4">
-                             <div className="space-y-2">
-                                <Input className="text-center text-2xl tracking-widest font-mono" maxLength={6} placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} />
-                                <p className="text-xs text-center text-muted-foreground">Check server console logs for code</p>
+                             <div className="space-y-2 text-center">
+                                <Input className="text-center text-2xl tracking-widest font-mono mx-auto max-w-[200px]" maxLength={6} placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} />
+                                <p className="text-xs text-muted-foreground pb-2">Enter the 6-digit code sent to your device.</p>
+                                <p className={`text-sm font-medium ${countdown < 60 ? 'text-red-500' : 'text-primary'}`}>
+                                    Code expires in: {formatTime(countdown)}
+                                </p>
                              </div>
                         </div>
                         <DialogFooter>

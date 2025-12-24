@@ -179,6 +179,7 @@ export default function Settings() {
     };
 
     const handleEnable2FA = async () => {
+        if (user?.twoFactorEnabled) return; // Already enabled
         setIsSaving(true);
         try {
             const data = await api.enable2FA();
@@ -186,6 +187,7 @@ export default function Settings() {
             setTwoFactorStep('verify');
         } catch (error) {
              toast({ variant: "destructive", title: "Error", description: "Could not initiate 2FA setup" });
+             setIsTwoFactorOpen(false); // Close on error
         } finally {
             setIsSaving(false);
         }
@@ -197,11 +199,11 @@ export default function Settings() {
             await api.verifyAndEnable2FA(verificationCode);
             toast({ title: "Success", description: "2FA Enabled Successfully" });
             setIsTwoFactorOpen(false);
-            // Refresh settings
-            const newSettings = await api.getSettings();
-            setSettings(newSettings);
+            
+            // Update local user state
+            updateProfile({ ...user, twoFactorEnabled: true });
         } catch (error) {
-            toast({ variant: "destructive", title: "Error", description: error.message });
+            toast({ variant: "destructive", title: "Verification Failed", description: error.message || "Invalid Code" });
         } finally {
              setIsSaving(false);
         }
@@ -212,9 +214,8 @@ export default function Settings() {
         // We'll assume user is logged in and authoritative for this mock.
         setIsSaving(true);
         try {
-             await api.disable2FA("1234"); // Mock password
-             const newSettings = await api.getSettings();
-             setSettings(newSettings);
+             await api.disable2FA(); // No password mock needed ideally if authenticated
+             updateProfile({ ...user, twoFactorEnabled: false });
              toast({ title: "Success", description: "2FA Disabled" });
         } catch (error) {
              toast({ variant: "destructive", title: "Error", description: error.message });
@@ -362,7 +363,6 @@ export default function Settings() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="language">{t('preferred_language')}</Label>
-                <Label htmlFor="language">{t('preferred_language')}</Label>
                 <Select value={i18n.language} onValueChange={handleLanguageChange}>
                   <SelectTrigger id="language">
                     <SelectValue />
@@ -406,16 +406,7 @@ export default function Settings() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center justify-between pt-2">
-                <div className="space-y-0.5">
-                  <Label>{t('dark_mode')}</Label>
-                  <p className="text-sm text-muted-foreground">{t('dark_mode_desc')}</p>
-                </div>
-                <Switch 
-                  checked={theme === 'dark'}
-                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
-                />
-              </div>
+
             </CardContent>
             <CardFooter className="border-t bg-muted/20">
               <Button onClick={handleSave} disabled={isSaving}>
@@ -648,7 +639,11 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="flex justify-end pt-2">
-                                <Button variant="outline" size="sm" onClick={() => updateIntegration('sms', 'twilio', 'provider', 'twilio')}>
+                                <Button variant="outline" size="sm" onClick={() => {
+                                    updateIntegration('sms', 'twilio', 'provider', 'twilio');
+                                    updateIntegration('sms', null, 'enabled', true);
+                                    toast({ title: "Provider Activated", description: "Twilio is now selected and enabled. Save changes to persist." });
+                                }}>
                                     {t('activate_twilio')}
                                 </Button>
                           </div>
@@ -672,7 +667,11 @@ export default function Settings() {
                                 />
                           </div>
                           <div className="flex justify-end pt-2">
-                                <Button variant="outline" size="sm" onClick={() => updateIntegration('sms', 'africastalking', 'provider', 'africastalking')}>
+                                <Button variant="outline" size="sm" onClick={() => {
+                                    updateIntegration('sms', 'africastalking', 'provider', 'africastalking');
+                                    updateIntegration('sms', null, 'enabled', true);
+                                    toast({ title: "Provider Activated", description: "Africa's Talking is now selected and enabled. Save changes to persist." });
+                                }}>
                                     {t('activate_africastalking')}
                                 </Button>
                           </div>
@@ -681,7 +680,74 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+        {/* WhatsApp Notification Settings */}
+        <Card className="border-border/50 shadow-sm mt-6">
+            <CardHeader>
+              <CardTitle>{t('whatsapp_notifications') || "WhatsApp Notifications"}</CardTitle>
+              <CardDescription>{t('whatsapp_notifications_desc') || "Manage WhatsApp notification settings via Twilio."}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">{t('enable_whatsapp') || "Enable WhatsApp"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('enable_whatsapp_desc') || "Send rent reminders and receipts via WhatsApp."}</p>
+                </div>
+                <Switch 
+                    checked={settings?.integrations?.whatsapp?.enabled || false}
+                    onCheckedChange={(checked) => updateIntegration('whatsapp', null, 'enabled', checked)}
+                />
+              </div>
+              <Separator />
+               <div className="pt-4">
+                  <h4 className="text-sm font-medium mb-3">{t('whatsapp_provider_config') || "WhatsApp Provider Configuration"}</h4>
+                  <Tabs defaultValue="twilio" className="w-full">
+                      <TabsList className="grid w-full grid-cols-1">
+                        <TabsTrigger value="twilio">Twilio (WhatsApp)</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="twilio" className="space-y-4 mt-4 p-4 border rounded-md">
+                          <div className="space-y-2">
+                                <Label>{t('account_sid')}</Label>
+                                <Input 
+                                    placeholder="ACxxxxxxxx..." 
+                                    value={settings?.integrations?.whatsapp?.twilio?.accountSid || ''}
+                                    onChange={(e) => updateIntegration('whatsapp', 'twilio', 'accountSid', e.target.value)}
+                                />
+                          </div>
+                          <div className="space-y-2">
+                                <Label>{t('auth_token')}</Label>
+                                <Input 
+                                    type="password" 
+                                    placeholder="••••••••" 
+                                    value={settings?.integrations?.whatsapp?.twilio?.authToken || ''}
+                                    onChange={(e) => updateIntegration('whatsapp', 'twilio', 'authToken', e.target.value)}
+                                />
+                          </div>
+                          <div className="space-y-2">
+                                <Label>{t('whatsapp_number') || "WhatsApp From Number"}</Label>
+                                <Input 
+                                    placeholder="+14155238886" 
+                                    value={settings?.integrations?.whatsapp?.twilio?.fromNumber || ''}
+                                    onChange={(e) => updateIntegration('whatsapp', 'twilio', 'fromNumber', e.target.value)}
+                                />
+                                <p className="text-[0.8rem] text-muted-foreground">The Twilio Sandbox number or your approved WhatsApp sender.</p>
+                          </div>
+                          <div className="flex justify-end pt-2">
+                                <Button variant="outline" size="sm" onClick={() => {
+                                    updateIntegration('whatsapp', 'twilio', 'provider', 'twilio');
+                                    updateIntegration('whatsapp', null, 'enabled', true);
+                                    toast({ title: "WhatsApp Activated", description: "Twilio WhatsApp enabled. Save changes to persist." });
+                                }}>
+                                    {t('activate_twilio_whatsapp')}
+                                </Button>
+                          </div>
+                      </TabsContent>
+                  </Tabs>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
+
 
         {/* Rent Collection Settings */}
         <TabsContent value="rent_collection" className="space-y-6">
@@ -777,7 +843,8 @@ export default function Settings() {
               <div className="pt-2 space-y-4">
                 <div>
                   <p className="font-medium text-sm mb-3">{t('two_factor_auth')}</p>
-                  {settings?.security?.twoFactorEnabled ? (
+                  <p className="font-medium text-sm mb-3">{t('two_factor_auth')}</p>
+                  {user?.twoFactorEnabled ? (
                       <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/20 hover:bg-emerald-500/25">
                         {t('enabled') || "Enabled"}
                       </Badge>
@@ -788,7 +855,7 @@ export default function Settings() {
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground">{t('two_factor_desc')}</p>
-                {settings?.security?.twoFactorEnabled ? (
+                {user?.twoFactorEnabled ? (
                     <Button variant="destructive" onClick={handleDisable2FA} disabled={isSaving}>
                         {t('disable_2fa') || "Disable 2FA"}
                     </Button>

@@ -11,7 +11,10 @@ const logActivity = require('../utils/logActivity');
 const sendReceiptEmail = async (paymentId) => {
     try {
         console.log(`Starting receipt email for payment: ${paymentId}`);
-        const payment = await Payment.findById(paymentId)
+        const payment = await Payment.findOne({ _id: paymentId }) // sendReceiptEmail is internalhelper, but ideally should check user context if possible. But here we might not have req.user easily.
+            // Let's modify sendReceiptEmail to accept user check OR assume calling function did it. 
+            // Better: update sendReceiptEmail to NOT check user on behalf of caller if internal, but the callers should.
+            // However, the helper is used in POST / (creation, so user safe) and POST /:id/email (needs check).
             .populate('tenantId', 'name email')
             .populate('unitId', 'unitNumber');
         
@@ -70,7 +73,7 @@ const sendReceiptEmail = async (paymentId) => {
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const payments = await Payment.find()
+    const payments = await Payment.find({ user: req.user.id })
       .populate('tenantId', 'name email')
       .populate('unitId', 'unitNumber')
       .sort({ date: -1 });
@@ -78,6 +81,21 @@ router.get('/', protect, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
+});
+
+// @desc    Get single payment
+// @route   GET /api/payments/:id
+// @access  Private
+router.get('/:id', protect, async (req, res) => {
+    try {
+        const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
+            .populate('tenantId', 'name email')
+            .populate('unitId', 'unitNumber');
+        if (!payment) return res.status(404).json({ message: 'Payment not found' });
+        res.json(payment);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
 // @desc    Record a payment
@@ -108,7 +126,8 @@ router.post('/', protect, async (req, res) => {
         method,
         status,
         monthCovered: rAmt > 0 ? monthCovered : 'Deposit',
-        type: paymentType
+        type: paymentType,
+        user: req.user.id
     });
 
     await logActivity(req.user, 'Record Payment', `Recorded ${paymentType} payment of ${totalAmount} for tenant`, 'payment', 'success');
@@ -140,6 +159,10 @@ router.post('/', protect, async (req, res) => {
 // @access  Private
 router.post('/:id/email', protect, async (req, res) => {
     try {
+        // Verify ownership first
+        const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id });
+        if (!payment) return res.status(404).json({ message: 'Payment not found' });
+
         await sendReceiptEmail(req.params.id);
         res.json({ message: 'Receipt email sent successfully' });
     } catch (error) {
@@ -153,7 +176,7 @@ router.post('/:id/email', protect, async (req, res) => {
 // @access  Private
 router.get('/:id/pdf', protect, async (req, res) => {
     try {
-        const payment = await Payment.findById(req.params.id)
+        const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email')
             .populate('unitId', 'unitNumber');
 
