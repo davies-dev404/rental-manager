@@ -1,7 +1,9 @@
 // Real API Implementation connected to MERN Backend
 import { toast } from "sonner"; // Assuming sonner is used, or replace with console for now if imports differ
 
-export const API_URL = import.meta.env.VITE_API_DIR || 'http://localhost:5000/api';
+export const API_URL = import.meta.env.PROD 
+  ? 'https://rental-manager-sikj.onrender.com/api' 
+  : (import.meta.env.VITE_API_DIR || 'http://localhost:5000/api');
 
 export const getAuthHeaders = () => {
   const storedUser = localStorage.getItem("rental_user");
