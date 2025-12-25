@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const settingsSchema = new mongoose.Schema({
   // Organization Details
-  orgName: { type: String, default: 'My Rental Company' },
-  orgEmail: { type: String, default: 'admin@rental.com' },
+  orgName: { type: String, default: '' },
+  orgEmail: { type: String, default: '' },
   orgPhone: { type: String, default: '' },
   orgAddress: { type: String, default: '' },
   taxId: { type: String, default: '' },
@@ -29,7 +29,7 @@ const settingsSchema = new mongoose.Schema({
               port: { type: Number, default: 587 },
               user: { type: String, default: '' },
               pass: { type: String, default: '' },
-              fromEmail: { type: String, default: 'noreply@rental.com' }
+              fromEmail: { type: String, default: '' }
           },
           sendgrid: {
               apiKey: { type: String, default: '' }
@@ -58,7 +58,7 @@ const settingsSchema = new mongoose.Schema({
           twilio: {
               accountSid: { type: String, default: '' },
               authToken: { type: String, default: '' },
-              fromNumber: { type: String, default: '' } // e.g., whatsapp:+14155238886
+              fromNumber: { type: String, default: '' } 
           }
       },
       mpesa: {

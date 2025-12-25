@@ -494,7 +494,6 @@ export default function Settings() {
                              <div className="space-y-2">
                                 <Label>{t('host')}</Label>
                                 <Input 
-                                    placeholder="smtp.example.com" 
                                     value={settings?.integrations?.email?.smtp?.host || ''} 
                                     onChange={(e) => updateIntegration('email', 'smtp', 'host', e.target.value)}
                                 />
@@ -502,7 +501,6 @@ export default function Settings() {
                              <div className="space-y-2">
                                 <Label>{t('port')}</Label>
                                 <Input 
-                                    placeholder="587" 
                                     value={settings?.integrations?.email?.smtp?.port || ''}
                                     onChange={(e) => updateIntegration('email', 'smtp', 'port', e.target.value)}
                                 />
@@ -511,7 +509,6 @@ export default function Settings() {
                           <div className="space-y-2">
                                 <Label>{t('username')}</Label>
                                 <Input 
-                                    placeholder="user@example.com" 
                                     value={settings?.integrations?.email?.smtp?.user || ''}
                                     onChange={(e) => updateIntegration('email', 'smtp', 'user', e.target.value)}
                                 />
@@ -520,7 +517,6 @@ export default function Settings() {
                                 <Label>{t('password')}</Label>
                                 <Input 
                                     type="password" 
-                                    placeholder="••••••••" 
                                     value={settings?.integrations?.email?.smtp?.pass || ''}
                                     onChange={(e) => updateIntegration('email', 'smtp', 'pass', e.target.value)}
                                 />
