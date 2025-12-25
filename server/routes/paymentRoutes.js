@@ -166,9 +166,9 @@ router.post('/:id/email', protect, async (req, res) => {
              console.error("Inner Email/PDF Error:", emailError);
              // Check if it's a timeout
              if (emailError.code === 'ETIMEDOUT') {
-                 return res.status(504).json({ message: 'Email connection timed out. Check SMTP settings.', error: emailError.message });
+                 return res.status(422).json({ message: 'Email connection timed out. Check SMTP settings.', error: emailError.message });
              }
-             res.status(500).json({ message: `Failed to send email: ${emailError.message}`, error: emailError.message });
+             res.status(422).json({ message: `Failed to send email: ${emailError.message}`, error: emailError.message });
         }
 
     } catch (error) {
