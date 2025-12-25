@@ -2,64 +2,64 @@ const nodemailer = require('nodemailer');
 const Settings = require('../models/Settings');
 
 const sendEmail = async (options) => {
-  let transporter;
-  let fromEmail = process.env.FROM_EMAIL || 'noreply@rental.com';
-  let fromName = process.env.FROM_NAME || 'Rental Manager';
-
-  // 1. Try DB Settings First
+  let settings = null;
   try {
-      const settings = await Settings.findOne();
-      const smtpSettings = settings?.integrations?.email?.smtp;
-      
-      // Check if host is present and NOT just whitespace
-      if (smtpSettings && smtpSettings.host && smtpSettings.host.trim() !== '') {
-          const port = Number(smtpSettings.port) || 587;
-          const secure = port === 465;
-          
-          console.log(`Configuring SMTP Transport from DB: ${smtpSettings.host}:${port} (Secure: ${secure})`);
-          
-          const dbTransporter = nodemailer.createTransport({
-            host: smtpSettings.host,
-            port: port,
-            secure: secure,
-            auth: {
-              user: smtpSettings.user,
-              pass: smtpSettings.pass,
-            },
-            connectionTimeout: 10000, // 10s timeout
-            greetingTimeout: 10000,
-            debug: true,
-            logger: true, 
-            family: 4
-          });
-
-          // Verify connection before using
-          try {
-              await dbTransporter.verify();
-              console.log("✅ DB SMTP Settings Verified Successfully");
-              transporter = dbTransporter;
-              
-              if (smtpSettings.fromEmail) fromEmail = smtpSettings.fromEmail;
-              if (settings.orgName) fromName = settings.orgName;
-
-          } catch (verifyErr) {
-              console.error("❌ DB SMTP Verification Failed:", verifyErr.message);
-              console.log("Falling back to .env settings...");
-              transporter = null; // Ensure null so we fall back
-          }
-      }
-  } catch (dbErr) {
-      console.error("Failed to fetch settings for email:", dbErr.message);
-      // Fallback continues
+    settings = await Settings.findOne();
+  } catch (err) {
+    console.error("Failed to load settings for email:", err.message);
   }
 
-  // 2. Fallback to Env if no DB settings found or Verification Failed
-  if (!transporter && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  // Helper to construct mail options
+  const getMailOptions = (fromName, fromEmail) => ({
+    from: `"${options.fromName || fromName}" <${options.fromEmail || fromEmail}>`,
+    to: options.email,
+    subject: options.subject,
+    html: options.message,
+    attachments: options.attachments
+  });
+
+  // 1. Try DB Settings
+  const smtpSettings = settings?.integrations?.email?.smtp;
+  if (smtpSettings && smtpSettings.host && smtpSettings.host.trim() !== '') {
+    try {
+      const port = Number(smtpSettings.port) || 587;
+      const secure = port === 465;
+      
+      console.log(`Attempting SMTP (DB): ${smtpSettings.host}:${port} (Secure: ${secure})`);
+      
+      const transporter = nodemailer.createTransport({
+        host: smtpSettings.host,
+        port: port,
+        secure: secure,
+        auth: {
+          user: smtpSettings.user,
+          pass: smtpSettings.pass,
+        },
+        connectionTimeout: 10000, 
+        greetingTimeout: 10000,
+        family: 4
+      });
+
+      const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || 'noreply@rental.com';
+      const fromName = settings.orgName || process.env.FROM_NAME || 'Rental Manager';
+
+      await transporter.sendMail(getMailOptions(fromName, fromEmail));
+      console.log(`📧 Email sent successfully (via DB Settings) to ${options.email}`);
+      return; // Exit if successful
+    } catch (dbError) {
+      console.error("❌ DB SMTP Send Failed:", dbError.message);
+      console.log("Falling back to .env settings...");
+    }
+  }
+
+  // 2. Fallback to Env
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
       const envPort = Number(process.env.SMTP_PORT) || 587;
       const envSecure = envPort === 465;
-      console.log(`Configuring SMTP Transport from ENV: ${process.env.SMTP_HOST}:${envPort} (Secure: ${envSecure})`);
+      console.log(`Attempting SMTP (ENV): ${process.env.SMTP_HOST}:${envPort} (Secure: ${envSecure})`);
       
-      transporter = nodemailer.createTransport({
+      const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: envPort,
         secure: envSecure,
@@ -71,38 +71,29 @@ const sendEmail = async (options) => {
         greetingTimeout: 10000,
         family: 4
       });
+
+      const fromEmail = process.env.FROM_EMAIL || 'noreply@rental.com';
+      const fromName = process.env.FROM_NAME || 'Rental Manager';
+
+      await transporter.sendMail(getMailOptions(fromName, fromEmail));
+      console.log(`📧 Email sent successfully (via ENV) to ${options.email}`);
+      return; // Exit if successful
+    } catch (envError) {
+      console.error("❌ ENV SMTP Send Failed:", envError.message);
+      // Don't return, let it fall through to logs
+    }
   }
 
-  // 3. Send or Log
-  if (transporter) {
-      try {
-          const mailOptions = {
-            from: `"${options.fromName || fromName}" <${options.fromEmail || fromEmail}>`,
-            to: options.email,
-            subject: options.subject,
-            html: options.message,
-            attachments: options.attachments
-          };
-          
-          await transporter.sendMail(mailOptions);
-          console.log(`📧 Email sent successfully to ${options.email}`);
-      } catch (sendErr) {
-          console.error(`❌ Failed to send email to ${options.email}:`, sendErr.message);
-          throw sendErr; // Re-throw to allow caller to handle/log
-      }
-  } else {
-      // 4. Fallback: Log to console if no transporter could be created
-      console.log('==================================================');
-      console.log('❌ NO EMAIL TRANSPORTER CONFIGURED. LOGGING EMAIL ONLY.');
-      console.log(`TO: ${options.email}`);
-      console.log(`SUBJECT: ${options.subject}`);
-      console.log(`MESSAGE (truncated): ${options.message?.substring(0, 100)}...`);
-      console.log('==================================================');
-      // We do NOT throw here, we just log. 
-      // OR should we throw? If verify code, failing silently is bad.
-      // But for development/no-smtp setup, logging is better.
-      // Given user complains "doesn't send", logging implies "it didn't send".
-  }
+  // 3. Last Resort: Log
+  console.log('==================================================');
+  console.log('❌ ALL EMAIL METHODS FAILED. LOGGING EMAIL ONLY.');
+  console.log(`TO: ${options.email}`);
+  console.log(`SUBJECT: ${options.subject}`);
+  console.log('==================================================');
+  
+  // Throw error to inform caller of failure, unless we really just want to log
+  // Ideally, if everything failed, we should throw so the API returns 500/400, not success.
+  throw new Error("Failed to send email via both DB and ENV methods.");
 };
 
 module.exports = sendEmail;
