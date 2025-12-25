@@ -6,10 +6,9 @@ const sendEmail = async (options) => {
   try {
     settings = await Settings.findOne();
   } catch (err) {
-    console.error("Failed to load settings for email:", err.message);
+    console.error("Failed to load settings:", err.message);
   }
 
-  // Helper to construct mail options
   const getMailOptions = (fromName, fromEmail) => ({
     from: `"${options.fromName || fromName}" <${options.fromEmail || fromEmail}>`,
     to: options.email,
@@ -17,6 +16,9 @@ const sendEmail = async (options) => {
     html: options.message,
     attachments: options.attachments
   });
+
+  let dbError = null;
+  let envError = null;
 
   // 1. Try DB Settings
   const smtpSettings = settings?.integrations?.email?.smtp;
@@ -46,10 +48,12 @@ const sendEmail = async (options) => {
       await transporter.sendMail(getMailOptions(fromName, fromEmail));
       console.log(`📧 Email sent successfully (via DB Settings) to ${options.email}`);
       return; // Exit if successful
-    } catch (dbError) {
-      console.error("❌ DB SMTP Send Failed:", dbError.message);
-      console.log("Falling back to .env settings...");
+    } catch (err) {
+      console.error("❌ DB SMTP Send Failed:", err.message);
+      dbError = err.message;
     }
+  } else {
+      dbError = "No DB SMTP settings configured";
   }
 
   // 2. Fallback to Env
@@ -78,22 +82,23 @@ const sendEmail = async (options) => {
       await transporter.sendMail(getMailOptions(fromName, fromEmail));
       console.log(`📧 Email sent successfully (via ENV) to ${options.email}`);
       return; // Exit if successful
-    } catch (envError) {
-      console.error("❌ ENV SMTP Send Failed:", envError.message);
-      // Don't return, let it fall through to logs
+    } catch (err) {
+      console.error("❌ ENV SMTP Send Failed:", err.message);
+      envError = err.message;
     }
+  } else {
+      envError = "No ENV SMTP settings configured";
   }
 
-  // 3. Last Resort: Log
+  // 3. Failure Reporting
   console.log('==================================================');
   console.log('❌ ALL EMAIL METHODS FAILED. LOGGING EMAIL ONLY.');
   console.log(`TO: ${options.email}`);
   console.log(`SUBJECT: ${options.subject}`);
   console.log('==================================================');
   
-  // Throw error to inform caller of failure, unless we really just want to log
-  // Ideally, if everything failed, we should throw so the API returns 500/400, not success.
-  throw new Error("Failed to send email via both DB and ENV methods.");
+  // Throw descriptive error for UI
+  throw new Error(`Email Failed. DB Error: [${dbError}] | Env Error: [${envError}]`);
 };
 
 module.exports = sendEmail;
