@@ -22,7 +22,9 @@ const sendEmail = async (options) => {
 
   // 1. Try DB Settings
   const smtpSettings = settings?.integrations?.email?.smtp;
-  if (smtpSettings && smtpSettings.host && smtpSettings.host.trim() !== '') {
+  const isPlaceholder = (h) => h && (h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io');
+  
+  if (smtpSettings && smtpSettings.host && smtpSettings.host.trim() !== '' && !isPlaceholder(smtpSettings.host)) {
     try {
       const port = Number(smtpSettings.port) || 587;
       const secure = port === 465;
