@@ -52,7 +52,7 @@ const sendEmail = async (options) => {
       return; // Exit if successful
     } catch (err) {
       console.error("❌ DB SMTP Send Failed:", err.message);
-      dbError = err.message;
+      dbError = `${err.message} (Attempted: ${smtpSettings.host}:${Number(smtpSettings.port) || 587})`;
     }
   } else {
       dbError = "No DB SMTP settings configured";
@@ -60,13 +60,14 @@ const sendEmail = async (options) => {
 
   // 2. Fallback to Env
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    let envHost = process.env.SMTP_HOST;
+    let envPort = Number(process.env.SMTP_PORT) || 587;
     try {
-      const envPort = Number(process.env.SMTP_PORT) || 587;
       const envSecure = envPort === 465;
-      console.log(`Attempting SMTP (ENV): ${process.env.SMTP_HOST}:${envPort} (Secure: ${envSecure})`);
+      console.log(`Attempting SMTP (ENV): ${envHost}:${envPort} (Secure: ${envSecure})`);
       
       const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
+        host: envHost,
         port: envPort,
         secure: envSecure,
         auth: {
@@ -86,7 +87,7 @@ const sendEmail = async (options) => {
       return; // Exit if successful
     } catch (err) {
       console.error("❌ ENV SMTP Send Failed:", err.message);
-      envError = err.message;
+      envError = `${err.message} (Attempted: ${envHost}:${envPort})`;
     }
   } else {
       envError = "No ENV SMTP settings configured";
