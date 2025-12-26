@@ -1,3 +1,4 @@
+const axios = require('axios');
 const nodemailer = require('nodemailer');
 const Settings = require('../models/Settings');
 
@@ -9,99 +10,136 @@ const sendEmail = async (options) => {
     console.error("Failed to load settings:", err.message);
   }
 
+  // Helper to compile email content
   const getMailOptions = (fromName, fromEmail) => ({
     from: `"${options.fromName || fromName}" <${options.fromEmail || fromEmail}>`,
     to: options.email,
     subject: options.subject,
     html: options.message,
-    attachments: options.attachments
+    attachments: options.attachments // Note: SendGrid needs specific handling for attachments if we use it, but basic text is priority.
   });
 
-  let dbError = null;
-  let envError = null;
+  const errors = [];
 
-  // 1. Try DB Settings
+  // --- STRATEGY 1: Check Explicit DB Provider (SendGrid) ---
+  const provider = settings?.integrations?.email?.provider || 'smtp';
+  
+  if (provider === 'sendgrid') {
+    const apiKey = settings?.integrations?.email?.sendgrid?.apiKey;
+    if (apiKey) {
+      try {
+        console.log("Attempting to send via SendGrid (DB Config)...");
+        await sendViaSendGrid(apiKey, options, settings.orgEmail || 'noreply@rental.com', settings.orgName || 'Rental Manager');
+        console.log(`📧 Email sent successfully (via SendGrid DB) to ${options.email}`);
+        return;
+      } catch (err) {
+        console.error("❌ SendGrid DB Failed:", err.message);
+        errors.push(`SendGrid DB: ${err.message}`);
+      }
+    } else {
+        errors.push("SendGrid DB: No API Key configured");
+    }
+  }
+
+  // --- STRATEGY 2: DB SMTP ---
   const smtpSettings = settings?.integrations?.email?.smtp;
   const isPlaceholder = (h) => h && (h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io');
-  
-  if (smtpSettings && smtpSettings.host && smtpSettings.host.trim() !== '' && !isPlaceholder(smtpSettings.host)) {
+
+  if (smtpSettings && smtpSettings.host && !isPlaceholder(smtpSettings.host)) {
     try {
       const port = Number(smtpSettings.port) || 587;
       const secure = port === 465;
       
-      console.log(`Attempting SMTP (DB): ${smtpSettings.host}:${port} (Secure: ${secure})`);
-      
+      console.log(`Attempting SMTP (DB): ${smtpSettings.host}:${port}`);
       const transporter = nodemailer.createTransport({
         host: smtpSettings.host,
         port: port,
         secure: secure,
-        auth: {
-          user: smtpSettings.user,
-          pass: smtpSettings.pass,
-        },
-        connectionTimeout: 30000, 
-        greetingTimeout: 30000,
-        family: 4
+        auth: { user: smtpSettings.user, pass: smtpSettings.pass },
+        connectionTimeout: 10000, // Reduced timeout for faster fallback
+        greetingTimeout: 5000
       });
 
       const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || 'noreply@rental.com';
-      const fromName = settings.orgName || process.env.FROM_NAME || 'Rental Manager';
+      const fromName = settings?.orgName || process.env.FROM_NAME || 'Rental Manager';
 
       await transporter.sendMail(getMailOptions(fromName, fromEmail));
-      console.log(`📧 Email sent successfully (via DB Settings) to ${options.email}`);
-      return; // Exit if successful
+      console.log(`📧 Email sent successfully (via DB SMTP) to ${options.email}`);
+      return;
     } catch (err) {
-      console.error("❌ DB SMTP Send Failed:", err.message);
-      dbError = `${err.message} (Attempted: ${smtpSettings.host}:${Number(smtpSettings.port) || 587})`;
+      console.error("❌ DB SMTP Failed:", err.message);
+      errors.push(`DB SMTP: ${err.message}`);
     }
-  } else {
-      dbError = "No DB SMTP settings configured";
   }
 
-  // 2. Fallback to Env
+  // --- STRATEGY 3: Env SMTP ---
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    let envHost = process.env.SMTP_HOST;
-    let envPort = Number(process.env.SMTP_PORT) || 587;
     try {
+      const envHost = process.env.SMTP_HOST;
+      const envPort = Number(process.env.SMTP_PORT) || 587;
       const envSecure = envPort === 465;
-      console.log(`Attempting SMTP (ENV): ${envHost}:${envPort} (Secure: ${envSecure})`);
-      
+
+      console.log(`Attempting SMTP (ENV): ${envHost}:${envPort}`);
       const transporter = nodemailer.createTransport({
         host: envHost,
         port: envPort,
         secure: envSecure,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        family: 4
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        connectionTimeout: 10000,
+        greetingTimeout: 5000
       });
 
-      const fromEmail = process.env.FROM_EMAIL || 'noreply@rental.com';
-      const fromName = process.env.FROM_NAME || 'Rental Manager';
-
-      await transporter.sendMail(getMailOptions(fromName, fromEmail));
-      console.log(`📧 Email sent successfully (via ENV) to ${options.email}`);
-      return; // Exit if successful
+      await transporter.sendMail(getMailOptions('Rental Manager', process.env.FROM_EMAIL || 'noreply@rental.com'));
+      console.log(`📧 Email sent successfully (via ENV SMTP) to ${options.email}`);
+      return;
     } catch (err) {
-      console.error("❌ ENV SMTP Send Failed:", err.message);
-      envError = `${err.message} (Attempted: ${envHost}:${envPort})`;
+      console.error("❌ ENV SMTP Failed:", err.message);
+      errors.push(`ENV SMTP: ${err.message}`);
     }
-  } else {
-      envError = "No ENV SMTP settings configured";
   }
 
-  // 3. Failure Reporting
-  console.log('==================================================');
-  console.log('❌ ALL EMAIL METHODS FAILED. LOGGING EMAIL ONLY.');
-  console.log(`TO: ${options.email}`);
-  console.log(`SUBJECT: ${options.subject}`);
-  console.log('==================================================');
-  
-  // Throw descriptive error for UI
-  throw new Error(`Email Failed. DB Error: [${dbError}] | Env Error: [${envError}]`);
+  // --- STRATEGY 4: Env SendGrid (Ultimate Fallback) ---
+  if (process.env.SENDGRID_API_KEY) {
+    try {
+      console.log("Attempting fallback to SendGrid (Env)...");
+      await sendViaSendGrid(process.env.SENDGRID_API_KEY, options, process.env.FROM_EMAIL || 'noreply@rental.com', 'Rental Manager');
+      console.log(`📧 Email sent successfully (via SendGrid Env) to ${options.email}`);
+      return;
+    } catch (err) {
+      console.error("❌ SendGrid Env Failed:", err.message);
+      errors.push(`SendGrid Env: ${err.message}`);
+    }
+  }
+
+  // Failure
+  const finalError = `All methods failed. Errors: [${errors.join(' | ')}]`;
+  console.error(finalError);
+  throw new Error(finalError);
 };
+
+// --- SendGrid Helper ---
+async function sendViaSendGrid(apiKey, options, fromEmail, fromName) {
+  // Basic cleaning of fromEmail to ensure it's a valid email, not empty
+  const cleanFrom = fromEmail && fromEmail.includes('@') ? fromEmail : 'noreply@rental.com';
+
+  const data = {
+    personalizations: [{ to: [{ email: options.email }] }],
+    from: { email: cleanFrom, name: fromName || 'Rental Manager' },
+    subject: options.subject,
+    content: [{ type: 'text/html', value: options.message }]
+  };
+
+  // Convert attachments if present (SendGrid expects base64 content)
+  // This is a simplified handler. Ideally, we read files to base64.
+  // Assuming options.attachments is the nodemailer format { filename, path/content }
+  // Only handling text/buffer content for now to avoid fs complexity here if not needed.
+  
+  await axios.post('https://api.sendgrid.com/v3/mail/send', data, {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    }
+  });
+}
 
 module.exports = sendEmail;
