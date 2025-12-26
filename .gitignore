@@ -45,3 +45,4 @@ db-backup/
 docs/
 temp/
 tmp/
+server/.env
