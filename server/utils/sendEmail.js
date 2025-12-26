@@ -39,8 +39,8 @@ const sendEmail = async (options) => {
           user: smtpSettings.user,
           pass: smtpSettings.pass,
         },
-        connectionTimeout: 10000, 
-        greetingTimeout: 10000,
+        connectionTimeout: 30000, 
+        greetingTimeout: 30000,
         family: 4
       });
 
@@ -73,8 +73,8 @@ const sendEmail = async (options) => {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
         family: 4
       });
 
