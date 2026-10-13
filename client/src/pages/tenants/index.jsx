@@ -41,7 +41,7 @@ function ViewLeaseDialog({ tenant, open, onOpenChange }) {
     if (!tenant) return null;
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col">
+            <DialogContent className="sm:max-w-150 h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>{t('lease_details')}</DialogTitle>
                     <DialogDescription>{t('signed')} {tenant.leaseStart}</DialogDescription>
@@ -67,6 +67,15 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
     const { t } = useTranslation();
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const { data: units } = useQuery({ 
+        queryKey: ["units"], 
+        queryFn: () => api.getUnits(),
+        enabled: open
+    });
+    
+    const currentUnitId = (tenant?.unitId && typeof tenant?.unitId === 'object') ? (tenant.unitId._id || tenant.unitId.id) : tenant?.unitId;
+    const availableUnits = units?.filter(u => u.status === 'vacant' || (u._id || u.id) === currentUnitId) || [];
+
     const form = useForm({
         resolver: zodResolver(tenantSchema),
         defaultValues: {
@@ -75,8 +84,8 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
             phone: tenant?.phone || "",
             idType: tenant?.idType || "national_id",
             nationalId: tenant?.nationalId || "",
-            unitId: (tenant?.unitId && typeof tenant?.unitId === 'object') ? (tenant.unitId._id || tenant.unitId.id) : (tenant?.unitId || "no_unit"),
-            leaseStart: tenant?.leaseStart || ""
+            unitId: currentUnitId || "no_unit",
+            leaseStart: tenant?.leaseStart ? new Date(tenant.leaseStart).toISOString().split('T')[0] : ""
         }
     });
 
@@ -85,6 +94,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["tenants"] });
             queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             onOpenChange(false);
             toast({ title: t('tenant_updated'), description: t('tenant_updated_desc') });
         },
@@ -93,14 +103,25 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
         }
     });
 
+    const [editUtilities, setEditUtilities] = useState(
+        Array.isArray(tenant?.utilities) && tenant.utilities.length > 0
+            ? tenant.utilities
+            : [
+                { name: "Water Bill", amount: 500, billingType: "fixed", isIncluded: false },
+                { name: "Garbage Collection", amount: 300, billingType: "fixed", isIncluded: false },
+                { name: "Parking Fee", amount: 0, billingType: "fixed", isIncluded: false },
+                { name: "Electricity (Post-pay)", amount: 0, billingType: "postpay_metered", isIncluded: false }
+            ]
+    );
+
     function onSubmit(values) {
-        const payload = { ...values, id: tenant._id || tenant.id };
+        const payload = { ...values, utilities: editUtilities, id: tenant._id || tenant.id };
         if (payload.unitId === "no_unit") payload.unitId = "";
         mutation.mutate(payload);
     }
 
     return (<Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>{t('edit_tenant')}</DialogTitle>
                 </DialogHeader>
@@ -157,13 +178,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                                 </FormItem>)}/>
                         </div>
                         
-                        <FormField control={form.control} name="unitId" render={({ field }) => {
-                             const { data: units } = useQuery({ queryKey: ["units"], queryFn: () => api.getUnits() });
-                             const currentUnitId = (tenant?.unitId && typeof tenant?.unitId === 'object') ? tenant.unitId._id : tenant?.unitId;
-                             // maintain current unit in list + vacant ones
-                             const availableUnits = units?.filter(u => u.status === 'vacant' || u._id === currentUnitId) || [];
-
-                             return (
+                        <FormField control={form.control} name="unitId" render={({ field }) => (
                             <FormItem>
                                 <FormLabel>{t('assign_unit')}</FormLabel>
                                 <Select onValueChange={field.onChange} defaultValue={field.value}>
@@ -176,14 +191,64 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                                         <SelectItem value="no_unit">{t('no_unit_assigned') || "No Unit"}</SelectItem>
                                         {availableUnits.map(unit => (
                                             <SelectItem key={unit._id || unit.id} value={unit._id || unit.id}>
-                                                Unit {unit.unitNumber} ({unit.type}) - {unit.rentAmount}
+                                                {unit.propertyId?.name ? `${unit.propertyId.name} - ` : ''}Unit {unit.unitNumber} ({unit.type}) - KES {unit.rentAmount}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                                 <FormMessage />
                             </FormItem>
-                         )}}/>
+                        )}/>
+
+                        {/* Edit Utility Bills */}
+                        <div className="space-y-2 p-3 rounded-lg border border-border/60 bg-muted/20">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold">Utility Charges & Fees</span>
+                                <Button 
+                                    type="button" 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="h-6 text-[11px] px-2"
+                                    onClick={() => setEditUtilities([...editUtilities, { name: "Custom Fee", amount: 0, billingType: "fixed", isIncluded: false }])}
+                                >
+                                    + Add Fee
+                                </Button>
+                            </div>
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                                {editUtilities.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-1.5 text-xs">
+                                        <Input
+                                            className="h-7 text-xs flex-1"
+                                            value={item.name}
+                                            onChange={(e) => {
+                                                const copy = [...editUtilities];
+                                                copy[idx].name = e.target.value;
+                                                setEditUtilities(copy);
+                                            }}
+                                        />
+                                        <Input
+                                            type="number"
+                                            className="h-7 text-xs w-20 font-mono"
+                                            value={item.amount}
+                                            onChange={(e) => {
+                                                const copy = [...editUtilities];
+                                                copy[idx].amount = Number(e.target.value);
+                                                setEditUtilities(copy);
+                                            }}
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
+                                            onClick={() => setEditUtilities(editUtilities.filter((_, i) => i !== idx))}
+                                        >
+                                            ✕
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
 
                         <Button type="submit" disabled={mutation.isPending} className="w-full">
                             {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
@@ -326,13 +391,25 @@ export default function TenantsPage() {
                                 </Badge>
                             </TableCell>
                             <TableCell>
-                                <Badge variant="outline" className={
-                                    tenant.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                    tenant.paymentStatus === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                    'bg-red-50 text-red-700 border-red-200'
-                                }>
-                                    {tenant.paymentStatus ? t(tenant.paymentStatus) : t('unpaid')}
-                                </Badge>
+                                <div className="space-y-1">
+                                    <Badge variant="outline" className={
+                                        tenant.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        tenant.paymentStatus === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                        'bg-red-50 text-red-700 border-red-200'
+                                    }>
+                                        {tenant.paymentStatus ? t(tenant.paymentStatus) : t('unpaid')}
+                                    </Badge>
+                                    {tenant.totalDue > 0 && (
+                                        <div className="text-xs font-semibold text-rose-600 font-mono">
+                                            Due: KES {tenant.totalDue.toLocaleString()}
+                                        </div>
+                                    )}
+                                    {tenant.utilitiesBreakdown && tenant.utilitiesBreakdown.length > 0 && (
+                                        <div className="text-[10px] text-muted-foreground truncate max-w-37.5">
+                                            {tenant.utilitiesBreakdown.map(u => u.name).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
                             </TableCell>
                             <TableCell className="text-right">
                                 <DropdownMenu>

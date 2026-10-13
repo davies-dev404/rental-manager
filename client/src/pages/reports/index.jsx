@@ -234,22 +234,41 @@ export default function ReportsPage() {
               <CardDescription>{t('kpi')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">{t('total_revenue')}</p>
-                  <p className="text-3xl font-bold">
+              <div className="grid gap-6 md:grid-cols-3">
+                 <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-1">Paid Money (Collected)</p>
+                  <p className="text-3xl font-bold text-emerald-600">
                       {formatCurrency(revenueData.reduce((acc, curr) => acc + (curr.collected || 0), 0))}
                   </p>
+                  <p className="text-xs text-muted-foreground mt-1">Realized income from rent & utilities</p>
                 </div>
+
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <p className="text-sm font-medium text-rose-700 dark:text-rose-400 mb-1">Money Not Paid (Uncollected)</p>
+                  <p className="text-3xl font-bold text-rose-600">
+                      {formatCurrency(revenueData.reduce((acc, curr) => acc + ((curr.expected || 0) - (curr.collected || 0)), 0))}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Overdue or pending rent & utility bills</p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
+                  <p className="text-sm font-medium text-primary mb-1">Expected Gross Revenue</p>
+                  <p className="text-3xl font-bold">
+                      {formatCurrency(revenueData.reduce((acc, curr) => acc + (curr.expected || 0), 0))}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Total expected lease & utility billing</p>
+                </div>
+
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">{t('total_expenses')}</p>
-                  <p className="text-3xl font-bold">
+                  <p className="text-2xl font-bold text-gray-800 dark:text-gray-200">
                       {formatCurrency(expenseData.reduce((acc, curr) => acc + (curr.amount || 0), 0))}
                   </p>
                 </div>
+
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">{t('net_income')}</p>
-                  <p className="text-3xl font-bold text-emerald-500">
+                  <p className="text-sm text-muted-foreground mb-2">{t('net_income')} (Realized)</p>
+                  <p className="text-2xl font-bold text-emerald-600">
                       {(() => {
                            const rev = revenueData.reduce((acc, curr) => acc + (curr.collected || 0), 0);
                            const exp = expenseData.reduce((acc, curr) => acc + (curr.amount || 0), 0);
@@ -257,13 +276,14 @@ export default function ReportsPage() {
                       })()}
                   </p>
                 </div>
+
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">{t('profit_margin')}</p>
-                  <p className="text-3xl font-bold">
+                  <p className="text-sm text-muted-foreground mb-2">Collection Efficiency</p>
+                  <p className="text-2xl font-bold">
                        {(() => {
-                           const rev = revenueData.reduce((acc, curr) => acc + (curr.collected || 0), 0);
-                           const exp = expenseData.reduce((acc, curr) => acc + (curr.amount || 0), 0);
-                           return rev > 0 ? Math.round(((rev - exp) / rev) * 100) + "%" : "0%";
+                           const exp = revenueData.reduce((acc, curr) => acc + (curr.expected || 0), 0);
+                           const col = revenueData.reduce((acc, curr) => acc + (curr.collected || 0), 0);
+                           return exp > 0 ? Math.round((col / exp) * 100) + "%" : "100%";
                        })()}
                   </p>
                 </div>

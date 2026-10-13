@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { formatInTimeZone } from 'date-fns-tz';
+import { useTheme } from "next-themes";
 import { api } from "./api";
 
 const PreferencesContext = createContext(undefined);
@@ -23,6 +24,7 @@ const EXCHANGE_RATES = {
 };
 
 export function PreferencesProvider({ children }) {
+    const { theme, setTheme } = useTheme();
     const [currency, setCurrency] = useState(() => {
         if (typeof window !== 'undefined') {
             return localStorage.getItem("rental_currency") || "USD";
@@ -42,7 +44,6 @@ export function PreferencesProvider({ children }) {
                 const settings = await api.getSettings();
                 if (settings?.currency) {
                     setCurrency(settings.currency);
-                    // Update local storage to match server
                     localStorage.setItem("rental_currency", settings.currency);
                 } else {
                      const storedCur = localStorage.getItem("rental_currency");
@@ -56,9 +57,12 @@ export function PreferencesProvider({ children }) {
                      const storedTZ = localStorage.getItem("rental_timezone");
                      if (storedTZ) setTimezone(storedTZ);
                 }
+
+                if (settings?.theme) {
+                     setTheme(settings.theme);
+                }
             } catch (e) {
                 console.error("Failed to load settings", e);
-                // Fallback to local storage if API fails
                 const storedCur = localStorage.getItem("rental_currency");
                 const storedTZ = localStorage.getItem("rental_timezone");
                 if (storedCur) setCurrency(storedCur);
@@ -66,20 +70,25 @@ export function PreferencesProvider({ children }) {
             }
         };
         loadPrefs();
-    }, []);
+    }, [setTheme]);
 
     const changeCurrency = (code) => {
         if (EXCHANGE_RATES[code]) {
             setCurrency(code);
             localStorage.setItem("rental_currency", code);
-            api.getSettings().then(s => api.updateSettings({ ...s, currency: code }));
+            api.getSettings().then(s => api.updateSettings({ ...s, currency: code })).catch(() => {});
         }
     };
 
     const changeTimezone = (tz) => {
         setTimezone(tz);
         localStorage.setItem("rental_timezone", tz);
-        api.getSettings().then(s => api.updateSettings({ ...s, timezone: tz }));
+        api.getSettings().then(s => api.updateSettings({ ...s, timezone: tz })).catch(() => {});
+    };
+
+    const changeTheme = (newTheme) => {
+        setTheme(newTheme);
+        api.getSettings().then(s => api.updateSettings({ ...s, theme: newTheme })).catch(() => {});
     };
 
     const formatCurrency = (amount) => {
@@ -100,6 +109,7 @@ export function PreferencesProvider({ children }) {
         <PreferencesContext.Provider value={{ 
             currency, changeCurrency, formatCurrency, 
             timezone, changeTimezone, formatDate,
+            theme, changeTheme,
             currencies: Object.keys(EXCHANGE_RATES) 
         }}>
             {children}

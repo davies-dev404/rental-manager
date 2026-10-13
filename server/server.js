@@ -36,12 +36,28 @@ app.use(morgan('dev'));
 // Database Connection
 const startRentReminders = require('./cron/rentReminder');
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/rental_manager')
-    .then(() => {
-        console.log('✅ MongoDB Connected');
+const connectDB = async () => {
+    const primaryUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/rental_manager';
+    try {
+        await mongoose.connect(primaryUri, { serverSelectionTimeoutMS: 4000 });
+        console.log('✅ MongoDB Connected successfully');
         startRentReminders();
-    })
-    .catch(err => console.error('❌ MongoDB Connection Error:', err));
+    } catch (err) {
+        console.warn('⚠️ Primary MongoDB connection failed (check Atlas IP whitelist):', err.message);
+        if (primaryUri !== 'mongodb://127.0.0.1:27017/rental_manager') {
+            console.log('🔄 Attempting fallback to local MongoDB (mongodb://127.0.0.1:27017/rental_manager)...');
+            try {
+                await mongoose.connect('mongodb://127.0.0.1:27017/rental_manager', { serverSelectionTimeoutMS: 2000 });
+                console.log('✅ Connected to local MongoDB fallback successfully');
+                startRentReminders();
+            } catch (localErr) {
+                console.error('❌ Failed to connect to both Atlas and local MongoDB:', localErr.message);
+            }
+        }
+    }
+};
+
+connectDB();
 
 // Routes
 const authRoutes = require('./routes/authRoutes');

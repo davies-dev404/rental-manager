@@ -91,19 +91,34 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/', protect, async (req, res) => {
   try {
-    const { rentAmount, depositAmount, nextPaymentDate, tenantId, date, method, status, monthCovered } = req.body;
+    const { rentAmount, depositAmount, utilityAmount, utilities, nextPaymentDate, tenantId, date, method, status, monthCovered } = req.body;
     
     const rAmt = Number(rentAmount || 0);
     const dAmt = Number(depositAmount || 0);
-    const totalAmount = rAmt + dAmt;
+    
+    // Calculate total utility amount from utilities breakdown if provided
+    let uList = Array.isArray(utilities) ? utilities : [];
+    let uAmt = Number(utilityAmount || 0);
+    if (uList.length > 0 && uAmt === 0) {
+        uAmt = uList.reduce((acc, u) => acc + Number(u.amount || 0), 0);
+    }
 
-    if (totalAmount <= 0) {
+    const totalAmount = rAmt + dAmt + uAmt;
+
+    const normalizedStatus = (status || 'paid').toLowerCase();
+    const isUnpaid = ['pending', 'unpaid', 'overdue'].includes(normalizedStatus);
+
+    if (totalAmount <= 0 && !isUnpaid) {
         return res.status(400).json({ message: "No payment amount provided" });
     }
 
     let paymentType = 'Rent';
-    if (rAmt > 0 && dAmt > 0) paymentType = 'Combined';
-    else if (dAmt > 0) paymentType = 'Deposit';
+    const components = [];
+    if (rAmt > 0) components.push('Rent');
+    if (dAmt > 0) components.push('Deposit');
+    if (uAmt > 0) components.push('Utilities');
+    if (components.length > 1) paymentType = 'Combined';
+    else if (components.length === 1) paymentType = components[0];
 
     const Tenant = require('../models/Tenant');
     const tenant = await Tenant.findById(tenantId);
@@ -118,15 +133,29 @@ router.post('/', protect, async (req, res) => {
         amount: totalAmount,
         rentAmount: rAmt,
         depositAmount: dAmt,
-        date,
-        method,
-        status,
-        monthCovered: rAmt > 0 ? monthCovered : 'Deposit',
+        utilityAmount: uAmt,
+        utilities: uList,
+        date: date || new Date(),
+        method: method || 'cash',
+        status: status || 'paid',
+        monthCovered: rAmt > 0 || uAmt > 0 ? monthCovered : 'Deposit',
         type: paymentType,
         user: req.user.id
     });
 
-    await logActivity(req.user, 'Record Payment', `Recorded ${paymentType} payment of ${totalAmount} for tenant`, 'payment', 'success');
+    const breakdownText = [
+        rAmt > 0 ? `Rent: ${rAmt}` : null,
+        uAmt > 0 ? `Utilities: ${uAmt}` : null,
+        dAmt > 0 ? `Deposit: ${dAmt}` : null
+    ].filter(Boolean).join(', ');
+
+    await logActivity(
+        req.user,
+        'Record Payment',
+        `Recorded ${paymentType} payment (${status.toUpperCase()}) of KES ${totalAmount} for ${tenant.name} (${breakdownText || 'Total: ' + totalAmount})`,
+        'payment',
+        isUnpaid ? 'warning' : 'success'
+    );
 
     // Update Tenant nextPaymentDate if provided
     if (nextPaymentDate && tenantId) {
@@ -134,8 +163,10 @@ router.post('/', protect, async (req, res) => {
         await Tenant.findByIdAndUpdate(tenantId, { nextPaymentDate });
     }
 
-    // Send ONE Receipt Email
-    sendReceiptEmail(payment._id).catch(err => console.error("Email Error:", err));
+    // Send ONE Receipt Email only if payment was actually made
+    if (!isUnpaid && totalAmount > 0) {
+        sendReceiptEmail(payment._id).catch(err => console.error("Email Error:", err));
+    }
 
     const populatedPayment = await Payment.findById(payment._id)
       .populate('tenantId', 'name email')

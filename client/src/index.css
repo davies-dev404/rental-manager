@@ -152,6 +152,11 @@
 }
 
 @layer base {
+  /* Glass‑morphism utility */
+  .glass {
+    @apply bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-lg;
+  }
+
   * {
     @apply border-border;
   }

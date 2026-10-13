@@ -23,26 +23,48 @@ router.get('/', protect, async (req, res) => {
     });
 
     const tenantsWithStatus = tenants.map(tenant => {
-        // Sum rent payments for this tenant this month
-        const tenantPayments = payments.filter(p => p.tenantId && p.tenantId.toString() === tenant._id.toString());
+        // Sum completed/paid payments for this tenant this month
+        const tenantPayments = payments.filter(p => 
+            p.tenantId && p.tenantId.toString() === tenant._id.toString() &&
+            ['paid', 'partial', 'Completed'].includes(p.status)
+        );
         
-        const totalRentPaid = tenantPayments.reduce((sum, p) => {
-            if (p.type === 'Rent' || p.type === 'Combined') {
-                return sum + (p.rentAmount || p.amount || 0);
-            }
-            return sum;
-        }, 0);
+        const totalRentPaid = tenantPayments.reduce((sum, p) => sum + (p.rentAmount || 0), 0);
+        const totalUtilityPaid = tenantPayments.reduce((sum, p) => sum + (p.utilityAmount || 0), 0);
+        const totalPaid = tenantPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
         const expectedRent = tenant.rentAmount || tenant.unitId?.rentAmount || 0;
         
+        // Sum active utilities configured for tenant
+        const activeUtilities = Array.isArray(tenant.utilities) ? tenant.utilities : [];
+        const expectedUtilities = activeUtilities
+            .filter(u => !u.isIncluded)
+            .reduce((sum, u) => sum + (Number(u.amount) || 0), 0);
+
+        const totalExpected = expectedRent + expectedUtilities;
+        const totalDue = Math.max(0, totalExpected - totalPaid);
+        const rentDue = Math.max(0, expectedRent - totalRentPaid);
+        const utilityDue = Math.max(0, expectedUtilities - totalUtilityPaid);
+
         let status = 'unpaid';
-        if (totalRentPaid >= expectedRent && expectedRent > 0) {
+        if (totalDue === 0 && totalExpected > 0) {
             status = 'paid';
-        } else if (totalRentPaid > 0) {
+        } else if (totalPaid > 0) {
             status = 'partial';
         }
 
-        return { ...tenant.toObject(), paymentStatus: status };
+        return { 
+            ...tenant.toObject(), 
+            paymentStatus: status,
+            totalExpected,
+            totalPaid,
+            totalDue,
+            rentDue,
+            utilityDue,
+            expectedRent,
+            expectedUtilities,
+            utilitiesBreakdown: activeUtilities
+        };
     });
 
     res.json(tenantsWithStatus);

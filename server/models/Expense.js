@@ -1,10 +1,10 @@
 const mongoose = require('mongoose');
 
 const expenseSchema = new mongoose.Schema({
-  title: { type: String, required: true },
+  title: { type: String, default: 'General Expense' },
   amount: { type: Number, required: true },
   category: { type: String, required: true },
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // e.g., 'Maintenance', 'Utilities', 'Taxes'
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   date: { type: Date, default: Date.now },
   description: { type: String },
   propertyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Property' }

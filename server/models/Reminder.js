@@ -21,6 +21,19 @@ const reminderSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant' },
+  recipientName: { type: String },
+  recipientEmail: { type: String },
+  recipientPhone: { type: String },
+  amountDue: { type: Number, default: 0 },
+  breakdown: {
+    rent: { type: Number, default: 0 },
+    deposit: { type: Number, default: 0 },
+    utilities: [{
+      name: { type: String },
+      amount: { type: Number, default: 0 }
+    }]
+  },
   description: {
     type: String
   },

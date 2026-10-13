@@ -13,6 +13,12 @@ const tenantSchema = new mongoose.Schema({
   leaseEnd: { type: Date },
   rentAmount: { type: Number }, // Snapshot of rent at lease start
   deposit: { type: Number, default: 0 },
+  utilities: [{
+    name: { type: String, required: true }, // e.g. "Water", "Electricity (Post-pay)", "Garbage", "Parking", "Security"
+    amount: { type: Number, required: true, default: 0 },
+    billingType: { type: String, enum: ['fixed', 'postpay_metered'], default: 'fixed' },
+    isIncluded: { type: Boolean, default: false } // Landlord can include it in rent or bill separately
+  }],
   nextPaymentDate: { type: Date }, // For tracking custom due dates
   createdAt: { type: Date, default: Date.now }
 });

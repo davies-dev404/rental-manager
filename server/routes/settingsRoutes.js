@@ -38,6 +38,7 @@ router.put('/', async (req, res) => {
         // App Preferences
         if (req.body.currency) settings.currency = req.body.currency;
         if (req.body.timezone) settings.timezone = req.body.timezone;
+        if (req.body.theme) settings.theme = req.body.theme;
         
         if (req.body.notifications) settings.notifications = req.body.notifications;
         

@@ -5,26 +5,32 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String },
-  password: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'caretaker'], default: 'admin' },
+  password: { 
+    type: String, 
+    required: function() {
+      return !this.authProvider || this.authProvider === 'local';
+    } 
+  },
+  authProvider: { type: String, enum: ['local', 'google', 'apple'], default: 'local' },
+  googleId: { type: String },
+  appleId: { type: String },
+  role: { type: String, enum: ['admin', 'caretaker', 'landlord', 'tenant', 'manager'], default: 'admin' },
   avatar: { type: String, default: 'https://github.com/shadcn.png' },
   isVerified: { type: Boolean, default: false },
   otp: { type: String },
   otpExpires: { type: Date },
   createdAt: { type: Date, default: Date.now },
   twoFactorSecret: { type: String },
-  twoFactorEnabled: { type: Boolean, default: false }
+  twoFactorEnabled: { type: Boolean, default: false },
+  resetPasswordToken: { type: String },
+  resetPasswordExpires: { type: Date }
 });
 
 // Hash password before saving
-// Hash password before saving
 userSchema.pre('save', async function() {
-  console.log('User pre-save hook triggered for:', this.email);
-  if (!this.isModified('password')) return;
+  if (!this.password || !this.isModified('password')) return;
   try {
-      console.log('Hashing password...');
       this.password = await bcrypt.hash(this.password, 10);
-      console.log('Password hashed successfully.');
   } catch (err) {
       console.error('Bcrypt Hashing Failed:', err);
       throw err;

@@ -16,7 +16,14 @@ router.get('/', protect, async (req, res) => {
 // Add Expense
 router.post('/', protect, async (req, res) => {
     try {
-        const expense = await Expense.create({ ...req.body, user: req.user.id });
+        const title = req.body.title || req.body.description || 'General Expense';
+        const expense = await Expense.create({ 
+            ...req.body, 
+            title,
+            description: req.body.description || title,
+            amount: Number(req.body.amount),
+            user: req.user.id 
+        });
         res.status(201).json(expense);
     } catch (error) {
         res.status(400).json({ message: error.message });

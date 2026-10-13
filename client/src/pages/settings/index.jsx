@@ -28,8 +28,7 @@ export default function Settings() {
     const { toast } = useToast();
     const { user, updateProfile } = useAuth();
     const { t, i18n } = useTranslation();
-    const { currency, changeCurrency, currencies, timezone, changeTimezone } = usePreferences();
-    const { theme, setTheme } = useTheme();
+    const { currency, changeCurrency, currencies, timezone, changeTimezone, theme, changeTheme } = usePreferences();
     const timezones = Intl.supportedValuesOf('timeZone');
     if (!timezones.includes("Africa/Nairobi")) {
         timezones.push("Africa/Nairobi");
@@ -268,7 +267,7 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-col md:flex-row gap-6">
-                  <div className="flex-shrink-0 flex flex-col items-center space-y-2">
+                  <div className="shrink-0 flex flex-col items-center space-y-2">
                        <ProfilePhotoUpload 
                           currentPhoto={formData.avatar || user?.avatar} 
                           onSave={(url) => setFormData(prev => ({ ...prev, avatar: url }))} 
@@ -339,7 +338,7 @@ export default function Settings() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label>{t('theme') || "Theme"}</Label>
-                <Select value={theme} onValueChange={setTheme}>
+                <Select value={theme} onValueChange={changeTheme}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

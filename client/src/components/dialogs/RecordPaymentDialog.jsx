@@ -18,13 +18,14 @@ const paymentSchema = z.object({
     tenantId: z.string().min(1, "Tenant is required"),
     rentAmount: z.coerce.number().min(0).default(0),
     depositAmount: z.coerce.number().min(0).default(0),
+    utilityAmount: z.coerce.number().min(0).default(0),
     date: z.string(),
     method: z.enum(["cash", "bank", "mobile_money", "lipa_na_mpesa"]),
-    status: z.enum(["paid", "partial"]),
+    status: z.enum(["paid", "partial", "pending", "Pending", "unpaid", "Unpaid", "overdue"]),
     monthCovered: z.string(),
     nextPaymentDate: z.string().optional(),
-}).refine(data => data.rentAmount > 0 || data.depositAmount > 0, {
-    message: "At least one amount must be greater than 0",
+}).refine(data => data.rentAmount > 0 || data.depositAmount > 0 || data.utilityAmount > 0 || ['pending', 'Pending', 'unpaid', 'Unpaid', 'overdue'].includes(data.status), {
+    message: "At least one amount must be entered, or status set to Pending/Unpaid",
     path: ["rentAmount"]
 });
 
@@ -153,10 +154,10 @@ export function RecordPaymentDialog() {
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground border border-primary-border h-9 px-4 py-2 shadow-lg hover:shadow-xl transition-all cursor-pointer">
+            <DialogTrigger className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 bg-primary text-primary-foreground border border-primary-border h-9 px-4 py-2 shadow-lg hover:shadow-xl transition-all cursor-pointer">
                 <Plus className="w-4 h-4 mr-2"/> {t('record_payment')}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>{t('record_payment')}</DialogTitle>
                     <DialogDescription>
@@ -186,19 +187,28 @@ export function RecordPaymentDialog() {
                             </FormItem>
                         )}/>
                         
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-3">
                             <FormField control={form.control} name="rentAmount" render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>{t('rent_amount') || "Rent Amount"} ({currency})</FormLabel>
+                                    <FormLabel className="text-xs">{t('rent_amount') || "Rent"} ({currency})</FormLabel>
                                     <FormControl>
                                         <Input type="number" {...field}/>
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
                             )}/>
-                             <FormField control={form.control} name="depositAmount" render={({ field }) => (
+                            <FormField control={form.control} name="utilityAmount" render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>{t('deposit_amount') || "Deposit Amount"} ({currency})</FormLabel>
+                                    <FormLabel className="text-xs">Utilities ({currency})</FormLabel>
+                                    <FormControl>
+                                        <Input type="number" {...field} placeholder="0"/>
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}/>
+                            <FormField control={form.control} name="depositAmount" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel className="text-xs">{t('deposit_amount') || "Deposit"} ({currency})</FormLabel>
                                     <FormControl>
                                         <Input type="number" {...field}/>
                                     </FormControl>
@@ -266,9 +276,11 @@ export function RecordPaymentDialog() {
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                            <SelectItem value="paid">{t('full_payment')}</SelectItem>
-                                            <SelectItem value="partial">{t('partial_payment')}</SelectItem>
-                                            <SelectItem value="Pending">{t('pending') || "Pending"}</SelectItem>
+                                            <SelectItem value="paid">{t('full_payment') || "Paid (Completed)"}</SelectItem>
+                                            <SelectItem value="partial">{t('partial_payment') || "Partial Payment"}</SelectItem>
+                                            <SelectItem value="Pending">{t('pending') || "Pending (Not Paid Yet)"}</SelectItem>
+                                            <SelectItem value="unpaid">{t('unpaid') || "Not Paid / Unpaid"}</SelectItem>
+                                            <SelectItem value="overdue">{t('overdue') || "Overdue"}</SelectItem>
                                         </SelectContent>
                                     </Select>
                                     <FormMessage />

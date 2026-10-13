@@ -11,6 +11,7 @@ const settingsSchema = new mongoose.Schema({
   // App Preferences
   currency: { type: String, default: 'USD' },
   timezone: { type: String, default: 'UTC' },
+  theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
   
   // Notification Settings (toggles)
   notifications: {

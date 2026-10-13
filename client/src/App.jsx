@@ -86,12 +86,10 @@ function Router() {
 function App() {
     return (<QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-            <AuthProvider>
-            <Router />
-            <Toaster />
-            </AuthProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <Router />
+          <Toaster />
+        </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>);
 }

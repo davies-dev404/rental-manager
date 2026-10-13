@@ -61,7 +61,7 @@ function ManageUnitsDialog({ property }) {
     const mutation = useMutation({
         mutationFn: api.addUnit,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["units", property._id || property.id] });
+            queryClient.invalidateQueries({ queryKey: ["units"] });
             queryClient.invalidateQueries({ queryKey: ["properties"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] }); // Update dashboard
             form.reset();
@@ -86,7 +86,7 @@ function ManageUnitsDialog({ property }) {
     const deleteMutation = useMutation({
         mutationFn: api.deleteUnit,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["units", property._id || property.id] });
+            queryClient.invalidateQueries({ queryKey: ["units"] });
             queryClient.invalidateQueries({ queryKey: ["properties"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
             setDeletingUnitId(null);
@@ -99,7 +99,7 @@ function ManageUnitsDialog({ property }) {
             <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="w-full mr-2">{t('manage_units')}</Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
+            <DialogContent className="sm:max-w-175 h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>{t('manage_units')} - {property.name}</DialogTitle>
                     <DialogDescription>{t('manage_properties_desc') || "Add and view units for this property."}</DialogDescription>
@@ -265,7 +265,7 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>{t('edit_details')}</DialogTitle>
                     <DialogDescription>
@@ -350,7 +350,7 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>{t('edit_property')}</DialogTitle>
                     <DialogDescription>{t('update_property_desc') || "Update property details."}</DialogDescription>
@@ -440,7 +440,7 @@ function PropertyCard({ property, onAssign }) {
 
             <Card className="group overflow-hidden border-border/50 shadow-sm hover:shadow-lg transition-all hover:border-primary/20">
                 <div className="h-40 bg-muted relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10"/>
+                    <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent z-10"/>
                     <img src={property.image || `https://images.unsplash.com/photo-1560518883-ce09059eeffa?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80`} alt={property.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"/>
                     <div className="absolute bottom-3 left-4 z-20 text-white">
                         <h3 className="font-bold text-lg">{property.name}</h3>
@@ -561,7 +561,7 @@ function AddPropertyDialog() {
             <Plus className="w-4 h-4 mr-2"/> {t('add_property')}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-106.25">
         <DialogHeader>
           <DialogTitle>{t('add_property')}</DialogTitle>
           <DialogDescription>
@@ -664,7 +664,7 @@ function AssignCaretakerDialog({ property, open, onOpenChange }) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-106.25">
                 <DialogHeader>
                     <DialogTitle>{t('assign_caretaker')} - {property.name}</DialogTitle>
                     <DialogDescription>{t('select_caretaker')}</DialogDescription>

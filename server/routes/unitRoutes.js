@@ -9,8 +9,22 @@ const { protect, admin } = require('../middleware/authMiddleware');
 router.get('/', protect, async (req, res) => {
   try {
     const { propertyId } = req.query;
-    const query = propertyId ? { propertyId, user: req.user.id } : { user: req.user.id };
-    const units = await Unit.find(query);
+    const Property = require('../models/Property');
+    const userProperties = await Property.find({ 
+      $or: [{ user: req.user.id }, { caretakerId: req.user.id }] 
+    }).select('_id');
+    const propIds = userProperties.map(p => p._id);
+
+    let query = {
+      $or: [
+        { user: req.user.id },
+        { propertyId: { $in: propIds } }
+      ]
+    };
+    if (propertyId) {
+      query = { propertyId, $or: query.$or };
+    }
+    const units = await Unit.find(query).populate('propertyId', 'name location');
     res.json(units);
   } catch (error) {
     res.status(500).json({ message: error.message });

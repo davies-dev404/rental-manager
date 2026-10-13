@@ -58,6 +58,74 @@ export const api = {
     }
   },
 
+  googleAuth: async (payload) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'Google sign-in failed');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  appleAuth: async (payload) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/apple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || 'Apple sign-in failed');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  forgotPassword: async (email) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to send reset code');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  resetPassword: async (email, code, newPassword) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, newPassword })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to reset password');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
   verifyEmail: async (email, otp) => {
     try {
         const response = await fetch(`${API_URL}/auth/verify-email`, {
@@ -288,12 +356,35 @@ export const api = {
     if (!response.ok) return {}; 
     return await response.json();
   },
-  getActivityLogs: async () => [],
-  logActivity: async () => {},
+  getActivityLogs: async () => {
+    try {
+      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+    } catch {
+      return [];
+    }
+  },
+  logActivity: async (action, description, type = 'info', status = 'success') => {
+    try {
+      await fetch(`${API_URL}/activity-logs`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, description, type, status })
+      });
+    } catch (e) {
+      console.warn("Client activity log skipped:", e);
+    }
+  },
   getDocuments: async () => [],
   addDocument: async () => {},
   getReminders: async () => {
       const response = await fetch(`${API_URL}/reminders`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+  },
+  getDebtors: async () => {
+      const response = await fetch(`${API_URL}/reminders/debtors`, { headers: getAuthHeaders() });
       if (!response.ok) return [];
       return await response.json();
   },
@@ -303,7 +394,21 @@ export const api = {
           headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify(reminderData)
       });
-      if (!response.ok) throw new Error("Failed to create reminder");
+      if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to create reminder");
+      }
+      return await response.json();
+  },
+  sendReminderNow: async (id) => {
+      const response = await fetch(`${API_URL}/reminders/${id}/send`, {
+          method: 'POST',
+          headers: getAuthHeaders()
+      });
+      if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to send reminder");
+      }
       return await response.json();
   },
   deleteReminder: async (id) => {
@@ -312,7 +417,36 @@ export const api = {
           headers: getAuthHeaders()
       });
   },
-  getExpenses: async () => [],
+  getExpenses: async () => {
+    const response = await fetch(`${API_URL}/expenses`, { headers: getAuthHeaders() });
+    if (!response.ok) return [];
+    return await response.json();
+  },
+  addExpense: async (expense) => {
+    const payload = {
+      ...expense,
+      title: expense.title || expense.description || 'General Expense',
+      description: expense.description || expense.title || 'General Expense',
+      amount: Number(expense.amount)
+    };
+    const response = await fetch(`${API_URL}/expenses`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to add expense');
+    }
+    return await response.json();
+  },
+  deleteExpense: async (id) => {
+    const response = await fetch(`${API_URL}/expenses/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    return response.ok;
+  },
   getSettings: async () => {
     const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders() });
     if (!response.ok) return {}; // Return empty if failed or not set up

@@ -87,12 +87,22 @@ async function getRevenueData(userId) {
             return new Date(startDate) < nextMonth;
         });
 
-        const expected = validTenantsForMonth.reduce((sum, t) => sum + (t.unitId?.rentAmount || 0), 0);
+        const expected = validTenantsForMonth.reduce((sum, t) => {
+            const r = t.rentAmount || t.unitId?.rentAmount || 0;
+            const u = Array.isArray(t.utilities)
+                ? t.utilities.filter(item => !item.isIncluded).reduce((s, item) => s + (Number(item.amount) || 0), 0)
+                : 0;
+            return sum + r + u;
+        }, 0);
+
+        const uncollected = Math.max(0, expected - collected);
 
         data.push({
             month: monthName,
             collected,
-            expected: expected > collected ? expected : collected // simplistic
+            expected,
+            uncollected,
+            paid: collected
         });
     }
     return data;
