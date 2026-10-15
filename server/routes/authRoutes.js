@@ -246,12 +246,15 @@ router.post('/register', async (req, res) => {
         res.status(400).json({ message: 'Could not create account. Please try again.' });
       }
   } catch (error) {
-      console.error('Registration Error:', error.message);
+      console.error('Registration Error:', error);
       // Mongoose duplicate key
       if (error.code === 11000) {
         return res.status(400).json({ message: 'An account with this email already exists' });
       }
-      res.status(500).json({ message: 'Server error during registration. Please try again.' });
+      res.status(500).json({ 
+        message: error.message || 'Server error during registration. Please try again.',
+        details: error.name || 'ServerError'
+      });
   }
 });
 
