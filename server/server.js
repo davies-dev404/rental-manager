@@ -22,12 +22,20 @@ app.use(limiter);
 
 // Standard Middleware
 app.use(cors({
-    origin: [
-        'http://localhost:5173', 
-        'https://rental-manager-2sto.vercel.app', 
-        'https://rental-manager-sikj.onrender.com',
-        'https://rental-manager-seven.vercel.app'
-    ],
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, or same-origin rewrites)
+        if (!origin) return callback(null, true);
+        const allowedOrigins = [
+            'http://localhost:5173', 
+            'https://rental-manager-2sto.vercel.app', 
+            'https://rental-manager-sikj.onrender.com',
+            'https://rental-manager-seven.vercel.app'
+        ];
+        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        }
+        return callback(null, true); // Permissive for unified domain routing
+    },
     credentials: true
 }));
 app.use(express.json());
