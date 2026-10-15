@@ -10,6 +10,7 @@ import { Download, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePreferences } from "@/lib/currency";
+import { useNavigate } from "react-router-dom";
 
 
 function StatCard({ title, value, subtext, icon: Icon, trend, color = "primary" }) {
@@ -56,6 +57,7 @@ function RecentActivityItem({ icon: Icon, title, description, time, status }) {
 }
 export default function Dashboard() {
     const { toast } = useToast();
+    const navigate = useNavigate();
     const { data: stats, isLoading } = useQuery({
         queryKey: ["stats"],
         queryFn: api.getStats,
@@ -71,7 +73,7 @@ export default function Dashboard() {
     });
 
     const handleGenerateReport = () => {
-        window.print();
+        navigate('/reports');
     };
 
     if (isLoading) {
@@ -111,11 +113,11 @@ export default function Dashboard() {
             <p className="text-muted-foreground mt-1">Real-time overview of your rental properties, billing collections, and occupancy status.</p>
         </div>
         <div className="flex items-center gap-2">
-            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => window.location.href = '/reminders'}>
+            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => navigate('/reminders')}>
                 <AlertCircle className="w-4 h-4 mr-2 text-rose-500"/>
                 Reminders
             </Button>
-            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => window.location.href = '/expenses'}>
+            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => navigate('/expenses')}>
                 <DollarSign className="w-4 h-4 mr-2 text-amber-500"/>
                 Expenses
             </Button>
@@ -123,7 +125,7 @@ export default function Dashboard() {
                 <Download className="w-4 h-4 mr-2"/>
                 {t('export_report')}
             </Button>
-            <Button className="shadow-md hover:shadow-lg transition-all cursor-pointer" onClick={() => window.location.href = '/payments'}>
+            <Button className="shadow-md hover:shadow-lg transition-all cursor-pointer" onClick={() => navigate('/payments')}>
                 <Wallet className="w-4 h-4 mr-2"/>
                 Payments
             </Button>
