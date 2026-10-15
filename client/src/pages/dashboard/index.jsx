@@ -10,7 +10,7 @@ import { Download, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePreferences } from "@/lib/currency";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 
 
 function StatCard({ title, value, subtext, icon: Icon, trend, color = "primary" }) {
@@ -57,7 +57,7 @@ function RecentActivityItem({ icon: Icon, title, description, time, status }) {
 }
 export default function Dashboard() {
     const { toast } = useToast();
-    const navigate = useNavigate();
+    const [, navigate] = useLocation();
     const { data: stats, isLoading } = useQuery({
         queryKey: ["stats"],
         queryFn: api.getStats,
