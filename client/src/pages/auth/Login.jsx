@@ -606,14 +606,29 @@ function LoginContent() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="su-confirm" className="text-sm font-medium">Confirm</Label>
+                <Label htmlFor="su-confirm" className="text-sm font-medium">Confirm Password</Label>
                 <div className="relative">
-                  <input id="su-confirm" type={showSignupConfirm ? "text" : "password"} className={`${inputCls} pr-9`} placeholder="••••••••"
-                    value={signupData.confirmPassword} onChange={(e) => setSignupData((p) => ({ ...p, confirmPassword: e.target.value }))} />
+                  <input
+                    id="su-confirm"
+                    type={showSignupConfirm ? "text" : "password"}
+                    className={`${inputCls} pr-9 ${signupData.confirmPassword && signupData.password !== signupData.confirmPassword ? "border-red-500 focus:ring-red-500" : signupData.confirmPassword && signupData.password === signupData.confirmPassword ? "border-green-500 focus:ring-green-500" : ""}`}
+                    placeholder="••••••••"
+                    value={signupData.confirmPassword}
+                    onChange={(e) => setSignupData((p) => ({ ...p, confirmPassword: e.target.value }))} />
                   <button type="button" onClick={() => setShowSignupConfirm(!showSignupConfirm)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showSignupConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {signupData.confirmPassword && signupData.password !== signupData.confirmPassword && (
+                  <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                    <span>✗</span> Passwords do not match
+                  </p>
+                )}
+                {signupData.confirmPassword && signupData.password === signupData.confirmPassword && (
+                  <p className="text-xs text-green-500 flex items-center gap-1 mt-1">
+                    <span>✓</span> Passwords match
+                  </p>
+                )}
               </div>
               <div className="col-span-2">
                 <PasswordStrengthIndicator password={signupData.password} />
