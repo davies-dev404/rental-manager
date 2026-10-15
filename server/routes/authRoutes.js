@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
 const { protect } = require('../middleware/authMiddleware'); // Import protect!
+const { validatePassword } = require('../utils/passwordPolicy');
 
 // Generate JWT
 const generateToken = (id) => {
@@ -28,29 +29,141 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
-      // Check verification
-      if (!user.isVerified && user.role !== 'admin') { 
-         // return res.status(401).json({ message: 'Please verify your email first' });
+      // Generate a 6-digit login OTP
+      const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      user.otp = loginOtp;
+      user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+      await user.save();
+
+      // Send OTP via email (non-blocking failure)
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: 'Dwello — Your Login Verification Code',
+          message: `
+            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
+              <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
+              <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to Dwello. It expires in <strong>3 minutes</strong>.</p>
+              <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
+              <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
+            </div>`
+        });
+        console.log(`📧 Login OTP email dispatched to ${user.email}`);
+      } catch (emailErr) {
+        console.error('Login OTP email failed (non-fatal):', emailErr.message);
       }
 
-      await logActivity(user, 'User Logged In', `User ${user.name} logged in successfully`, 'auth', 'success');
+      await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email}`, 'auth', 'info');
 
-      res.json({
-        _id: user._id, // Keep _id primarily
-        id: user._id, // Add id alias for frontend
-        name: user.name,
+      return res.json({
+        requiresOTP: true,
         email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        token: generateToken(user._id),
-        twoFactorEnabled: user.twoFactorEnabled
+        name: user.name
       });
     } else {
       await logActivity('System', 'Login Failed', `Failed login attempt for ${email}`, 'auth', 'warning');
       res.status(401).json({ message: 'Invalid email or password' });
     }
   } catch (error) {
-     res.status(500).json({ message: error.message });
+    console.error('Login error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Resend login OTP
+// @route   POST /api/auth/resend-login-otp
+// @access  Public
+router.post('/resend-login-otp', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'No account found with this email' });
+    }
+
+    // Generate fresh 6-digit OTP (3 minutes)
+    const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = loginOtp;
+    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    await user.save();
+
+    // Send OTP via email
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Dwello — Your Login Verification Code',
+        message: `
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
+            <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
+            <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to Dwello. It expires in <strong>3 minutes</strong>.</p>
+            <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
+            <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
+          </div>`
+      });
+      console.log(`📧 Login OTP email resent to ${user.email}`);
+    } catch (emailErr) {
+      console.error('Resend login OTP email failed:', emailErr.message);
+    }
+
+    await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email}`, 'auth', 'info');
+
+    return res.json({
+      success: true,
+      message: 'A new verification code has been sent to your email.'
+    });
+  } catch (error) {
+    console.error('Resend login OTP error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Verify login OTP and return token
+// @route   POST /api/auth/verify-login-otp
+// @access  Public
+router.post('/verify-login-otp', async (req, res) => {
+  const { email, otp } = req.body;
+
+  try {
+    if (!email || !otp) {
+      return res.status(400).json({ message: 'Email and OTP are required' });
+    }
+
+    const user = await User.findOne({
+      email,
+      otp,
+      otpExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+    }
+
+    // Clear OTP fields
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    if (!user.isVerified) user.isVerified = true;
+    await user.save();
+
+    await logActivity(user, 'User Logged In', `User ${user.name} completed OTP login`, 'auth', 'success');
+
+    res.json({
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      token: generateToken(user._id),
+      twoFactorEnabled: user.twoFactorEnabled
+    });
+  } catch (error) {
+    console.error('Verify login OTP error:', error.message);
+    res.status(500).json({ message: error.message });
   }
 });
 
@@ -68,6 +181,15 @@ router.post('/register', async (req, res) => {
 
       if (password && confirmPassword && password !== confirmPassword) {
          return res.status(400).json({ message: 'Passwords do not match' });
+      }
+
+      // Password policy validation
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ 
+          message: passwordValidation.message,
+          errors: passwordValidation.errors 
+        });
       }
 
       const userExists = await User.findOne({ email });
@@ -118,9 +240,7 @@ router.post('/register', async (req, res) => {
         res.status(201).json({ 
           message: 'Registration successful. Please verify your email.',
           requiresVerification: true,
-          email: user.email,
-          // Expose OTP in dev so you can test without real email
-          otp: process.env.NODE_ENV !== 'production' ? otp : undefined
+          email: user.email
         });
       } else {
         res.status(400).json({ message: 'Could not create account. Please try again.' });
@@ -282,8 +402,7 @@ router.post('/forgot-password', async (req, res) => {
 
         res.json({
             message: 'Password reset code has been sent to your email.',
-            email: user.email,
-            code: process.env.NODE_ENV !== 'production' ? resetCode : undefined
+            email: user.email
         });
     } catch (error) {
         console.error('Forgot password error:', error.message);
@@ -301,8 +420,13 @@ router.post('/reset-password', async (req, res) => {
             return res.status(400).json({ message: 'Email, code, and new password are required' });
         }
 
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters' });
+        // Password policy validation
+        const passwordValidation = validatePassword(newPassword);
+        if (!passwordValidation.valid) {
+            return res.status(400).json({ 
+                message: passwordValidation.message,
+                errors: passwordValidation.errors 
+            });
         }
 
         const user = await User.findOne({
@@ -326,6 +450,55 @@ router.post('/reset-password', async (req, res) => {
     } catch (error) {
         console.error('Reset password error:', error.message);
         res.status(500).json({ message: 'Server error resetting password' });
+    }
+});
+
+// @desc    Change password (Authenticated user)
+// @route   POST /api/auth/change-password
+// @access  Private
+router.post('/change-password', protect, async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    try {
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({ message: 'Current password and new password are required' });
+        }
+
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check current password
+        if (user.password) {
+            const isMatch = await user.matchPassword(oldPassword);
+            if (!isMatch) {
+                await logActivity(user, 'Password Change Failed', 'Incorrect current password provided', 'auth', 'warning');
+                return res.status(400).json({ message: 'Incorrect current password' });
+            }
+        }
+
+        if (oldPassword === newPassword) {
+            return res.status(400).json({ message: 'New password cannot be identical to the current password' });
+        }
+
+        // Validate new password against policy
+        const validation = validatePassword(newPassword);
+        if (!validation.valid) {
+            return res.status(400).json({ 
+                message: validation.message,
+                errors: validation.errors 
+            });
+        }
+
+        user.password = newPassword;
+        await user.save();
+
+        await logActivity(user, 'Password Changed', `User ${user.name} successfully updated account password`, 'auth', 'success');
+
+        res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Change password error:', error.message);
+        res.status(500).json({ message: error.message || 'Server error changing password' });
     }
 });
 

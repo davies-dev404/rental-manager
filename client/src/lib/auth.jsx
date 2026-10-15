@@ -7,11 +7,9 @@ export function AuthProvider({ children }) {
     const [isLoading, setIsLoading] = useState(true);
     const { toast } = useToast();
     useEffect(() => {
-        // Simulate session check
         const storedUser = localStorage.getItem("rental_user");
         if (storedUser) {
             const parsed = JSON.parse(storedUser);
-            // Check if this is a real user with a token, or old mock data
             if (parsed && parsed.token) {
                 setUser(parsed);
             } else {
@@ -22,15 +20,47 @@ export function AuthProvider({ children }) {
         }
         setIsLoading(false);
     }, []);
-    const login = async (email, role) => {
+
+    // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
+    const login = async (email, password) => {
         try {
-            const user = await api.login(email, role);
-            setUser(user);
-            localStorage.setItem("rental_user", JSON.stringify(user));
-            toast({ title: "Welcome back", description: `Logged in as ${user.name}` });
+            const result = await api.login(email, password);
+            // Server now always returns requiresOTP:true after credentials pass
+            if (result.requiresOTP) {
+                return result; // Let Login.jsx show the OTP dialog
+            }
+            // Fallback: token returned directly (e.g. future admin bypass)
+            setUser(result);
+            localStorage.setItem("rental_user", JSON.stringify(result));
+            toast({ title: "Welcome back", description: `Logged in as ${result.name}` });
+            return result;
+        } catch (error) {
+            toast({ variant: "destructive", title: "Login failed", description: error.message || "Invalid credentials" });
+            throw error;
         }
-        catch (error) {
-            toast({ variant: "destructive", title: "Login failed", description: "Invalid credentials" });
+    };
+
+    // Step 2: submit the login OTP and finalise the session.
+    const verifyLoginOtp = async (email, otp) => {
+        try {
+            const result = await api.verifyLoginOtp(email, otp);
+            setUser(result);
+            localStorage.setItem("rental_user", JSON.stringify(result));
+            toast({ title: "Welcome back! 👋", description: `Logged in as ${result.name}` });
+            return result;
+        } catch (error) {
+            toast({ variant: "destructive", title: "Verification Failed", description: error.message || "Invalid or expired code" });
+            throw error;
+        }
+    };
+
+    const resendLoginOtp = async (email) => {
+        try {
+            const result = await api.resendLoginOtp(email);
+            toast({ title: "Code Resent ✉️", description: "A new 6-digit code has been sent to your email." });
+            return result;
+        } catch (error) {
+            toast({ variant: "destructive", title: "Resend Failed", description: error.message || "Failed to resend code" });
             throw error;
         }
     };
@@ -77,7 +107,7 @@ export function AuthProvider({ children }) {
         }
     };
 
-    return (<AuthContext.Provider value={{ user, login, socialLogin, logout, updateProfile, isLoading }}>
+    return (<AuthContext.Provider value={{ user, login, verifyLoginOtp, resendLoginOtp, socialLogin, logout, updateProfile, isLoading }}>
       {children}
     </AuthContext.Provider>);
 }

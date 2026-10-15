@@ -60,8 +60,8 @@ const sendEmail = async (options) => {
         greetingTimeout: 5000
       });
 
-      const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || 'noreply@rental.com';
-      const fromName = settings?.orgName || process.env.FROM_NAME || 'Rental Manager';
+      const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@rental.com';
+      const fromName = settings?.orgName || process.env.FROM_NAME || 'Dwello';
 
       await transporter.sendMail(getMailOptions(fromName, fromEmail));
       console.log(`📧 Email sent successfully (via DB SMTP) to ${options.email}`);
@@ -89,7 +89,10 @@ const sendEmail = async (options) => {
         greetingTimeout: 5000
       });
 
-      await transporter.sendMail(getMailOptions('Rental Manager', process.env.FROM_EMAIL || 'noreply@rental.com'));
+      const envFromEmail = process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@rental.com';
+      const envFromName = process.env.FROM_NAME || settings?.orgName || 'Dwello';
+
+      await transporter.sendMail(getMailOptions(envFromName, envFromEmail));
       console.log(`📧 Email sent successfully (via ENV SMTP) to ${options.email}`);
       return;
     } catch (err) {

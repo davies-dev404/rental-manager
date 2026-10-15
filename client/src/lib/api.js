@@ -20,7 +20,7 @@ export const api = {
   API_URL,
   getAuthHeaders, // Expose for direct fetch use
   // Users
-  login: async (email, password) => { // NOTE: signature changed from (email, role)
+  login: async (email, password) => {
     try {
         const response = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
@@ -36,6 +36,40 @@ export const api = {
         return await response.json();
     } catch (error) {
         throw error;
+    }
+  },
+
+  verifyLoginOtp: async (email, otp) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/verify-login-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'OTP verification failed');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  resendLoginOtp: async (email) => {
+    try {
+      const response = await fetch(`${API_URL}/auth/resend-login-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to resend verification code');
+      }
+      return await response.json();
+    } catch (error) {
+      throw error;
     }
   },
 
@@ -151,8 +185,16 @@ export const api = {
   },
   
   changePassword: async (oldPassword, newPassword) => {
-      // Placeholder
-      return true;
+    const response = await fetch(`${API_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.message || 'Failed to change password');
+    }
+    return await response.json();
   },
 
   // 2FA

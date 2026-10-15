@@ -9,7 +9,9 @@ import { ProfilePhotoUpload } from "@/components/profile-photo-upload";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "next-themes";
 import { usePreferences } from "@/lib/currency";
-import { Loader2, User, Building2, Bell, Smartphone, Shield, Save, CreditCard, Lock, ArrowRight, Trash2, Coins, RefreshCw } from "lucide-react";
+import { Loader2, User, Building2, Bell, Smartphone, Shield, Save, CreditCard, Lock, ArrowRight, Trash2, Coins, RefreshCw, Eye, EyeOff } from "lucide-react";
+import PasswordStrengthIndicator from "@/components/ui/PasswordStrengthIndicator";
+import { validatePassword } from "@/lib/passwordPolicy";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -93,6 +95,9 @@ export default function Settings() {
     // Security State
     const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
     const [passwordForm, setPasswordForm] = useState({ old: '', new: '', confirm: '' });
+    const [showOldPassword, setShowOldPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     
     const [isTwoFactorOpen, setIsTwoFactorOpen] = useState(false);
     const [twoFactorStep, setTwoFactorStep] = useState('enable'); // enable, verify
@@ -149,8 +154,21 @@ export default function Settings() {
 
 
     const handleChangePassword = async () => {
+        if (!passwordForm.old || !passwordForm.new || !passwordForm.confirm) {
+            toast({ variant: "destructive", title: "Error", description: "Please fill in all fields" });
+            return;
+        }
         if (passwordForm.new !== passwordForm.confirm) {
             toast({ variant: "destructive", title: "Error", description: "New passwords do not match" });
+            return;
+        }
+        if (passwordForm.old === passwordForm.new) {
+            toast({ variant: "destructive", title: "Error", description: "New password cannot be identical to current password" });
+            return;
+        }
+        const policyResult = validatePassword(passwordForm.new);
+        if (!policyResult.valid) {
+            toast({ variant: "destructive", title: "Weak Password", description: policyResult.message });
             return;
         }
         setIsSaving(true);
@@ -868,28 +886,62 @@ export default function Settings() {
                   <div className="space-y-4 py-2">
                       <div className="space-y-2">
                           <Label>{t('current_password')}</Label>
-                          <Input 
-                            type="password" 
-                            value={passwordForm.old} 
-                            onChange={(e) => setPasswordForm(prev => ({ ...prev, old: e.target.value }))}
-                          />
+                          <div className="relative">
+                            <Input 
+                              type={showOldPassword ? "text" : "password"} 
+                              value={passwordForm.old} 
+                              onChange={(e) => setPasswordForm(prev => ({ ...prev, old: e.target.value }))}
+                              placeholder="Enter current password"
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowOldPassword(!showOldPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              {showOldPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                       </div>
                       <div className="space-y-2">
                           <Label>{t('new_password')}</Label>
-                          <Input 
-                            type="password" 
-                            value={passwordForm.new} 
-                            onChange={(e) => setPasswordForm(prev => ({ ...prev, new: e.target.value }))}
-                          />
+                          <div className="relative">
+                            <Input 
+                              type={showNewPassword ? "text" : "password"} 
+                              value={passwordForm.new} 
+                              onChange={(e) => setPasswordForm(prev => ({ ...prev, new: e.target.value }))}
+                              placeholder="Enter new strong password"
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                       </div>
-                       <div className="space-y-2">
+                      <div className="space-y-2">
                           <Label>{t('confirm_new_password')}</Label>
-                          <Input 
-                            type="password" 
-                            value={passwordForm.confirm} 
-                            onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm: e.target.value }))}
-                          />
+                          <div className="relative">
+                            <Input 
+                              type={showConfirmPassword ? "text" : "password"} 
+                              value={passwordForm.confirm} 
+                              onChange={(e) => setPasswordForm(prev => ({ ...prev, confirm: e.target.value }))}
+                              placeholder="Confirm new password"
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
                       </div>
+                      <PasswordStrengthIndicator password={passwordForm.new} />
                   </div>
                   <DialogFooter>
                       <Button variant="outline" onClick={() => setIsChangePasswordOpen(false)}>{t('cancel')}</Button>

@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Building2, ShieldCheck, ArrowRight, CheckCircle2, KeyRound, Mail } from "lucide-react";
+import { Loader2, Building2, ShieldCheck, ArrowRight, CheckCircle2, KeyRound, Mail, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import logo from "@/assets/logo.png";
@@ -13,6 +13,9 @@ import {
   DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import ErrorBoundary from '@/components/ErrorBoundary';
+import PasswordStrengthIndicator from "@/components/ui/PasswordStrengthIndicator";
+import { validatePassword } from "@/lib/passwordPolicy";
+import OrbitOtpModal from "@/components/auth/OrbitOtpModal";
 /* ─────────── Constants ─────────── */
 const FEATURES = [
   "Manage multiple properties & units",
@@ -173,7 +176,7 @@ const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID;
 
 /* ─────────── Main Component ─────────── */
 function LoginContent() {
-  const { login, socialLogin } = useAuth();
+  const { login, verifyLoginOtp, resendLoginOtp, socialLogin } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
@@ -197,15 +200,36 @@ function LoginContent() {
   const [signupData, setSignupData] = useState({
     name: "", email: "", phone: "", password: "", confirmPassword: "", role: "admin",
   });
+  // Signup OTP state
   const [showOTP, setShowOTP] = useState(false);
   const [otp, setOtp] = useState("");
   const [countdown, setCountdown] = useState(180);
+
+  // Login OTP state
+  const [showLoginOTP, setShowLoginOTP] = useState(false);
+  const [loginOtpValue, setLoginOtpValue] = useState("");
+  const [loginOtpEmail, setLoginOtpEmail] = useState("");
+  const [loginOtpCountdown, setLoginOtpCountdown] = useState(180);
+
+  // Password visibility states
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showSignupConfirm, setShowSignupConfirm] = useState(false);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [showForgotConfirm, setShowForgotConfirm] = useState(false);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [showCaretakerPassword, setShowCaretakerPassword] = useState(false);
 
   useEffect(() => {
     let t;
     if (showOTP && countdown > 0) t = setInterval(() => setCountdown((p) => p - 1), 1000);
     return () => clearInterval(t);
   }, [showOTP, countdown]);
+
+  useEffect(() => {
+    let t;
+    if (showLoginOTP && loginOtpCountdown > 0) t = setInterval(() => setLoginOtpCountdown((p) => p - 1), 1000);
+    return () => clearInterval(t);
+  }, [showLoginOTP, loginOtpCountdown]);
 
   const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
@@ -218,10 +242,39 @@ function LoginContent() {
     }
     setIsLoading(true);
     try {
-      await login(email, password);
-      setLocation("/");
+      const result = await login(email, password);
+      if (result?.requiresOTP) {
+        setLoginOtpEmail(result.email);
+        setLoginOtpValue("");
+        setLoginOtpCountdown(180);
+        setShowLoginOTP(true);
+        toast({
+          title: "Verification Code Sent ✉️",
+          description: `A 6-digit code was sent to ${result.email}. Check your inbox.`
+        });
+      } else {
+        setLocation("/");
+      }
     } catch (_) {
-      // handled in auth context
+      // error toast handled in auth context
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyLoginOtp = async (codeValue) => {
+    const code = codeValue || loginOtpValue;
+    if (!code || code.length < 6) {
+      toast({ variant: "destructive", title: "Invalid Code", description: "Please enter the full 6-digit code" });
+      throw new Error("Please enter the full 6-digit code");
+    }
+    setIsLoading(true);
+    try {
+      await verifyLoginOtp(loginOtpEmail, code);
+      setShowLoginOTP(false);
+      setLocation("/");
+    } catch (err) {
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -234,6 +287,11 @@ function LoginContent() {
     }
     if (signupData.password !== signupData.confirmPassword) {
       toast({ variant: "destructive", title: "Error", description: "Passwords do not match" });
+      return;
+    }
+    const policyResult = validatePassword(signupData.password);
+    if (!policyResult.valid) {
+      toast({ variant: "destructive", title: "Weak Password", description: policyResult.message });
       return;
     }
     setIsLoading(true);
@@ -453,8 +511,9 @@ function LoginContent() {
       toast({ variant: "destructive", title: "Error", description: "Passwords do not match" });
       return;
     }
-    if (forgotNewPassword.length < 6) {
-      toast({ variant: "destructive", title: "Error", description: "Password must be at least 6 characters" });
+    const policyResult = validatePassword(forgotNewPassword);
+    if (!policyResult.valid) {
+      toast({ variant: "destructive", title: "Weak Password", description: policyResult.message });
       return;
     }
     setIsForgotLoading(true);
@@ -538,13 +597,26 @@ function LoginContent() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="su-pass" className="text-sm font-medium">Password</Label>
-                <input id="su-pass" type="password" className={inputCls} placeholder="••••••••"
-                  value={signupData.password} onChange={(e) => setSignupData((p) => ({ ...p, password: e.target.value }))} />
+                <div className="relative">
+                  <input id="su-pass" type={showSignupPassword ? "text" : "password"} className={`${inputCls} pr-9`} placeholder="••••••••"
+                    value={signupData.password} onChange={(e) => setSignupData((p) => ({ ...p, password: e.target.value }))} />
+                  <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="su-confirm" className="text-sm font-medium">Confirm</Label>
-                <input id="su-confirm" type="password" className={inputCls} placeholder="••••••••"
-                  value={signupData.confirmPassword} onChange={(e) => setSignupData((p) => ({ ...p, confirmPassword: e.target.value }))} />
+                <div className="relative">
+                  <input id="su-confirm" type={showSignupConfirm ? "text" : "password"} className={`${inputCls} pr-9`} placeholder="••••••••"
+                    value={signupData.confirmPassword} onChange={(e) => setSignupData((p) => ({ ...p, confirmPassword: e.target.value }))} />
+                  <button type="button" onClick={() => setShowSignupConfirm(!showSignupConfirm)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showSignupConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <PasswordStrengthIndicator password={signupData.password} />
               </div>
             </div>
 
@@ -569,48 +641,41 @@ function LoginContent() {
           </div>
         </div>
 
-        {/* OTP Dialog */}
-        <Dialog open={showOTP} onOpenChange={setShowOTP}>
-          <DialogContent className="sm:max-w-sm bg-white/10 backdrop-blur-lg border border-white/20">
-            <DialogHeader>
-              <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <ShieldCheck className="w-6 h-6 text-primary" />
-              </div>
-              <DialogTitle className="text-center">Check your email</DialogTitle>
-              <DialogDescription className="text-center">
-                We sent a 6-digit code to{" "}
-                <span className="font-medium text-foreground">{signupData.email}</span>.
-                {signupData.phone ? ` An SMS was also sent to ${signupData.phone}.` : ""}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <Label htmlFor="otp-input" className="text-sm font-medium text-center block">
-                Verification Code
-              </Label>
-              <input
-                id="otp-input"
-                className="flex h-14 w-full rounded-md border border-input bg-background px-3 py-2 text-center text-2xl tracking-[0.5em] font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                maxLength={6} placeholder="000000" value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-              />
-              <p className={`text-sm text-center font-medium ${countdown < 60 ? "text-destructive" : "text-muted-foreground"}`}>
-                Code expires in{" "}
-                <span className={countdown < 60 ? "text-destructive font-bold" : "text-primary font-bold"}>
-                  {fmt(countdown)}
-                </span>
-              </p>
-            </div>
-            <DialogFooter>
-              <Button id="btn-verify-otp" className="w-full" onClick={verifyOTP}
-                disabled={isLoading || otp.length < 6 || countdown === 0}>
-                {isLoading
-                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  : <ShieldCheck className="mr-2 h-4 w-4" />}
-                Verify & Create Account
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* ── Orbit Signup OTP Verification Modal ── */}
+        <OrbitOtpModal
+          open={showOTP}
+          onOpenChange={setShowOTP}
+          email={signupData.email}
+          countdown={countdown}
+          onVerify={async (code) => {
+            await api.verifyEmail(signupData.email, code);
+            toast({ title: "Account Verified! 🎉", description: "You can now sign in with your credentials." });
+            setShowOTP(false);
+            setIsSignup(false);
+            setAdminEmail(signupData.email);
+            setSignupData({ name: "", email: "", phone: "", password: "", confirmPassword: "", role: "admin" });
+            setOtp("");
+          }}
+          onResend={async () => {
+            setIsLoading(true);
+            try {
+              await api.registerUser(signupData);
+              setCountdown(180);
+              toast({ title: "Code Resent", description: "A new 6-digit verification code was sent to your email." });
+            } finally {
+              setIsLoading(false);
+            }
+          }}
+          isLoading={isLoading}
+          title="Verify Account"
+          description={
+            <>
+              We sent a 6-digit code to{" "}
+              <span className="font-semibold text-slate-200">{signupData.email}</span>.
+              {signupData.phone ? ` An SMS was also sent to ${signupData.phone}.` : ""}
+            </>
+          }
+        />
       </div>
     );
   }
@@ -660,9 +725,14 @@ function LoginContent() {
                     Forgot password?
                   </button>
                 </div>
-                <input id="admin-pass" type="password" className={inputCls} placeholder="••••••••"
-                  value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin("admin")} />
+                <div className="relative">
+                  <input id="admin-pass" type={showAdminPassword ? "text" : "password"} className={`${inputCls} pr-9`} placeholder="••••••••"
+                    value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin("admin")} />
+                  <button type="button" onClick={() => setShowAdminPassword(!showAdminPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <Button id="btn-admin-signin"
                 className="w-full h-10 font-semibold shadow-md hover:shadow-lg transition-all active:scale-[0.98]"
@@ -691,9 +761,14 @@ function LoginContent() {
                     Forgot password?
                   </button>
                 </div>
-                <input id="caretaker-pass" type="password" className={inputCls} placeholder="••••••••"
-                  value={caretakerPassword} onChange={(e) => setCaretakerPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLogin("caretaker")} />
+                <div className="relative">
+                  <input id="caretaker-pass" type={showCaretakerPassword ? "text" : "password"} className={`${inputCls} pr-9`} placeholder="••••••••"
+                    value={caretakerPassword} onChange={(e) => setCaretakerPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin("caretaker")} />
+                  <button type="button" onClick={() => setShowCaretakerPassword(!showCaretakerPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showCaretakerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <Button id="btn-caretaker-signin"
                 className="w-full h-10 font-semibold shadow-md hover:shadow-lg transition-all active:scale-[0.98]"
@@ -714,7 +789,35 @@ function LoginContent() {
         </div>
       </div>
 
+      {/* ── Orbit Login OTP Verification Modal ── */}
+      <OrbitOtpModal
+        open={showLoginOTP}
+        onOpenChange={setShowLoginOTP}
+        email={loginOtpEmail}
+        countdown={loginOtpCountdown}
+        onVerify={handleVerifyLoginOtp}
+        onResend={async () => {
+          setIsLoading(true);
+          try {
+            await resendLoginOtp(loginOtpEmail);
+            setLoginOtpCountdown(180);
+          } finally {
+            setIsLoading(false);
+          }
+        }}
+        isLoading={isLoading}
+        title="Verify Identity"
+        description={
+          <>
+            We sent a 6-digit security code to{" "}
+            <span className="font-semibold text-slate-200">{loginOtpEmail}</span>.
+            Enter it below to complete sign-in.
+          </>
+        }
+      />
+
       {/* Forgot Password Dialog */}
+
       <Dialog open={showForgotDialog} onOpenChange={setShowForgotDialog}>
         <DialogContent className="sm:max-w-md bg-white/10 backdrop-blur-lg border border-white/20">
           <DialogHeader>
@@ -792,28 +895,39 @@ function LoginContent() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="forgot-new-pass" className="text-sm font-medium">New Password</Label>
-                <input
-                  id="forgot-new-pass"
-                  type="password"
-                  className={inputCls}
-                  placeholder="At least 6 characters"
-                  value={forgotNewPassword}
-                  onChange={(e) => setForgotNewPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    id="forgot-new-pass"
+                    type={showForgotNewPassword ? "text" : "password"}
+                    className={`${inputCls} pr-9`}
+                    placeholder="At least 8 characters"
+                    value={forgotNewPassword}
+                    onChange={(e) => setForgotNewPassword(e.target.value)}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowForgotNewPassword(!showForgotNewPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="forgot-confirm-pass" className="text-sm font-medium">Confirm Password</Label>
-                <input
-                  id="forgot-confirm-pass"
-                  type="password"
-                  className={inputCls}
-                  placeholder="Re-enter new password"
-                  value={forgotConfirmPassword}
-                  onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    id="forgot-confirm-pass"
+                    type={showForgotConfirm ? "text" : "password"}
+                    className={`${inputCls} pr-9`}
+                    placeholder="Re-enter new password"
+                    value={forgotConfirmPassword}
+                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowForgotConfirm(!showForgotConfirm)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showForgotConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
+              <PasswordStrengthIndicator password={forgotNewPassword} />
 
               <div className="flex justify-between items-center text-xs text-muted-foreground pt-1">
                 <span>Didn&apos;t get the code?</span>
