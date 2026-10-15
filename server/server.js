@@ -44,28 +44,57 @@ app.use(morgan('dev'));
 // Database Connection
 const startRentReminders = require('./cron/rentReminder');
 
+let isConnected = false;
+
 const connectDB = async () => {
-    const primaryUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/rental_manager';
+    if (isConnected || mongoose.connection.readyState === 1) {
+        return;
+    }
+    const primaryUri = process.env.MONGODB_URI;
+    if (!primaryUri) {
+        console.error('❌ MONGODB_URI environment variable is missing!');
+    }
+    const uri = primaryUri || 'mongodb://127.0.0.1:27017/rental_manager';
     try {
-        await mongoose.connect(primaryUri, { serverSelectionTimeoutMS: 4000 });
+        await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+        isConnected = true;
         console.log('✅ MongoDB Connected successfully');
-        startRentReminders();
+        if (process.env.NODE_ENV !== 'production') {
+            startRentReminders();
+        }
     } catch (err) {
-        console.warn('⚠️ Primary MongoDB connection failed (check Atlas IP whitelist):', err.message);
-        if (primaryUri !== 'mongodb://127.0.0.1:27017/rental_manager') {
-            console.log('🔄 Attempting fallback to local MongoDB (mongodb://127.0.0.1:27017/rental_manager)...');
+        console.warn('⚠️ Primary MongoDB connection failed:', err.message);
+        if (uri !== 'mongodb://127.0.0.1:27017/rental_manager') {
             try {
                 await mongoose.connect('mongodb://127.0.0.1:27017/rental_manager', { serverSelectionTimeoutMS: 2000 });
-                console.log('✅ Connected to local MongoDB fallback successfully');
-                startRentReminders();
+                isConnected = true;
+                console.log('✅ Connected to local MongoDB fallback');
             } catch (localErr) {
-                console.error('❌ Failed to connect to both Atlas and local MongoDB:', localErr.message);
+                console.error('❌ MongoDB Connection Error:', localErr.message);
+                throw err;
             }
+        } else {
+            throw err;
         }
     }
 };
 
-connectDB();
+// Initiate connection on boot
+connectDB().catch(err => console.error('Initial DB connect error:', err.message));
+
+// Middleware to ensure DB is connected before processing API requests (essential for Vercel Serverless)
+app.use(async (req, res, next) => {
+    if (req.path === '/' || req.path === '/api/health') return next();
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        return res.status(500).json({ 
+            message: 'Database connection failed. Please ensure MONGODB_URI is configured and IP 0.0.0.0/0 is whitelisted in MongoDB Atlas.',
+            error: err.message 
+        });
+    }
+});
 
 // Routes
 const authRoutes = require('./routes/authRoutes');
