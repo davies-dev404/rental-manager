@@ -39,11 +39,11 @@ router.post('/login', async (req, res) => {
       try {
         await sendEmail({
           email: user.email,
-          subject: 'Dwello — Your Login Verification Code',
+          subject: 'MakaaziHub — Your Login Verification Code',
           message: `
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
               <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
-              <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to Dwello. It expires in <strong>3 minutes</strong>.</p>
+              <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to MakaaziHub. It expires in <strong>3 minutes</strong>.</p>
               <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
               <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
             </div>`
@@ -96,11 +96,11 @@ router.post('/resend-login-otp', async (req, res) => {
     try {
       await sendEmail({
         email: user.email,
-        subject: 'Dwello — Your Login Verification Code',
+        subject: 'MakaaziHub — Your Login Verification Code',
         message: `
           <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
             <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
-            <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to Dwello. It expires in <strong>3 minutes</strong>.</p>
+            <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to MakaaziHub. It expires in <strong>3 minutes</strong>.</p>
             <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
             <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
           </div>`
@@ -218,7 +218,7 @@ router.post('/register', async (req, res) => {
         try {
             await sendEmail({
               email: user.email,
-              subject: 'Your Dwello Verification Code',
+              subject: 'Your MakaaziHub Verification Code',
               message: `<p>Your verification code is: <strong>${otp}</strong>. It expires in 10 minutes.</p>`
             });
         } catch (emailError) {
@@ -230,7 +230,7 @@ router.post('/register', async (req, res) => {
           try {
             await sendSMS({
               phone: user.phone,
-              message: `Your Dwello verification code is: ${otp}`
+              message: `Your MakaaziHub verification code is: ${otp}`
             });
           } catch (smsError) {
             console.error('SMS send failed (non-fatal):', smsError.message);
@@ -389,10 +389,10 @@ router.post('/forgot-password', async (req, res) => {
         try {
             await sendEmail({
                 email: user.email,
-                subject: 'Dwello - Password Reset Code',
+                subject: 'MakaaziHub - Password Reset Code',
                 message: `<div style="font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 8px;">
                     <h2 style="color: #1e293b;">Password Reset Request</h2>
-                    <p style="color: #475569;">You requested a password reset for your Dwello account. Use the verification code below:</p>
+                    <p style="color: #475569;">You requested a password reset for your MakaaziHub account. Use the verification code below:</p>
                     <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #2563eb; padding: 16px 0; text-align: center;">${resetCode}</div>
                     <p style="color: #64748b; font-size: 13px;">This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
                 </div>`

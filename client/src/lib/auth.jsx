@@ -89,7 +89,8 @@ export function AuthProvider({ children }) {
     const logout = () => {
         setUser(null);
         localStorage.removeItem("rental_user");
-        toast({ title: "Logged out" });
+        toast({ title: "Logged out successfully" });
+        window.location.href = "/login";
     };
 
     const updateProfile = async (updates) => {

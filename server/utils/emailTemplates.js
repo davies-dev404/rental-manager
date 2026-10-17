@@ -1,6 +1,6 @@
 const getEmailTemplate = (title, content, settings) => {
-    const orgName = settings?.orgName || "Dwello";
-    const orgEmail = settings?.orgEmail || "support@dwello.com";
+    const orgName = settings?.orgName || "MakaaziHub";
+    const orgEmail = settings?.orgEmail || "support@makaazihub.com";
     const primaryColor = "#0f172a";
     const accentColor = "#10b981";
 
@@ -81,7 +81,7 @@ const getReceiptEmailBody = (payment, tenantName, settings) => {
         </div>
 
         <p style="color: #475569; font-size: 16px; line-height: 1.6;">Thank you for your timely payment.</p>
-        <p style="color: #475569; font-size: 16px; line-height: 1.6;">Best regards,<br><strong>${settings?.orgName || 'Dwello Team'}</strong></p>
+        <p style="color: #475569; font-size: 16px; line-height: 1.6;">Best regards,<br><strong>${settings?.orgName || 'MakaaziHub Team'}</strong></p>
     `;
     return getEmailTemplate('Payment Receipt', content, settings);
 };

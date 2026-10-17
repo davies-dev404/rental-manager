@@ -1,437 +1,572 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { 
-  Bell, Clock, Mail, MessageSquare, CheckCircle2, AlertCircle, Plus, 
-  MoreHorizontal, Loader2, Send, Users, DollarSign, Trash2 
+import {
+  Send,
+  Minus,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  RotateCw
 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useTranslation } from "react-i18next";
-import { usePreferences } from "@/lib/currency";
+import { ActionModals } from "@/components/dashboard/Modals";
 
-function ReminderCard({ reminder, onSendNow, onDelete, isSending }) {
-    const { t } = useTranslation();
-    const { formatCurrency } = usePreferences();
-    const statusColors = {
-        pending: "bg-amber-500/15 text-amber-700 border-amber-500/20",
-        sent: "bg-emerald-500/15 text-emerald-700 border-emerald-500/20",
-        overdue: "bg-rose-500/15 text-rose-700 border-rose-500/20"
+export default function CommunicationPage() {
+  const { toast } = useToast();
+
+  // Filters State
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedProperty, setSelectedProperty] = useState("all");
+
+  const [recipientFilters, setRecipientFilters] = useState({
+    tenants: true,
+    team: true
+  });
+
+  const [statusFilters, setStatusFilters] = useState({
+    pending: true,
+    delivered: true,
+    failed: true
+  });
+
+  const [channelFilters, setChannelFilters] = useState({
+    sms: false,
+    whatsapp: false,
+    email: false
+  });
+
+  // Collapsible sections
+  const [collapseDate, setCollapseDate] = useState(false);
+  const [collapseProperty, setCollapseProperty] = useState(false);
+  const [collapseRecipient, setCollapseRecipient] = useState(false);
+  const [collapseStatus, setCollapseStatus] = useState(false);
+  const [collapseChannel, setCollapseChannel] = useState(false);
+  const [collapseSummary, setCollapseSummary] = useState(false);
+  const [collapseMessages, setCollapseMessages] = useState(false);
+
+  // Pagination state
+  const [perPage, setPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Selected table rows
+  const [selectedRows, setSelectedRows] = useState([]);
+
+  // Modal triggers
+  const [activeModal, setActiveModal] = useState(null);
+
+  // Queries
+  const { data: properties = [] } = useQuery({
+    queryKey: ["properties"],
+    queryFn: api.getProperties
+  });
+
+  // Messages list state
+  const [messagesData, setMessagesData] = useState([]);
+
+  // Listen for sent messages across app
+  useEffect(() => {
+    const handleNewMessage = (e) => {
+      if (e.detail) {
+        setMessagesData((prev) => [e.detail, ...prev]);
+      }
     };
-    const methodIcons = {
-        email: <Mail className="w-4 h-4"/>,
-        sms: <MessageSquare className="w-4 h-4"/>,
-        push: <Bell className="w-4 h-4"/>
+    window.addEventListener("dwello_message_sent", handleNewMessage);
+    return () => {
+      window.removeEventListener("dwello_message_sent", handleNewMessage);
     };
+  }, []);
 
-    const dueDateFormatted = reminder.dueDate ? new Date(reminder.dueDate).toLocaleDateString() : 'N/A';
+  const totalSent = messagesData.length;
+  const totalDelivered = messagesData.filter((m) => m.status === "delivered").length;
+  const totalFailed = messagesData.filter((m) => m.status === "failed").length;
 
-    return (
-      <Card className="border-border/50 hover:shadow-md transition-shadow">
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="font-semibold text-gray-900 dark:text-white text-base">{reminder.title}</h4>
-                <Badge variant="outline" className={statusColors[reminder.status] || statusColors.pending}>
-                  {reminder.status ? t(reminder.status) : t('pending')}
-                </Badge>
-                {reminder.amountDue > 0 && (
-                  <Badge className="bg-rose-500/10 text-rose-600 border border-rose-500/20 font-mono">
-                    Balance: {formatCurrency(reminder.amountDue)}
-                  </Badge>
-                )}
-              </div>
+  const filteredMessages = messagesData.filter((m) => {
+    if (selectedProperty !== "all" && m.propertyId !== selectedProperty) return false;
+    return true;
+  });
 
-              {reminder.recipientName && (
-                <div className="text-xs text-muted-foreground flex items-center gap-3">
-                  <span>Recipient: <strong className="text-foreground">{reminder.recipientName}</strong></span>
-                  {reminder.recipientEmail && <span>• {reminder.recipientEmail}</span>}
-                  {reminder.recipientPhone && <span>• {reminder.recipientPhone}</span>}
-                </div>
-              )}
+  const totalPages = Math.max(1, Math.ceil(filteredMessages.length / perPage));
+  const paginated = filteredMessages.slice(
+    (currentPage - 1) * perPage,
+    currentPage * perPage
+  );
 
-              <p className="text-muted-foreground whitespace-pre-wrap bg-muted/30 p-3 rounded-lg border border-border/40 font-mono text-xs">
-                {reminder.description}
-              </p>
+  const toggleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedRows(paginated.map((_, idx) => idx));
+    } else {
+      setSelectedRows([]);
+    }
+  };
 
-              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5"/> Due: {dueDateFormatted}
-                </div>
-                <div className="flex items-center gap-1 capitalize">
-                  {methodIcons[reminder.method] || <Bell className="w-3.5 h-3.5"/>}
-                  {reminder.method}
-                </div>
-                <div>Frequency: <span className="capitalize">{reminder.frequency}</span></div>
-              </div>
-            </div>
+  const toggleSelectRow = (idx) => {
+    if (selectedRows.includes(idx)) {
+      setSelectedRows(selectedRows.filter((i) => i !== idx));
+    } else {
+      setSelectedRows([...selectedRows, idx]);
+    }
+  };
 
-            <div className="flex items-center gap-2">
-              {reminder.status !== 'sent' && (
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="gap-1.5 h-8 text-primary border-primary/30 hover:bg-primary/10"
-                  onClick={() => onSendNow(reminder._id || reminder.id)}
-                  disabled={isSending}
-                >
-                  <Send className="w-3.5 h-3.5"/> Send Now
-                </Button>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="w-4 h-4"/></Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>{t('actions')}</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => onSendNow(reminder._id || reminder.id)}>
-                    <Send className="w-4 h-4 mr-2"/> Send Immediately
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onDelete(reminder._id || reminder.id)} className="text-rose-600">
-                    <Trash2 className="w-4 h-4 mr-2"/> Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+  const handleResend = (msg) => {
+    toast({
+      title: "Resending Message",
+      description: `Re-dispatching message to ${msg.recipient || "recipient"}.`
+    });
+  };
+
+  return (
+    <div className="space-y-4 max-w-7xl mx-auto">
+      {/* ────────────────── TWO COLUMN LAYOUT ────────────────── */}
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        {/* LEFT COLUMN: Filters Sidebar */}
+        <aside className="w-full md:w-64 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between pb-1">
+            <h4 className="text-xs font-bold text-[#0b1065] dark:text-blue-400">
+              Filters
+            </h4>
+            <span className="w-2.5 h-0.5 bg-[#4f46e5] rounded select-none cursor-pointer"></span>
           </div>
-        </CardContent>
-      </Card>
-    );
-}
 
-export default function RemindersPage() {
-    const { t } = useTranslation();
-    const { toast } = useToast();
-    const { formatCurrency } = usePreferences();
-    const queryClient = useQueryClient();
-    const [activeTab, setActiveTab] = useState("all");
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
-
-    // Form state
-    const [selectedTenantId, setSelectedTenantId] = useState("all_debtors");
-    const [reminderMethod, setReminderMethod] = useState("email");
-    const [reminderFrequency, setReminderFrequency] = useState("immediate");
-    const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
-    const [sendImmediately, setSendImmediately] = useState(true);
-    const [customNote, setCustomNote] = useState("");
-
-    // Fetch existing reminders
-    const { data: reminders = [] } = useQuery({
-        queryKey: ["reminders"],
-        queryFn: api.getReminders
-    });
-
-    // Fetch tenants with unpaid balances
-    const { data: debtors = [], isLoading: debtorsLoading } = useQuery({
-        queryKey: ["debtors"],
-        queryFn: api.getDebtors
-    });
-
-    const selectedDebtor = debtors.find(d => (d.tenant._id || d.tenant.id) === selectedTenantId);
-
-    // Mutations
-    const createMutation = useMutation({
-        mutationFn: api.addReminder,
-        onSuccess: (data) => {
-             queryClient.invalidateQueries({ queryKey: ["reminders"] });
-             queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-             setIsDialogOpen(false);
-             toast({ 
-               title: "Reminder Processed! ✉️", 
-               description: data.message || "Personalized reminders created and dispatched successfully." 
-             });
-        },
-        onError: (err) => {
-             toast({ variant: "destructive", title: "Error", description: err.message });
-        }
-    });
-
-    const sendNowMutation = useMutation({
-        mutationFn: api.sendReminderNow,
-        onSuccess: () => {
-             queryClient.invalidateQueries({ queryKey: ["reminders"] });
-             queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-             toast({ title: "Sent! 🚀", description: "Personalized reminder dispatched successfully." });
-        },
-        onError: (err) => {
-             toast({ variant: "destructive", title: "Sending Failed", description: err.message });
-        }
-    });
-
-    const deleteMutation = useMutation({
-        mutationFn: api.deleteReminder,
-        onSuccess: () => {
-             queryClient.invalidateQueries({ queryKey: ["reminders"] });
-             queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
-             toast({ title: "Reminder Removed", description: "The reminder was successfully deleted." });
-        }
-    });
-
-    const handleCreate = () => {
-        createMutation.mutate({
-            tenantId: selectedTenantId,
-            type: "rent_due",
-            method: reminderMethod,
-            frequency: reminderFrequency,
-            dueDate,
-            sendImmediately,
-            customNote: customNote.trim() || undefined
-        });
-    };
-
-    const filteredReminders = activeTab === "all" ? reminders : reminders.filter(r => r.status === activeTab);
-
-    return (
-      <div className="space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* 1. Date */}
           <div>
-            <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">
-              {t('reminders')}
-            </h2>
-            <p className="text-muted-foreground mt-1">
-              Send personalized payment reminders targeting tenants with unpaid rent or utility bills.
-            </p>
+            <button
+              type="button"
+              onClick={() => setCollapseDate(!collapseDate)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
+            >
+              <span>Date</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  collapseDate ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {!collapseDate && (
+              <div className="space-y-1.5 mt-2">
+                <input
+                  type="text"
+                  onFocus={(e) => (e.target.type = "date")}
+                  onBlur={(e) => {
+                    if (!e.target.value) e.target.type = "text";
+                  }}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  placeholder="Start date"
+                  className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2.5 text-xs text-slate-600 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                />
+                <input
+                  type="text"
+                  onFocus={(e) => (e.target.type = "date")}
+                  onBlur={(e) => {
+                    if (!e.target.value) e.target.type = "text";
+                  }}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  placeholder="End date"
+                  className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2.5 text-xs text-slate-600 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="shadow-lg hover:shadow-xl transition-all">
-                  <Plus className="w-4 h-4 mr-2"/> Send Personalized Reminder
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-140 max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Personalized Payment Reminder</DialogTitle>
-                  <DialogDescription>
-                    Automatically itemizes unpaid house rent and utility bills (water, garbage, parking, electricity) for each tenant.
-                  </DialogDescription>
-                </DialogHeader>
+          {/* 2. Property / Unit */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setCollapseProperty(!collapseProperty)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
+            >
+              <span>Property / Unit</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  collapseProperty ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {!collapseProperty && (
+              <div className="mt-2">
+                <select
+                  value={selectedProperty}
+                  onChange={(e) => setSelectedProperty(e.target.value)}
+                  className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 text-xs text-slate-600 dark:text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="all">
+                    No properties yet — add one from the Properties page
+                  </option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p._id || p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
-                <div className="space-y-4 py-2">
-                  {/* Select Recipient: Only Unpaid Tenants */}
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Target Recipient</Label>
-                    <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select target tenant(s)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all_debtors">
-                          👥 All Unpaid Tenants ({debtors.length} tenants with pending balances)
-                        </SelectItem>
-                        {debtors.map(({ tenant, totalDue, rentDue, utilityDue }) => (
-                          <SelectItem key={tenant._id || tenant.id} value={tenant._id || tenant.id}>
-                            {tenant.name} (Unit {tenant.unitId?.unitNumber || 'N/A'}) — Owed: {formatCurrency(totalDue)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+          {/* 3. Tenant / Team */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setCollapseRecipient(!collapseRecipient)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
+            >
+              <span>Tenant / Team</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  collapseRecipient ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {!collapseRecipient && (
+              <div className="space-y-1.5 mt-2 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={recipientFilters.tenants}
+                    onChange={(e) =>
+                      setRecipientFilters({
+                        ...recipientFilters,
+                        tenants: e.target.checked
+                      })
+                    }
+                    className="rounded accent-blue-600 w-3.5 h-3.5"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">Tenants</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={recipientFilters.team}
+                    onChange={(e) =>
+                      setRecipientFilters({
+                        ...recipientFilters,
+                        team: e.target.checked
+                      })
+                    }
+                    className="rounded accent-blue-600 w-3.5 h-3.5"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">Team</span>
+                </label>
+              </div>
+            )}
+          </div>
 
-                  {/* Debtor Breakdown Preview */}
-                  {selectedDebtor && (
-                    <div className="p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 space-y-2 text-xs">
-                      <div className="flex justify-between items-center font-semibold text-rose-700 dark:text-rose-400 text-sm">
-                        <span>Pending Breakdown: {selectedDebtor.tenant.name}</span>
-                        <span>Total Due: {formatCurrency(selectedDebtor.totalDue)}</span>
-                      </div>
-                      <div className="space-y-1 text-muted-foreground font-mono">
-                        {selectedDebtor.rentDue > 0 && (
-                          <div className="flex justify-between">
-                            <span>• House Rent:</span>
-                            <span>{formatCurrency(selectedDebtor.rentDue)}</span>
-                          </div>
-                        )}
-                        {selectedDebtor.unpaidUtilities?.map(u => (
-                          <div key={u.name} className="flex justify-between">
-                            <span>• {u.name}:</span>
-                            <span>{formatCurrency(u.amount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Delivery Channel */}
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Delivery Method</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant={reminderMethod === 'email' ? "default" : "outline"}
-                        className="h-9 gap-2"
-                        onClick={() => setReminderMethod('email')}
-                      >
-                        <Mail className="w-4 h-4"/> Email Notification
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={reminderMethod === 'sms' ? "default" : "outline"}
-                        className="h-9 gap-2"
-                        onClick={() => setReminderMethod('sms')}
-                      >
-                        <MessageSquare className="w-4 h-4"/> SMS Message
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Frequency & Due Date */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm font-medium">Schedule</Label>
-                      <Select value={reminderFrequency} onValueChange={setReminderFrequency}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="immediate">Send Immediately</SelectItem>
-                          <SelectItem value="1day">1 Day Before Due</SelectItem>
-                          <SelectItem value="3days">3 Days Before Due</SelectItem>
-                          <SelectItem value="1week">1 Week Before Due</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-sm font-medium">Payment Deadline</Label>
-                      <Input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Custom Note (Optional) */}
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">
-                      Custom Note <span className="text-muted-foreground font-normal">(optional override)</span>
-                    </Label>
-                    <Textarea
-                      placeholder="Leave blank to use the automated breakdown of rent and utility bills..."
-                      className="text-xs h-20"
-                      value={customNote}
-                      onChange={(e) => setCustomNote(e.target.value)}
+          {/* 4. Status */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setCollapseStatus(!collapseStatus)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
+            >
+              <span>Status</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  collapseStatus ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {!collapseStatus && (
+              <div className="space-y-1.5 mt-2 text-xs">
+                {["pending", "delivered", "failed"].map((s) => (
+                  <label key={s} className="flex items-center gap-2 cursor-pointer capitalize">
+                    <input
+                      type="checkbox"
+                      checked={statusFilters[s]}
+                      onChange={(e) =>
+                        setStatusFilters({
+                          ...statusFilters,
+                          [s]: e.target.checked
+                        })
+                      }
+                      className="rounded accent-blue-600 w-3.5 h-3.5"
                     />
-                  </div>
+                    <span className="text-slate-600 dark:text-slate-400">{s}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 5. Message Type */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setCollapseChannel(!collapseChannel)}
+              className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
+            >
+              <span>Message Type</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  collapseChannel ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {!collapseChannel && (
+              <div className="space-y-1.5 mt-2 text-xs">
+                {[
+                  { id: "sms", label: "SMS" },
+                  { id: "whatsapp", label: "WhatsApp" },
+                  { id: "email", label: "Email" }
+                ].map((ch) => (
+                  <label key={ch.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={channelFilters[ch.id]}
+                      onChange={(e) =>
+                        setChannelFilters({
+                          ...channelFilters,
+                          [ch.id]: e.target.checked
+                        })
+                      }
+                      className="rounded accent-blue-600 w-3.5 h-3.5"
+                    />
+                    <span className="text-slate-600 dark:text-slate-400">
+                      {ch.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* RIGHT COLUMN: Summary Card + Messages Card */}
+        <main className="flex-1 min-w-0 w-full space-y-4">
+          {/* Summary Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
+            <div
+              className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer"
+              onClick={() => setCollapseSummary(!collapseSummary)}
+            >
+              <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">
+                Summary
+              </h4>
+              <span className="text-slate-400 text-lg leading-none select-none">–</span>
+            </div>
+
+            {!collapseSummary && (
+              <div className="p-6 grid grid-cols-3 text-center divide-x divide-slate-100 dark:divide-slate-800">
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Total
+                  </p>
+                  <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-2">
+                    {totalSent}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-1">(sent)</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Delivered
+                  </p>
+                  <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-2">
+                    {totalDelivered}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-1">(delivered)</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Failed
+                  </p>
+                  <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-2">
+                    {totalFailed}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-1">(failed)</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Messages Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
+            <div
+              className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer"
+              onClick={() => setCollapseMessages(!collapseMessages)}
+            >
+              <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">
+                Messages
+              </h4>
+              <span className="text-slate-400 text-lg leading-none select-none">–</span>
+            </div>
+
+            {!collapseMessages && (
+              <>
+                {/* Action Toolbar */}
+                <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/40 dark:bg-slate-800/20">
+                  <Button
+                    onClick={() => {
+                      if (selectedRows.length === 0) {
+                        toast({
+                          title: "No Messages Selected",
+                          description: "Please select messages to resend."
+                        });
+                        return;
+                      }
+                      toast({
+                        title: "Resending Messages",
+                        description: `Re-dispatching ${selectedRows.length} messages.`
+                      });
+                      setSelectedRows([]);
+                    }}
+                    variant="outline"
+                    className="text-xs h-7.5 px-3.5 gap-1.5 font-medium text-[#0b1065] border-slate-300 hover:bg-slate-100 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5 text-[#0b1065]" />
+                    <span>Resend Messages</span>
+                  </Button>
                 </div>
 
-                <DialogFooter className="gap-2 sm:gap-0 pt-2">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={handleCreate} 
-                    disabled={createMutation.isPending || (debtors.length === 0 && selectedTenantId === 'all_debtors')}
-                    className="font-medium gap-1.5"
-                  >
-                    {createMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 animate-spin"/>
-                    ) : (
-                      <Send className="w-4 h-4"/>
-                    )}
-                    Dispatch Reminder
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+                {/* Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                      <tr>
+                        <th className="py-2.5 px-3 w-8 text-center">
+                          <input
+                            type="checkbox"
+                            onChange={toggleSelectAll}
+                            checked={
+                              paginated.length > 0 &&
+                              selectedRows.length === paginated.length
+                            }
+                            className="rounded accent-blue-600 w-3.5 h-3.5"
+                          />
+                        </th>
+                        <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
+                          Type
+                        </th>
+                        <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
+                          Date
+                        </th>
+                        <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
+                          Tenant/Team
+                        </th>
+                        <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
+                          Property (Unit)
+                        </th>
+                        <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
+                          Message
+                        </th>
+                        <th className="py-2.5 px-4 text-center font-semibold text-slate-600 dark:text-slate-400">
+                          SMS Charge
+                        </th>
+                        <th className="py-2.5 px-4 text-center font-semibold text-slate-600 dark:text-slate-400">
+                          Status
+                        </th>
+                        <th className="py-2.5 px-4 text-right font-semibold text-slate-600 dark:text-slate-400">
+                          Resend
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {paginated.length === 0 ? null : (
+                        paginated.map((msg, idx) => (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                          >
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedRows.includes(idx)}
+                                onChange={() => toggleSelectRow(idx)}
+                                className="rounded accent-blue-600 w-3.5 h-3.5"
+                              />
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300 uppercase text-[11px]">
+                              {msg.type || "SMS"}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              {msg.date || "—"}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-800 dark:text-slate-200 font-medium">
+                              {msg.recipient || "—"}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              {msg.propertyUnit || "—"}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400 max-w-xs truncate">
+                              {msg.text || "—"}
+                            </td>
+                            <td className="py-2.5 px-4 text-center text-slate-700 dark:text-slate-300">
+                              {msg.charge || "0.80 KES"}
+                            </td>
+                            <td className="py-2.5 px-4 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-700 capitalize">
+                                {msg.status || "delivered"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleResend(msg)}
+                                className="h-6 text-xs text-blue-600 hover:text-blue-700 px-2"
+                              >
+                                <RotateCw className="w-3 h-3 mr-1" /> Resend
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-        {/* Debtors Summary Banner */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="bg-rose-500/5 border-rose-500/20">
-            <CardContent className="p-5 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-600">
-                <Users className="w-6 h-6"/>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Unpaid Tenants</p>
-                <h3 className="text-2xl font-bold text-rose-600">
-                  {debtors.length} <span className="text-xs font-normal text-muted-foreground">tenants with balance</span>
-                </h3>
-              </div>
-            </CardContent>
-          </Card>
+                {/* Pagination Controls */}
+                <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={perPage}
+                      onChange={(e) => {
+                        setPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-6.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 text-xs focus:outline-none"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                    </select>
+                    <span>
+                      Showing {filteredMessages.length === 0 ? "0 to 0" : `${(currentPage - 1) * perPage + 1} to ${Math.min(currentPage * perPage, filteredMessages.length)}`} of {filteredMessages.length} Results
+                    </span>
+                  </div>
 
-          <Card className="bg-amber-500/5 border-amber-500/20">
-            <CardContent className="p-5 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600">
-                <DollarSign className="w-6 h-6"/>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Total Money Not Paid</p>
-                <h3 className="text-2xl font-bold text-amber-600">
-                  {formatCurrency(debtors.reduce((sum, d) => sum + d.totalDue, 0))}
-                </h3>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-primary/5 border-primary/20">
-            <CardContent className="p-5 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                <Bell className="w-6 h-6"/>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Logged Reminders</p>
-                <h3 className="text-2xl font-bold">
-                  {reminders.length} <span className="text-xs font-normal text-muted-foreground">total alerts</span>
-                </h3>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Reminders List Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="h-10">
-            <TabsTrigger value="all">{t('all_reminders')} ({reminders.length})</TabsTrigger>
-            <TabsTrigger value="pending" className="flex items-center gap-2">
-              <Clock className="w-4 h-4"/> {t('pending')} ({reminders.filter(r => r.status === 'pending').length})
-            </TabsTrigger>
-            <TabsTrigger value="sent" className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4"/> {t('sent')} ({reminders.filter(r => r.status === 'sent').length})
-            </TabsTrigger>
-            <TabsTrigger value="overdue" className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4"/> {t('overdue')} ({reminders.filter(r => r.status === 'overdue').length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value={activeTab} className="space-y-4">
-            {filteredReminders.length === 0 ? (
-              <Card className="border-border/50 p-12 text-center text-muted-foreground">
-                <Bell className="w-10 h-10 mx-auto mb-3 opacity-30"/>
-                <p className="text-base font-medium">No {activeTab === 'all' ? '' : activeTab} reminders found.</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Click &quot;Send Personalized Reminder&quot; to notify tenants with pending rent or utilities.
-                </p>
-              </Card>
-            ) : (
-              filteredReminders.map((reminder) => (
-                <ReminderCard 
-                  key={reminder._id || reminder.id} 
-                  reminder={reminder}
-                  onSendNow={(id) => sendNowMutation.mutate(id)}
-                  onDelete={(id) => deleteMutation.mutate(id)}
-                  isSending={sendNowMutation.isPending}
-                />
-              ))
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold text-xs">
+                      {currentPage}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        </main>
       </div>
-    );
-}
 
+      {/* Global Modals for Send Message */}
+      <ActionModals
+        modalType={activeModal}
+        onClose={() => setActiveModal(null)}
+      />
+    </div>
+  );
+}

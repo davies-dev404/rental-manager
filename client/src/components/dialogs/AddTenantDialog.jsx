@@ -188,8 +188,8 @@ export function AddTenantDialog() {
         }}>
             <DialogTrigger asChild>
                 <div className="relative inline-flex items-center">
-                    <Button className="shadow-lg hover:shadow-xl transition-all">
-                        <Plus className="w-4 h-4 mr-2"/> {t('add_tenant')}
+                    <Button className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-4 font-semibold shadow-xs cursor-pointer">
+                        <Plus className="w-3.5 h-3.5 mr-1.5"/> {t('add_tenant')}
                     </Button>
                     {savedDraft && (
                         <span className="absolute -top-1.5 -right-1.5 flex h-3 w-3">

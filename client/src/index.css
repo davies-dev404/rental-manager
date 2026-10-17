@@ -154,16 +154,45 @@
 @layer base {
   /* Glass‑morphism utility */
   .glass {
-    @apply bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-lg;
+    background-color: rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0.75rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   }
 
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-heading tracking-tight;
+    font-family: var(--font-heading);
+    letter-spacing: -0.025em;
   }
 }
+
+/* Sleek custom scrollbar for Bomahut-style sidebar */
+
+.custom-sidebar-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-track {
+  background: #020224;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #1e226d;
+  border-radius: 4px;
+}
+
+.custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #2b3196;
+}
+

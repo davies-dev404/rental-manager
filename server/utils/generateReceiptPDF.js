@@ -33,7 +33,7 @@ const generateReceiptPDF = (payment, settings) => {
             // --- Watermark (Absolute Positioning) ---
             doc.save();
             doc.rotate(-45, { origin: [300, 400] });
-            doc.fontSize(100).font('Helvetica-Bold').fillColor('#f1f5f9').opacity(0.5).text('DWELLO', 0, 400, { align: 'center', width: 600 });
+            doc.fontSize(80).font('Helvetica-Bold').fillColor('#f1f5f9').opacity(0.5).text('MAKAAZIHUB', 0, 400, { align: 'center', width: 600 });
             doc.restore();
 
             // --- Header Section (Top) ---
@@ -45,12 +45,12 @@ const generateReceiptPDF = (payment, settings) => {
                 doc.image(logoPath, 50, yPos, { width: 80 }); 
             } catch (e) {
                 // Fallback text if logo missing
-                 doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text('Dwello', 50, yPos + 10);
+                 doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text('MakaaziHub', 50, yPos + 10);
             }
 
             // Business Info (Right Aligned)
-            const businessName = settings?.orgName || "Dwello";
-            const businessEmail = settings?.orgEmail || "support@dwello.com";
+            const businessName = settings?.orgName || "MakaaziHub";
+            const businessEmail = settings?.orgEmail || "support@makaazihub.com";
             const businessPhone = settings?.orgPhone || "";
             const businessAddress = settings?.orgAddress || "";
 
@@ -143,7 +143,7 @@ const generateReceiptPDF = (payment, settings) => {
 
             // --- Footer (Fixed Position) ---
             const footerY = 750;
-            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for choosing Dwello!', 50, footerY, { align: 'center', width: 495 });
+            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor).text('Thank you for choosing MakaaziHub!', 50, footerY, { align: 'center', width: 495 });
             doc.fontSize(8).text('Computer generated receipt, no signature required.', 50, footerY + 15, { align: 'center', width: 495 });
             
             doc.end();

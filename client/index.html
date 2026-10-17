@@ -3,27 +3,119 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dwello - Smart Property Management</title>
+    <title>MakaaziHub</title>
 
-    <meta property="og:title" content="Dwello - Smart Property Management" />
-    <meta property="og:description" content="Efficiently manage properties, tenants, and payments with Dwello." />
+    <meta property="og:title" content="MakaaziHub - Smart Rental Property Management" />
+    <meta property="og:description" content="Manage tenant arrears, automated billing, utilities, payments, and property occupancy with MakaaziHub." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/attached_assets/logo-placeholder.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Dwello" />
-    <meta name="twitter:description" content="Efficiently manage properties, tenants, and payments with Dwello." />
 
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <!-- Apple Sign-In JS SDK -->
-    <script type="text/javascript" src="https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js" async defer></script>
+    
+    <style>
+      @keyframes spin {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .initial-loader-wrap {
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+        position: fixed;
+        z-index: 99999;
+        background-color: #ffffff;
+        transition: opacity 300ms cubic-bezier(0.215, 0.610, 0.355, 1.000);
+      }
+      .loaded .initial-loader-wrap {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .initial-loader {
+        min-width: 250px;
+        color: #212529;
+        line-height: 1.5;
+        text-align: center;
+      }
+      .initial-loader__row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        gap: 1.5rem;
+      }
+      .initial-loader__row + .initial-loader__row {
+        border-top: 1px solid #e2e2e2;
+        color: #4b5563;
+        font-size: 12px;
+      }
+      .initial-loader svg#loader-circle {
+        transform-origin: 50% 50%;
+        animation: spin .7s linear infinite;
+      }
+      .initial-loader__brand {
+        font-family: 'Outfit', sans-serif;
+        font-size: 26px;
+        font-weight: 700;
+        color: #070b3b;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
+      }
+      .initial-loader__dot {
+        color: #1eb7ff;
+      }
+    </style>
   </head>
   <body>
+    <!-- MakaaziHub Initial Loading Screen -->
+    <div class="initial-loader-wrap" id="initialLoader">
+      <div class="initial-loader">
+        <div class="initial-loader__row">
+          <div class="initial-loader__brand">
+            MakaaziHub<span class="initial-loader__dot">.</span>
+          </div>
+          <svg version="1.1" id="loader-circle" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="28px" height="28px" viewBox="0 0 40 40" enable-background="new 0 0 40 40" xml:space="preserve">
+            <g>
+              <path fill="#e7e7e7" d="M20.201,5.169c-8.254,0-14.946,6.692-14.946,14.946c0,8.255,6.692,14.946,14.946,14.946s14.946-6.691,14.946-14.946C35.146,11.861,28.455,5.169,20.201,5.169z M20.201,31.749c-6.425,0-11.634-5.208-11.634-11.634c0-6.425,5.209-11.634,11.634-11.634c6.425,0,11.633,5.209,11.633,11.634C31.834,26.541,26.626,31.749,20.201,31.749z"/>
+              <path fill="#1eb7ff" d="M26.013,10.047l1.654-2.866c-2.198-1.272-4.743-2.012-7.466-2.012h0v3.312h0C22.32,8.481,24.301,9.057,26.013,10.047z"></path>
+            </g>
+          </svg>
+        </div>
+        <div class="initial-loader__row">Please Wait. Loading...</div>
+      </div>
+    </div>
+
     <div id="root"></div>
+
+    <script>
+      (function() {
+        var bodyElement = document.querySelector('body');
+        bodyElement.classList.add('loading');
+        window.addEventListener('DOMContentLoaded', function() {
+          setTimeout(function() {
+            var loaderElement = document.getElementById('initialLoader');
+            if (loaderElement) {
+              bodyElement.classList.add('loaded');
+              setTimeout(function() {
+                if (loaderElement.parentNode) {
+                  loaderElement.parentNode.removeChild(loaderElement);
+                }
+                bodyElement.classList.remove('loading', 'loaded');
+              }, 250);
+            }
+          }, 350);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

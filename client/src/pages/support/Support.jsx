@@ -97,7 +97,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Email Us</p>
-                                    <p className="text-muted-foreground">support@dwello.com</p>
+                                    <p className="text-muted-foreground">support@makaazihub.com</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3 text-sm">
@@ -106,7 +106,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Call Us</p>
-                                    <p className="text-muted-foreground">+254 700 000 000</p>
+                                    <p className="text-muted-foreground">+254 717 512 483</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3 text-sm">
@@ -115,7 +115,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Visit Us</p>
-                                    <p className="text-muted-foreground">123 Business Center, Nairobi, Kenya</p>
+                                    <p className="text-muted-foreground">P.O. BOX 576-0300 Nairobi, Kenya</p>
                                 </div>
                             </div>
                         </CardContent>

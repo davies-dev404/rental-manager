@@ -1,336 +1,828 @@
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, Wallet, ArrowUpRight, ArrowDownRight, Home, AlertCircle, CheckCircle2, TrendingDown, Receipt } from "lucide-react";
-import { ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, BarChart, Bar, Cell, LineChart, Line, Legend } from "recharts";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Download, DollarSign } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Info, ChevronRight, CheckCircle2 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip
+} from "recharts";
+import { ActionModals } from "@/components/dashboard/Modals";
+import FloatingAIAssistant from "@/components/dashboard/FloatingAIAssistant";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "react-i18next";
-import { usePreferences } from "@/lib/currency";
-import { useLocation } from "wouter";
 
-
-function StatCard({ title, value, subtext, icon: Icon, trend, color = "primary" }) {
-    const colorVariants = {
-        primary: "bg-primary/10 text-primary",
-        emerald: "bg-emerald-500/10 text-emerald-600",
-        amber: "bg-amber-500/10 text-amber-600",
-        rose: "bg-rose-500/10 text-rose-600",
-    };
-    return (<Card className="group border-border/50 shadow-sm hover:shadow-md transition-all hover:border-primary/20 overflow-hidden">
-            <div className="absolute inset-0 bg-linear-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"/>
-            <CardContent className="p-6 relative">
-                <div className="flex items-center justify-between space-y-0 pb-2">
-                    <p className="text-sm font-medium text-muted-foreground">{title}</p>
-                    <div className={`p-2.5 rounded-lg ${colorVariants[color]}`}>
-                        <Icon className="h-5 w-5"/>
-                    </div>
-                </div>
-                <div className="mt-4">
-                    <div className="text-3xl font-bold tracking-tight">{value || 0}</div>
-                    <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                        {trend === 'up' && <ArrowUpRight className="w-3 h-3 text-emerald-500"/>}
-                        {trend === 'down' && <ArrowDownRight className="w-3 h-3 text-rose-500"/>}
-                        <span className={trend === 'up' ? "text-emerald-500" : trend === 'down' ? "text-rose-500" : ""}>{subtext}</span>
-                    </p>
-                </div>
-            </CardContent>
-        </Card>);
-}
-function RecentActivityItem({ icon: Icon, title, description, time, status }) {
-    return (<div className="flex items-start gap-4 p-4 rounded-lg hover:bg-muted/50 transition-colors">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary mt-1">
-                <Icon className="w-4 h-4"/>
-            </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{description}</p>
-            </div>
-            <div className="text-right shrink-0">
-                <p className="text-xs text-muted-foreground">{time}</p>
-                {status && <Badge variant="outline" className="mt-1 text-xs">{status}</Badge>}
-            </div>
-        </div>);
-}
 export default function Dashboard() {
-    const { toast } = useToast();
-    const [, navigate] = useLocation();
-    const { data: stats, isLoading } = useQuery({
-        queryKey: ["stats"],
-        queryFn: api.getStats,
-    });
-    
-    const { t } = useTranslation();
-    const { formatCurrency, formatDate } = usePreferences();
-    
-    // Fetch activity logs for real-time dashboard stream
-    const { data: activityLogs = [] } = useQuery({
-        queryKey: ["activity-logs"],
-        queryFn: api.getActivityLogs
-    });
+  const { toast } = useToast();
 
-    const handleGenerateReport = () => {
-        navigate('/reports');
-    };
+  // Active modal state
+  const [activeModal, setActiveModal] = useState(null);
+  const [modalData, setModalData] = useState({});
 
-    if (isLoading) {
-        return (<div className="space-y-8">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 w-full rounded-xl"/>)}
-            </div>
-            <div className="grid gap-4 lg:grid-cols-3">
-                <Skeleton className="lg:col-span-2 h-96 rounded-xl"/>
-                <Skeleton className="h-96 rounded-xl"/>
-            </div>
-        </div>);
-    }
+  // Date range filter defaults to current month
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+  const today = now.toISOString().split("T")[0];
 
-    // Dynamic Synced Chart Data from real backend history
-    const chartData = stats?.sixMonthTrend && stats.sixMonthTrend.length > 0 
-        ? stats.sixMonthTrend 
-        : [
-            { name: "Current", revenue: stats?.collectedThisMonth || 0, target: stats?.expectedMonthlyRent || 0 }
+  const [startDate, setStartDate] = useState(firstDay);
+  const [endDate, setEndDate] = useState(today);
+
+  // Show all arrears toggle
+  const [showAllArrears, setShowAllArrears] = useState(false);
+
+  // Live queries from backend
+  const { data: stats, isLoading: isStatsLoading } = useQuery({
+    queryKey: ["stats"],
+    queryFn: api.getStats
+  });
+
+  const { data: debtors = [], isLoading: isDebtorsLoading } = useQuery({
+    queryKey: ["debtors"],
+    queryFn: api.getDebtors
+  });
+
+  // Calculate live numbers
+  const tenantArrears = Number(stats?.outstandingAmount || 0);
+  const totalBilled = Number(stats?.expectedMonthlyRent || 0);
+  const totalPaid = Number(stats?.collectedThisMonth || 0);
+  const advancePayments = 0.0;
+  const vacantUnits = Number(stats?.vacantUnits || 0);
+  const occupiedUnits = Number(stats?.occupiedUnits || 0);
+  const totalUnits = Number(stats?.totalUnits || 0);
+
+  const occupancyRate =
+    totalUnits > 0
+      ? Math.round((occupiedUnits / totalUnits) * 100)
+      : stats?.occupancyRate || 0;
+
+  const collectionRate =
+    totalBilled > 0
+      ? Math.min(100, Math.round((totalPaid / totalBilled) * 100))
+      : 0;
+
+  // Format real debtors list
+  const arrearsList = Array.isArray(debtors)
+    ? debtors.map((d, index) => ({
+        id: d._id || String(index),
+        unit: d.unitId?.unitNumber || d.unitNumber || "N/A",
+        name: d.name || "Tenant",
+        amount: Number(d.balance || d.rentAmount || 0),
+        phone: d.phone || ""
+      }))
+    : [];
+
+  const displayedArrears = showAllArrears ? arrearsList : arrearsList.slice(0, 5);
+
+  // Monthly Chart Data from backend 6-month trend or current month
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const currentMonthName = monthNames[now.getMonth()];
+
+  const chartData =
+    stats?.sixMonthTrend && stats.sixMonthTrend.length > 0
+      ? stats.sixMonthTrend.map((m) => ({
+          month: m.name,
+          payments: m.revenue || 0,
+          invoices: m.target || 0,
+          expenses: m.expenses || 0
+        }))
+      : [
+          {
+            month: currentMonthName,
+            payments: totalPaid,
+            invoices: totalBilled,
+            expenses: Number(stats?.expensesThisMonth || 0)
+          }
         ];
 
-    const occupancyData = [
-        { name: "Occupied", value: stats?.occupiedUnits || 0, fill: "hsl(var(--chart-2))" },
-        { name: "Vacant", value: stats?.vacantUnits || 0, fill: "hsl(var(--muted))" },
-    ];
-    
-    // Prevent empty chart rendering issues if total is 0
-    const totalUnits = (stats?.occupiedUnits || 0) + (stats?.vacantUnits || 0);
-    const safeOccupancyData = totalUnits > 0 ? occupancyData : [
-         { name: "No Data", value: 1, fill: "hsl(var(--muted))" }
-    ];
+  const openModal = (type, data = {}) => {
+    setModalData(data);
+    setActiveModal(type);
+  };
 
-    return (<div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+  // Custom Chart Tooltip
+  const CustomBarTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      const payments = payload.find((p) => p.dataKey === "payments")?.value || 0;
+      const invoices = payload.find((p) => p.dataKey === "invoices")?.value || 0;
+      const expenses = payload.find((p) => p.dataKey === "expenses")?.value || 0;
+
+      return (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-md shadow-lg text-xs min-w-42.5 space-y-1 z-50">
+          <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1.5">{label}</p>
+          <p className="text-[#1bb934] font-medium">Total payments : {payments.toLocaleString()} KES</p>
+          <p className="text-[#070b3b] dark:text-blue-400 font-medium">Total invoices : {invoices.toLocaleString()} KES</p>
+          <p className="text-[#7571f2] font-medium">Total expenses : {expenses.toLocaleString()} KES</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="space-y-4 max-w-7xl mx-auto pb-16">
+      {/* Property Selector Bar */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 shadow-2xs">
+        <span className="font-medium">No properties yet — add one from the Properties page</span>
+        <ChevronRight className="w-4 h-4 text-slate-400 rotate-90" />
+      </div>
+
+      {/* Stuck on something? Banner */}
+      <div className="bg-white dark:bg-slate-900 border-l-4 border-l-teal-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs flex items-start justify-between">
         <div>
-            <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">{t('dashboard')}</h2>
-            <p className="text-muted-foreground mt-1">Real-time overview of your rental properties, billing collections, and occupancy status.</p>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-xs text-slate-900 dark:text-white">Stuck on something? Ask MakaaziBot</span>
+            <button
+              onClick={() => {
+                const el = document.getElementById("open-ai-chat-btn");
+                if (el) el.click();
+              }}
+              className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
+            >
+              Ask MakaaziBot
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 italic mt-0.5">
+            Try "How do I add a payment?" or "How do I remove a tenant who has left?"
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => navigate('/reminders')}>
-                <AlertCircle className="w-4 h-4 mr-2 text-rose-500"/>
-                Reminders
-            </Button>
-            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={() => navigate('/expenses')}>
-                <DollarSign className="w-4 h-4 mr-2 text-amber-500"/>
-                Expenses
-            </Button>
-            <Button variant="outline" className="shadow-sm hover:shadow-md transition-all cursor-pointer" onClick={handleGenerateReport}>
-                <Download className="w-4 h-4 mr-2"/>
-                {t('export_report')}
-            </Button>
-            <Button className="shadow-md hover:shadow-lg transition-all cursor-pointer" onClick={() => navigate('/payments')}>
-                <Wallet className="w-4 h-4 mr-2"/>
-                Payments
-            </Button>
+        <button className="text-slate-400 hover:text-slate-600 text-sm leading-none">&times;</button>
+      </div>
+
+      {/* Onboarding Progress Banner */}
+      <div className="bg-white dark:bg-slate-900 border-l-4 border-l-rose-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-xs text-slate-900 dark:text-white">
+              You have completed <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded text-[10px]">0%</span> onboarding
+            </span>
+            <button
+              onClick={() => openModal("add_property")}
+              className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
+            >
+              View onboarding progress
+            </button>
+          </div>
+          <button className="text-slate-400 hover:text-slate-600 text-sm leading-none">&times;</button>
+        </div>
+        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-2.5 overflow-hidden">
+          <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: "0%" }} />
+        </div>
+        <div className="flex items-center justify-between mt-1.5 text-[11px] text-slate-400">
+          <span>0% completed</span>
+          <span className="italic">Please complete these tasks to get started with the app.</span>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title={t('total_properties')} value={stats?.totalProperties || 0} subtext={`${stats?.totalUnits || 0} total units`} icon={Building2} trend="neutral" color="primary"/>
-        <StatCard title={t('occupancy_rate')} value={`${stats?.occupancyRate || 0}%`} subtext={`${stats?.occupiedUnits || 0} occupied / ${stats?.vacantUnits || 0} vacant`} icon={Home} trend="neutral" color="emerald"/>
-        <StatCard title="Collected This Month" value={formatCurrency(stats?.collectedThisMonth || 0)} subtext={`Of ${formatCurrency(stats?.expectedMonthlyRent || 0)} expected`} icon={Wallet} trend="up" color="amber"/>
-        <StatCard title="Money Not Paid" value={formatCurrency(stats?.outstandingAmount || 0)} subtext={stats?.recordedUnpaidAmount > 0 ? `Incl. ${formatCurrency(stats.recordedUnpaidAmount)} recorded unpaid` : "Pending / Overdue balances"} icon={AlertCircle} trend="down" color="rose"/>
+      {/* ────────────────── ROW 1: Arrears & Advance Payments ────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card 1: Tenant Arrears (KES) */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
+                  Tenant Arrears (KES)
+                </p>
+                <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-2">
+                  {tenantArrears.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  })}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
+                  <span>{arrearsList.length} tenants with arrears</span>
+                  <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
+                </p>
+              </div>
+
+              <div className="flex items-center sm:flex-col gap-2 shrink-0">
+                <button
+                  onClick={() =>
+                    openModal("view_insights", {
+                      title: "Arrears Details",
+                      type: "arrears",
+                      desc: "Detailed record of outstanding balances by tenant."
+                    })
+                  }
+                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer w-full text-center"
+                >
+                  View Details
+                </button>
+                <button
+                  onClick={() => openModal("send_reminders")}
+                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer w-full text-center"
+                >
+                  Send Reminders
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
+              <button
+                onClick={() =>
+                  openModal("view_insights", {
+                    title: "Arrears Insights",
+                    type: "arrears",
+                    desc: "Live debt overview and payment collection metrics."
+                  })
+                }
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                View Insights <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 2: Tenant Advance Payments (KES) */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium tracking-wide">
+                  Tenant Advance Payments (KES)
+                </p>
+                <h3 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-2">
+                  {advancePayments.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  })}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
+                  <span>0 tenants with advance payments</span>
+                  <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
+                </p>
+              </div>
+
+              <div className="flex items-center sm:flex-col gap-2 shrink-0">
+                <button
+                  onClick={() =>
+                    openModal("view_insights", {
+                      title: "Advance Payments",
+                      desc: "Zero advance rent prepaid."
+                    })
+                  }
+                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer w-full text-center"
+                >
+                  View Details
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
+              <button
+                onClick={() =>
+                  openModal("view_insights", {
+                    title: "Advance Payment Insights",
+                    desc: "Prepaid rent trends."
+                  })
+                }
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                View Insights <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Secondary Financial KPI Row */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/50 shadow-sm bg-muted/20">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground">Expected Total Billing</p>
-              <p className="text-xl font-bold">{formatCurrency(stats?.expectedMonthlyRent || 0)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Gross Rent + Utilities</p>
+      {/* ────────────────── ROW 2: Payments and Invoices & Occupancy ────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card 3: Payments and Invoices */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Payments and Invoices
+              </h4>
+              {/* Date pickers filter */}
+              <div className="mt-3 flex items-center justify-center gap-2 max-w-sm mx-auto">
+                <div className="relative flex-1">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/60 rounded-md px-2.5 py-1.5 text-slate-700 dark:text-slate-300 text-center font-medium"
+                  />
+                </div>
+                <span className="text-slate-400 text-xs">to</span>
+                <div className="relative flex-1">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/60 rounded-md px-2.5 py-1.5 text-slate-700 dark:text-slate-300 text-center font-medium"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="p-2.5 rounded-lg bg-primary/10"><Receipt className="w-5 h-5 text-primary"/></div>
+
+            <div className="flex items-center justify-between gap-4 py-2">
+              {/* Left stats */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-base font-bold text-slate-900 dark:text-white">
+                    {totalBilled.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                  </p>
+                  <p className="text-xs text-slate-500">Total Billed</p>
+                </div>
+                <div>
+                  <p className="text-base font-bold text-slate-900 dark:text-white">
+                    {totalPaid.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                  </p>
+                  <p className="text-xs text-slate-500">Total Paid</p>
+                </div>
+              </div>
+
+              {/* Middle circular donut progress */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#ede9fe"
+                    strokeWidth="8"
+                    className="dark:stroke-slate-800"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#7571f2"
+                    strokeWidth="8"
+                    strokeDasharray="251.2"
+                    strokeDashoffset={251.2 - (251.2 * collectionRate) / 100}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-base font-bold text-slate-800 dark:text-white">
+                    {collectionRate}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Right button */}
+              <div>
+                <button
+                  onClick={() => openModal("record_payment")}
+                  className="px-4 py-2 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer text-center"
+                >
+                  Record Payments
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
+              <button
+                onClick={() => (window.location.href = "/payments")}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                View <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm bg-amber-500/5 border-amber-500/20">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Operating Expenses (Month)</p>
-              <p className="text-xl font-bold text-amber-600">{formatCurrency(stats?.expensesThisMonth || 0)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Maintenance, repairs, taxes</p>
+        {/* Card 4: Occupancy */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Occupancy
+              </h4>
             </div>
-            <Button variant="outline" size="sm" className="h-7 text-xs border-amber-500/30 text-amber-600 hover:bg-amber-500/10" onClick={() => window.location.href = '/expenses'}>Manage</Button>
-          </CardContent>
-        </Card>
 
-        <Card className={`border shadow-sm ${(stats?.netIncomeThisMonth || 0) >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-rose-500/5 border-rose-500/20'}`}>
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className={`text-xs font-medium ${(stats?.netIncomeThisMonth || 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>Net Realized Income</p>
-              <p className={`text-xl font-bold ${(stats?.netIncomeThisMonth || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(stats?.netIncomeThisMonth || 0)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Collected minus Expenses</p>
+            <div className="flex items-center justify-between gap-4 py-2">
+              {/* Left stats */}
+              <div className="space-y-4">
+                <div>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {vacantUnits}
+                  </p>
+                  <p className="text-xs text-slate-500">Vacant</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                    {occupiedUnits}
+                  </p>
+                  <p className="text-xs text-slate-500">Occupied</p>
+                </div>
+              </div>
+
+              {/* Middle circular donut progress */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#e2e8f0"
+                    strokeWidth="9"
+                    className="dark:stroke-slate-800"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    fill="transparent"
+                    stroke="#070b3b"
+                    strokeWidth="9"
+                    strokeDasharray="251.2"
+                    strokeDashoffset={251.2 - (251.2 * occupancyRate) / 100}
+                    strokeLinecap="butt"
+                    className="dark:stroke-blue-500"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-lg font-bold text-slate-900 dark:text-white">
+                    {occupancyRate}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Right buttons */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => openModal("add_tenant")}
+                  className="w-full px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer text-center"
+                >
+                  Add Tenants
+                </button>
+                <button
+                  onClick={() => (window.location.href = "/tenants")}
+                  className="w-full px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer text-center"
+                >
+                  Manage Tenants
+                </button>
+              </div>
             </div>
-            <Badge className={`text-xs ${(stats?.netIncomeThisMonth || 0) >= 0 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-rose-500/10 text-rose-600 border-rose-500/20'}`}>
-              {(stats?.netIncomeThisMonth || 0) >= 0 ? 'Profitable' : 'Deficit'}
-            </Badge>
+
+            <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
+              <button
+                onClick={() =>
+                  openModal("view_insights", {
+                    title: "Occupancy Overview",
+                    type: "occupancy",
+                    desc: "Occupied units breakdown and vacancy duration."
+                  })
+                }
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+              >
+                View Insights <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Revenue Chart */}
-        <Card className="lg:col-span-2 border-border/50 shadow-sm">
-          <CardHeader>
-            <CardTitle>{t('revenue_overview')}</CardTitle>
-            <CardDescription>Real monthly collections synced with your expected targets.</CardDescription>
-          </CardHeader>
-          <CardContent className="pl-2">
-            <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-                <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                    </linearGradient>
-                </defs>
-                <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false}/>
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)}/>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))"/>
-                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', background: 'hsl(var(--card))' }} formatter={(value) => `${formatCurrency(value)}`}/>
-                <Legend />
-                <Line type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" strokeWidth={2} dot={true} name={t('actual_revenue')}/>
-                <Line type="monotone" dataKey="target" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 5" dot={false} name={t('target')}/>
-                <Line type="monotone" dataKey="expenses" stroke="#f59e0b" strokeWidth={2} dot={true} name="Expenses"/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Occupancy Chart */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader>
-            <CardTitle>{t('occupancy_status')}</CardTitle>
-            <CardDescription>{t('occupancy_desc')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-87.5 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={safeOccupancyData} layout="vertical" barSize={40} margin={{ left: 80 }}>
-                        <XAxis type="number" hide/>
-                        <YAxis dataKey="name" type="category" tickLine={false} axisLine={false} fontSize={13} fontWeight={500}/>
-                        <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '8px', background: 'hsl(var(--card))' }} formatter={(value) => `${value}`}/>
-                        <Bar dataKey="value" radius={[0, 6, 6, 0]} fill="hsl(var(--primary))">
-                            {safeOccupancyData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.fill || "hsl(var(--primary))"}/>))}
-                        </Bar>
-                    </BarChart>
-                </ResponsiveContainer>
+      {/* ────────────────── ROW 3: Arrears Overview & More Actions ────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card 5: Arrears Overview Table */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col justify-between">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Arrears Overview
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                Showing {displayedArrears.length} of {arrearsList.length} tenants with arrears
+              </p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Bottom Section */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Real-time Activity Logs Stream */}
-        <Card className="lg:col-span-2 border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div>
-              <CardTitle>Live Activity Stream</CardTitle>
-              <CardDescription>Real-time audit log of system events, payments, and reminders</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => window.location.href = '/activity-logs'} className="text-xs">
-              View All Logs
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {activityLogs && activityLogs.length > 0 ? (
-                activityLogs.slice(0, 5).map(log => (
-                    <RecentActivityItem 
-                        key={log._id || log.id} 
-                        icon={
-                          log.type === 'payment' ? Wallet :
-                          log.type === 'reminder' ? AlertCircle :
-                          log.type === 'tenant' ? Users :
-                          CheckCircle2
-                        } 
-                        title={log.action} 
-                        description={log.description} 
-                        time={log.timestamp ? formatDate(log.timestamp, 'p, PPP') : 'Recently'}
-                        status={log.status}
-                    />
-                ))
+            {arrearsList.length === 0 ? (
+              <div className="py-12 px-4 text-center">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-80" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  No Overdue Arrears
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                  All active tenant rent accounts are up to date! As soon as an invoice becomes overdue, it will appear here.
+                </p>
+              </div>
             ) : (
-                <div className="p-8 text-center text-muted-foreground text-sm">No recent activity logged.</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 font-medium">
+                      <th className="py-2.5 text-left font-semibold">Unit</th>
+                      <th className="py-2.5 text-left font-semibold">Name</th>
+                      <th className="py-2.5 text-right font-semibold">Amount</th>
+                      <th className="py-2.5 text-center font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                    {displayedArrears.map((tenant) => (
+                      <tr key={tenant.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
+                        <td className="py-3 font-semibold text-slate-700 dark:text-slate-200">
+                          {tenant.unit}
+                        </td>
+                        <td className="py-3 text-slate-800 dark:text-slate-100 font-medium">
+                          {tenant.name}
+                        </td>
+                        <td className="py-3 text-right font-medium text-slate-700 dark:text-slate-200">
+                          {tenant.amount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}{" "}
+                          KES
+                        </td>
+                        <td className="py-3 text-center">
+                          <button
+                            onClick={() => openModal("remind_tenant", tenant)}
+                            className="px-3.5 py-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-full transition cursor-pointer"
+                          >
+                            Remind
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {arrearsList.length > 5 && (
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
+                <button
+                  onClick={() => setShowAllArrears(!showAllArrears)}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  {showAllArrears ? "Show Less" : "View All Arrears"} <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Quick Stats & Collection Progress */}
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader>
-            <CardTitle>{t('quick_stats')}</CardTitle>
-            <CardDescription>{t('stats_desc')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t('rent_collected')}</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(stats?.collectedThisMonth || 0)}</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
-                <div 
-                  className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500" 
-                  style={{ width: `${Math.min(((stats?.collectedThisMonth || 0) / (stats?.expectedMonthlyRent || 1)) * 100, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground flex justify-between">
-                <span>{Math.round(((stats?.collectedThisMonth || 0) / (stats?.expectedMonthlyRent || 1)) * 100)}% of expected</span>
-                <span>Target: {formatCurrency(stats?.expectedMonthlyRent || 0)}</span>
-              </p>
+        {/* Card 6: More Actions */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col justify-between">
+          <CardContent className="p-6">
+            <div className="text-center mb-5">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                More Actions
+              </h4>
             </div>
 
-            <div className="pt-4 space-y-3 border-t">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500"/> Occupied Units:
-                </span>
-                <span className="font-semibold">{stats?.occupiedUnits || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <Home className="w-4 h-4 text-amber-500"/> Vacant Units:
-                </span>
-                <span className="font-semibold">{stats?.vacantUnits || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-500"/> Money Not Paid:
-                </span>
-                <span className="font-semibold text-rose-600">{formatCurrency(stats?.outstandingAmount || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <TrendingDown className="w-4 h-4 text-amber-500"/> Expenses (MTD):
-                </span>
-                <span className="font-semibold text-amber-600">{formatCurrency(stats?.expensesThisMonth || 0)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-primary"/> Net Income:
-                </span>
-                <span className={`font-semibold ${(stats?.netIncomeThisMonth || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {formatCurrency(stats?.netIncomeThisMonth || 0)}
-                </span>
-              </div>
-            </div>
+            {/* 2-Column Action Buttons Grid */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <button
+                onClick={() => openModal("add_utilities")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add Utilities
+              </button>
+              <button
+                onClick={() => openModal("add_invoice")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add Invoice
+              </button>
 
-            <Button className="w-full mt-4" onClick={() => window.location.href = '/reports'}>
-              {t('view_detailed_report')}
-            </Button>
+              <button
+                onClick={() => openModal("bulk_add_invoices")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Bulk Add Invoices
+              </button>
+              <button
+                onClick={() => openModal("upload_bank_statement")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Upload Bank Statement
+              </button>
+
+              <button
+                onClick={() => openModal("add_tenant")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add Tenant
+              </button>
+              <button
+                onClick={() => openModal("add_unit")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add Unit
+              </button>
+
+              <button
+                onClick={() => openModal("add_property")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add Property
+              </button>
+              <button
+                onClick={() => openModal("shift_tenant")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Shift Tenant
+              </button>
+
+              <button
+                onClick={() =>
+                  toast({
+                    title: "Rent Invoices Queued",
+                    description: "Batch rent invoices for the current billing cycle generated."
+                  })
+                }
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Generate Rent Invoices
+              </button>
+              <button
+                onClick={() =>
+                  toast({
+                    title: "Other Bills Invoices Queued",
+                    description: "Water, garbage, and electricity invoices dispatched."
+                  })
+                }
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Generate Other Bills Invoices
+              </button>
+
+              <button
+                onClick={() => openModal("send_message")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Send Message
+              </button>
+              <button
+                onClick={() => openModal("add_to_team")}
+                className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
+              >
+                Add To Team
+              </button>
+            </div>
           </CardContent>
         </Card>
       </div>
-    </div>);
+
+      {/* ────────────────── ROW 4: Subscription & SMS Balance ────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Card 7: Subscription Balance */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Subscription Balance
+              </h4>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 py-2">
+              <div>
+                <p className="text-xs text-slate-500 flex items-center gap-1">
+                  Balance <Info className="w-3 h-3 text-slate-400" />
+                </p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                  0.00 KES
+                </p>
+              </div>
+
+              <div className="text-center">
+                <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
+                  Subscription Status <Info className="w-3 h-3 text-slate-400" />
+                </p>
+                <p className="text-sm font-bold text-emerald-600 mt-1">
+                  Active
+                </p>
+              </div>
+
+              <div>
+                <button
+                  onClick={() => openModal("pay_subscription")}
+                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
+                >
+                  Manage Subscription
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 8: SMS Balance */}
+        <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+          <CardContent className="p-6">
+            <div className="text-center mb-4">
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                SMS Balance
+              </h4>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 py-2">
+              <div>
+                <p className="text-xs text-slate-500 flex items-center gap-1">
+                  Balance <Info className="w-3 h-3 text-slate-400" />
+                </p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                  0.00 KES
+                </p>
+              </div>
+
+              <div className="text-center">
+                <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
+                  Last Purchase <Info className="w-3 h-3 text-slate-400" />
+                </p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                  N/A
+                </p>
+              </div>
+
+              <div>
+                <button
+                  onClick={() => openModal("buy_sms")}
+                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
+                >
+                  Buy SMS
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ────────────────── ROW 5: Monthly Multi-bar Financial Chart ────────────────── */}
+      <Card className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+        <CardContent className="p-6">
+          {/* Chart Legend */}
+          <div className="flex items-center justify-center gap-6 text-xs text-slate-600 dark:text-slate-300 font-medium mb-6 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-[#1bb934] rounded-xs inline-block"></span>
+              <span>Total payments</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-[#070b3b] dark:bg-blue-500 rounded-xs inline-block"></span>
+              <span>Total invoices</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 bg-[#7571f2] rounded-xs inline-block"></span>
+              <span>Total expenses</span>
+            </div>
+          </div>
+
+          {/* Bar Chart */}
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={chartData}
+                margin={{ top: 10, right: 20, left: 20, bottom: 20 }}
+                barGap={4}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                <XAxis
+                  dataKey="month"
+                  stroke="#94a3b8"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={{ stroke: "#e2e8f0" }}
+                />
+                <YAxis
+                  stroke="#94a3b8"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => (val === 0 ? "0" : `${val.toLocaleString()}`)}
+                />
+                <Tooltip
+                  content={<CustomBarTooltip />}
+                  cursor={{ fill: "rgba(226, 232, 240, 0.45)" }}
+                />
+                <Bar dataKey="payments" fill="#1bb934" maxBarSize={24} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="invoices" fill="#070b3b" maxBarSize={24} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="expenses" fill="#7571f2" maxBarSize={24} radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="text-center text-xs text-slate-500 font-medium -mt-2">
+            Performance Overview
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Floating AI Assistant */}
+      <FloatingAIAssistant />
+
+      {/* Dialog Modals */}
+      <ActionModals
+        modalType={activeModal}
+        initialData={modalData}
+        onClose={() => setActiveModal(null)}
+      />
+    </div>
+  );
 }

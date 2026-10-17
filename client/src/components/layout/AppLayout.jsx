@@ -1,268 +1,574 @@
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { LayoutDashboard, Building2, Users, CreditCard, Settings, LogOut, Bell, Search, Menu, Clock, BarChart3, FileText, Activity, ChevronLeft, ChevronRight, DollarSign } from "lucide-react";
-import logo from "@/assets/logo.png";
+import DwelloLogo from "@/components/DwelloLogo";
+import {
+  LayoutGrid,
+  DollarSign,
+  User,
+  Home,
+  BarChart2,
+  Mail,
+  Settings,
+  Headphones,
+  Video,
+  ChevronDown,
+  ChevronRight,
+  Menu,
+  LogOut,
+  FlaskConical,
+  Search,
+  Power,
+  Zap,
+  Wrench,
+  FileText
+} from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useState, useEffect } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { api } from "@/lib/api";
-import { generateReport } from "@/lib/reports";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "react-i18next";
+import { ActionModals } from "@/components/dashboard/Modals";
 
-function SidebarContent({ className, onClose, collapsed, onToggleCollapse }) {
-    const [location] = useLocation();
-    const { logout, user } = useAuth();
-    const { t } = useTranslation();
-    const menuItems = [
-        { icon: LayoutDashboard, label: t("dashboard"), href: "/" },
-        { icon: Building2, label: t("properties"), href: "/properties" },
-        { icon: Users, label: t("tenants"), href: "/tenants" },
-        { icon: CreditCard, label: t("payments"), href: "/payments" },
-        { icon: DollarSign, label: t("expenses"), href: "/expenses" },
-    ];
-    const toolsMenuItems = [
-        { icon: Clock, label: t("reminders"), href: "/reminders" },
-        { icon: BarChart3, label: t("reports"), href: "/reports" },
-        { icon: FileText, label: t("documents"), href: "/documents" },
-        { icon: Activity, label: t("logs"), href: "/activity-logs" },
-    ];
+function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
+  const [location] = useLocation();
+  const { user, logout } = useAuth();
+  const { toast } = useToast();
+
+  const [isDemoMode, setIsDemoMode] = useState(() => {
+    return localStorage.getItem("dwello_demo_mode") === "true";
+  });
+
+  const handleToggleDemoMode = () => {
+    const next = !isDemoMode;
+    setIsDemoMode(next);
+    localStorage.setItem("dwello_demo_mode", String(next));
+    toast({
+      title: next ? "Demo Mode Activated" : "Live Mode Active",
+      description: next
+        ? "Sample data mode active."
+        : "Connected directly to live database."
+    });
+  };
+
+  // Expand Financials, Property/Unit, Reports, and Settings by default to match Bomahut screenshot
+  const [expandedMenus, setExpandedMenus] = useState({
+    financials: true,
+    property: true,
+    reports: true,
+    settings: true
+  });
+
+  const toggleSubmenu = (menu) => {
+    setExpandedMenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
+  };
+
+  // Track search query parameter for active tabs (e.g. ?tab=backup)
+  const [currentQueryTab, setCurrentQueryTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("tab") || "general";
+    }
+    return "general";
+  });
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const tab = new URLSearchParams(window.location.search).get("tab") || "general";
+      setCurrentQueryTab(tab);
+    };
+    window.addEventListener("popstate", handleUrlChange);
+    window.addEventListener("dwello_tab_change", handleUrlChange);
+    return () => {
+      window.removeEventListener("popstate", handleUrlChange);
+      window.removeEventListener("dwello_tab_change", handleUrlChange);
+    };
+  }, []);
+
+  const handleTabClick = (href) => {
+    if (onClose) onClose();
+    if (href.includes("?tab=")) {
+      const tab = href.split("?tab=")[1];
+      setCurrentQueryTab(tab);
+      window.dispatchEvent(new CustomEvent("dwello_tab_change", { detail: { tab } }));
+    }
+  };
+
+  const menuItems = [
+    {
+      id: "dashboard",
+      icon: LayoutGrid,
+      label: "Dashboard",
+      href: "/"
+    },
+    {
+      id: "financials",
+      icon: DollarSign,
+      label: "Financials",
+      hasSubmenu: true,
+      subItems: [
+        { label: "Invoices", href: "/financials/invoices" },
+        { label: "Payments", href: "/financials/payments" },
+        { label: "Expenses", href: "/financials/expenses" }
+      ]
+    },
+    {
+      id: "tenants",
+      icon: User,
+      label: "Tenants",
+      href: "/tenants"
+    },
+    {
+      id: "property",
+      icon: Home,
+      label: "Property/Unit",
+      hasSubmenu: true,
+      subItems: [
+        { label: "Properties", href: "/properties" },
+        { label: "Units", href: "/units" },
+        { label: "Utilities", href: "/utilities" },
+        { label: "Maintenance", href: "/maintenance" },
+        { label: "Property Grouping", href: "/property-grouping" }
+      ]
+    },
+    {
+      id: "reports",
+      icon: BarChart2,
+      label: "Reports",
+      hasSubmenu: true,
+      subItems: [
+        { label: "Statements", href: "/reports/statements" },
+        { label: "Insights (beta)", href: "/reports/insights" }
+      ]
+    },
+    {
+      id: "communication",
+      icon: Mail,
+      label: "Communication",
+      href: "/reminders"
+    },
+    {
+      id: "settings",
+      icon: Settings,
+      label: "Settings",
+      hasSubmenu: true,
+      subItems: [
+        { label: "General", href: "/settings?tab=general", tabId: "general" },
+        { label: "Backup", href: "/settings?tab=backup", tabId: "backup" },
+        { label: "Alerts", href: "/settings?tab=alerts", tabId: "alerts" },
+        { label: "Account Info", href: "/settings?tab=account", tabId: "account" },
+        { label: "Documents (beta)", href: "/settings?tab=documents", tabId: "documents" },
+        { label: "Custom Message Template", href: "/settings?tab=templates", tabId: "templates" },
+        { label: "Team", href: "/settings?tab=team", tabId: "team" },
+        { label: "Custom Fields", href: "/settings?tab=custom_fields", tabId: "custom_fields" },
+        { label: "Billing", href: "/settings?tab=billing", tabId: "billing" },
+        { label: "MPESA Transactions", href: "/settings?tab=mpesa", tabId: "mpesa" },
+        { label: "Audit Trail", href: "/settings?tab=audit", tabId: "audit" }
+      ]
+    }
+  ];
+
+  if (isCollapsed) {
     return (
-        <div className={cn("flex flex-col h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300", className)}>
-          {/* Logo Section */}
-          <div className={cn("p-6 flex items-center gap-3 transition-all duration-300", collapsed ? "justify-center px-2 py-6" : "")}>
-             <img 
-                src={logo} 
-                alt="Logo" 
-                className={cn("object-contain transition-all duration-300", collapsed ? "w-8 h-8" : "w-10 h-10")}
-             />
-             {!collapsed && (
-                <span className="font-heading font-bold text-xl tracking-tight animate-in fade-in duration-300">Dwello</span>
-             )}
-          </div>
+      <div className="flex flex-col h-full bg-[#030330] text-[#9fa7d6] select-none border-r border-[#0d0f4d] w-16 items-center justify-between py-2">
+        {/* Main Navigation Icons matching Screenshot 3 */}
+        <div className="flex-1 w-full space-y-2 pt-2">
+          {menuItems.map((item) => {
+            const isDashboard = item.id === "dashboard";
+            const isTopActive = isDashboard
+              ? location === "/" || location === "/dashboard"
+              : item.id === "property"
+              ? location.startsWith("/properties") || location.startsWith("/units") || location.startsWith("/utilities") || location.startsWith("/maintenance") || location.startsWith("/property-grouping")
+              : location.startsWith(item.href || (item.subItems ? item.subItems[0].href : "___"));
 
-          <ScrollArea className="flex-1 py-4 px-3 space-y-1">
-            {/* Main Menu */}
-            <div className="space-y-1">
-                {menuItems.map((item) => {
-                    const isActive = location === item.href;
-                    return (
-                        <Link key={item.href} href={item.href} onClick={onClose}>
-                          <div className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer group relative", 
-                                isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md" : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80",
-                                collapsed ? "justify-center px-2" : ""
-                                )}>
-                            <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-white" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground")}/>
-                            {!collapsed && <span>{item.label}</span>}
-                            {/* Tooltip for collapsed state */}
-                            {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 border border-border">
-                                    {item.label}
-                                </div>
-                            )}
-                          </div>
-                        </Link>
-                    );
-                })}
-            </div>
+            const targetHref = item.href || (item.subItems ? item.subItems[0].href : "/");
 
-            {/* Tools Menu */}
-            {!collapsed && <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6 animate-in fade-in duration-300">{t("tools") || "Tools"}</p>}
-            {collapsed && <div className="h-4" />} {/* Spacer for collapsed mode */}
-            
-            <div className="space-y-1">
-                {toolsMenuItems.map((item) => {
-                    const isActive = location === item.href;
-                    return (
-                        <Link key={item.href} href={item.href} onClick={onClose}>
-                          <div className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer group relative", 
-                                isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md" : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80",
-                                collapsed ? "justify-center px-2" : ""
-                                )}>
-                            <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-white" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground")}/>
-                            {!collapsed && <span>{item.label}</span>}
-                            {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 border border-border">
-                                    {item.label}
-                                </div>
-                            )}
-                          </div>
-                        </Link>
-                    );
-                })}
-            </div>
-            
-            {!collapsed && <p className="px-4 text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider mb-2 mt-6 animate-in fade-in duration-300">{t("account")}</p>}
-            {collapsed && <div className="h-4" />}
-            
-            <Link href="/settings" onClick={onClose}>
-              <div className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer group relative", 
-                    location === "/settings" ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md" : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground text-sidebar-foreground/80",
-                    collapsed ? "justify-center px-2" : ""
-                )}>
-                <Settings className={cn("w-5 h-5 shrink-0", location === "/settings" ? "text-white" : "text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground")}/>
-                {!collapsed && t("settings")}
-                {collapsed && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-popover text-popover-foreground text-xs rounded shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50 border border-border">
-                        {t("settings")}
-                    </div>
-                )}
-              </div>
-            </Link>
-          </ScrollArea>
-
-          <div className="p-4 border-t border-sidebar-border mt-auto">
-            <div className={cn("flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50 mb-3", collapsed ? "justify-center p-0 bg-transparent mb-4" : "")}>
-                <Avatar className="h-9 w-9 border border-sidebar-border">
-                    <AvatarImage src={user?.avatar}/>
-                    <AvatarFallback className="bg-primary text-white text-xs">{user?.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                {!collapsed && (
-                    <div className="flex-1 min-w-0 animate-in fade-in duration-300">
-                        <p className="text-sm font-medium truncate text-sidebar-foreground">{user?.name}</p>
-                        <p className="text-xs text-sidebar-foreground/60 truncate capitalize">{user?.role}</p>
-                    </div>
-                )}
-            </div>
-            <Button variant="outline" className={cn("w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground hover:bg-sidebar-accent border-sidebar-border", collapsed ? "justify-center px-2" : "")} onClick={logout}>
-              <LogOut className={cn("w-4 h-4 shrink-0", !collapsed && "mr-2")}/>
-              {!collapsed && t("logout") || "Logout"}
-            </Button>
-            
-
-            {/* Toggle Button (Desktop Only) */}
-            {onToggleCollapse && (
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="w-full mt-2 h-6 text-sidebar-foreground/40 hover:text-sidebar-foreground hidden md:flex" 
-                    onClick={onToggleCollapse}
+            return (
+              <Link key={item.id} href={targetHref} onClick={onClose} title={item.label}>
+                <div
+                  className={cn(
+                    "relative flex items-center justify-center h-10 w-full transition-colors cursor-pointer",
+                    isTopActive ? "text-white" : "text-[#8e96cb] hover:text-white"
+                  )}
                 >
-                    {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-                </Button>
-            )}
+                  {isTopActive && (
+                    <div className="absolute left-0 top-1 bottom-1 w-1 bg-[#00d2b4] rounded-r-lg" />
+                  )}
+                  <item.icon className="w-5 h-5 shrink-0" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
 
+        {/* Footer Icons matching Screenshot 3 */}
+        <div className="w-full pt-2 border-t border-[#0d0f4d]/80 flex flex-col items-center gap-2.5 bg-[#030330] pb-2">
+          <Link href="/support" onClick={onClose} title="Support">
+            <div className="p-1.5 text-[#8e96cb] hover:text-white rounded-md transition cursor-pointer">
+              <Headphones className="w-4 h-4" />
+            </div>
+          </Link>
+          <div
+            onClick={() => {
+              toast({
+                title: "Tutorials & Guides",
+                description: "Opening MakaaziHub video tutorials and documentation."
+              });
+            }}
+            title="Tutorials"
+            className="p-1.5 text-[#8e96cb] hover:text-white rounded-md transition cursor-pointer"
+          >
+            <Video className="w-4 h-4" />
+          </div>
+          {/* Flask + Demo Switch */}
+          <div className="flex items-center justify-center gap-1 pt-1.5 border-t border-[#0d0f4d] w-full px-1" title="Demo Mode">
+            <FlaskConical className="w-3.5 h-3.5 text-[#8e96cb] shrink-0" />
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isDemoMode}
+                onChange={handleToggleDemoMode}
+                className="sr-only peer"
+              />
+              <div className="w-6.5 h-3.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1.5px] after:left-[1.5px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
           </div>
         </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#04043b] text-[#9fa7d6] select-none border-r border-[#0d0f4d]">
+      {/* Brand Header */}
+      <div className="px-5 py-5 border-b border-[#0d0f4d]/80 flex items-center justify-between">
+        <Link href="/" onClick={onClose} className="cursor-pointer">
+          <DwelloLogo />
+        </Link>
+      </div>
+
+      {/* Main Navigation List */}
+      <div className="flex-1 overflow-y-auto py-3 px-0 space-y-0.5 custom-sidebar-scroll">
+        {menuItems.map((item) => {
+          const isDashboard = item.id === "dashboard";
+          const isTopActive = isDashboard
+            ? location === "/" || location === "/dashboard"
+            : location.startsWith(item.href || "___");
+          const isExpanded = expandedMenus[item.id];
+
+          if (item.hasSubmenu) {
+            return (
+              <div key={item.id} className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => toggleSubmenu(item.id)}
+                  className={cn(
+                    "w-full flex items-center justify-between px-5 py-2.5 text-[13.5px] font-medium transition-colors text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/60 cursor-pointer"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon className="w-4 h-4 text-[#8e96cb] shrink-0" />
+                    <span>{item.label}</span>
+                  </div>
+                  {isExpanded ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-[#7c83b8]" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-[#7c83b8]" />
+                  )}
+                </button>
+
+                {isExpanded && (
+                  <div className="space-y-0.5 py-0.5 animate-in fade-in duration-200">
+                    {item.subItems.map((sub, sIdx) => {
+                      if (sub.action) {
+                        return (
+                          <button
+                            key={sIdx}
+                            type="button"
+                            onClick={() => {
+                              if (onOpenModal) onOpenModal(sub.action);
+                              if (onClose) onClose();
+                            }}
+                            className="w-full text-left pl-12 pr-4 py-2 text-[13px] text-[#8e96cb] hover:text-white hover:bg-[#0c0e52]/40 transition-colors block cursor-pointer"
+                          >
+                            {sub.label}
+                          </button>
+                        );
+                      }
+
+                      // Check sub-item active state
+                      let isSubActive = false;
+                      if (item.id === "settings") {
+                        isSubActive =
+                          (location === "/settings" || location.startsWith("/settings")) &&
+                          currentQueryTab === (sub.tabId || "general");
+                      } else {
+                        isSubActive =
+                          location === sub.href ||
+                          (sub.href && sub.href !== "/" && location.startsWith(sub.href.split("?")[0]));
+                      }
+
+                      return (
+                        <Link
+                          key={sIdx}
+                          href={sub.href}
+                          onClick={() => handleTabClick(sub.href)}
+                          className={cn(
+                            "relative pl-12 pr-4 py-2 text-[13px] transition-colors block cursor-pointer",
+                            isSubActive
+                              ? "text-white font-semibold bg-[#0c0e52]/80"
+                              : "text-[#8e96cb] hover:text-white hover:bg-[#0c0e52]/40"
+                          )}
+                        >
+                          {isSubActive && (
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00d2b4] rounded-r-lg" />
+                          )}
+                          <span>{sub.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <Link key={item.id} href={item.href} onClick={onClose}>
+              <div
+                className={cn(
+                  "relative flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium transition-colors cursor-pointer",
+                  isTopActive
+                    ? "text-white font-semibold bg-[#0c0e52]"
+                    : "text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/60"
+                )}
+              >
+                {/* Active Teal vertical bar on the very left edge */}
+                {isTopActive && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00d2b4] rounded-r-lg" />
+                )}
+                <item.icon
+                  className={cn(
+                    "w-4 h-4 shrink-0",
+                    isTopActive ? "text-white" : "text-[#8e96cb]"
+                  )}
+                />
+                <span>{item.label}</span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* Sidebar Footer Controls */}
+      <div className="p-4 border-t border-[#0d0f4d]/80 space-y-2 bg-[#030330]">
+        <Link href="/support" onClick={onClose}>
+          <div className="flex items-center gap-3 px-3 py-2 text-xs text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/50 rounded-md transition cursor-pointer">
+            <Headphones className="w-3.5 h-3.5 text-[#8e96cb]" />
+            <span>Support</span>
+          </div>
+        </Link>
+
+        <div
+          onClick={() => {
+            toast({
+              title: "Tutorials & Guides",
+              description: "Opening MakaaziHub video tutorials and documentation."
+            });
+          }}
+          className="flex items-center gap-3 px-3 py-2 text-xs text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/50 rounded-md transition cursor-pointer"
+        >
+          <Video className="w-3.5 h-3.5 text-[#8e96cb]" />
+          <span>Tutorials</span>
+        </div>
+
+        {/* Demo mode with Flask icon and toggle switch matching the screenshot */}
+        <div className="pt-2 border-t border-[#0d0f4d] flex items-center justify-between px-3 py-1 text-xs text-[#9fa7d6]">
+          <div className="flex items-center gap-3">
+            <FlaskConical className="w-3.5 h-3.5 text-[#8e96cb]" />
+            <span>Demo mode</span>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDemoMode}
+              onChange={handleToggleDemoMode}
+              className="sr-only peer"
+            />
+            <div className="w-8 h-4.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AppLayout({ children }) {
-    const { t } = useTranslation();
-    const [isMobileOpen, setIsMobileOpen] = useState(false);
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const [notifications, setNotifications] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
-    const { toast } = useToast();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
+  const [activeModal, setActiveModal] = useState(null);
+  const [location] = useLocation();
+  const { logout } = useAuth();
 
-    // Load notifications
-    useEffect(() => {
-        const loadNotifications = async () => {
-            const data = await api.getNotifications();
-            setNotifications(data);
-            setUnreadCount(data.filter(n => !n.read).length);
-        };
-        loadNotifications();
-        // Poll for updates every minute
-        const interval = setInterval(loadNotifications, 60000);
-        return () => clearInterval(interval);
-    }, []);
+  // Determine page title and icon for top bar
+  const getHeaderInfo = () => {
+    if (location === "/" || location === "/dashboard") {
+      return { title: "Dashboard", Icon: LayoutGrid };
+    }
+    if (location === "/financials/invoices" || location.includes("tab=invoices")) {
+      return { title: "Invoices", Icon: DollarSign };
+    }
+    if (location === "/financials/payments" || location === "/payments") {
+      return { title: "Payments", Icon: DollarSign };
+    }
+    if (location === "/financials/expenses" || location === "/expenses") {
+      return { title: "Expenses", Icon: DollarSign };
+    }
+    if (location.startsWith("/settings")) {
+      const tab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : "";
+      const tabNames = {
+        general: "General",
+        account: "Account Info",
+        team: "Team",
+        alerts: "Alerts",
+        billing: "Billing",
+        mpesa: "MPESA Transactions Status",
+        documents: "Documents (beta)",
+        templates: "Custom Message Template",
+        custom_fields: "Custom Fields",
+        audit: "Audit Trail",
+        backup: "Backup"
+      };
+      if (tab === "documents") {
+        return { title: "Documents (beta)", Icon: FileText };
+      }
+      return { title: tabNames[tab] || "General", Icon: Settings };
+    }
+    if (location.startsWith("/documents")) {
+      return { title: "Documents (beta)", Icon: FileText };
+    }
+    if (location.startsWith("/tenants")) {
+      return { title: "Tenants", Icon: User };
+    }
+    if (location.startsWith("/units")) {
+      return { title: "Units", Icon: Home };
+    }
+    if (location.startsWith("/properties")) {
+      return { title: "Properties", Icon: Home };
+    }
+    if (location.startsWith("/utilities")) {
+      return { title: "Utilities", Icon: Zap };
+    }
+    if (location.startsWith("/maintenance")) {
+      return { title: "Maintenance", Icon: Wrench };
+    }
+    if (location.startsWith("/property-grouping")) {
+      return { title: "Property Grouping", Icon: Home };
+    }
+    if (location.startsWith("/reports/statements")) {
+      return { title: "Reports", Icon: BarChart2 };
+    }
+    if (location.startsWith("/reports/insights")) {
+      return { title: "Insights", Icon: BarChart2 };
+    }
+    if (location.startsWith("/reports")) {
+      return { title: "Reports", Icon: BarChart2 };
+    }
+    if (location.startsWith("/reminders")) {
+      return { title: "Communication", Icon: Mail };
+    }
+    return { title: "Dashboard", Icon: LayoutGrid };
+  };
 
-    const handleMarkAsRead = async (id) => {
-        await api.markNotificationRead(id);
-        setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n));
-        setUnreadCount(prev => Math.max(0, prev - 1));
-    };
+  const { title: headerTitle, Icon: HeaderIcon } = getHeaderInfo();
 
-    const handleGenerateReport = async () => {
-        try {
-            await generateReport('properties'); // Default to properties report for the header button
-            toast({ title: "Report Generated", description: "Properties report downloaded successfully." });
-        } catch (error) {
-            toast({ variant: "destructive", title: "Error", description: "Could not generate report." });
-        }
-    };
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-[#f4f6fa] dark:bg-slate-950 flex font-sans">
+      {/* Mobile Sidebar Sheet */}
+      <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
+        <SheetContent side="left" className="p-0 w-60 border-r-0">
+          <SidebarNavigation
+            onClose={() => setIsMobileOpen(false)}
+            onOpenModal={(modal) => setActiveModal(modal)}
+          />
+        </SheetContent>
+      </Sheet>
 
-    return (<div className="flex min-h-screen bg-gray-50/50 dark:bg-black">
-      {/* Desktop Sidebar */}
-      <aside className={cn("hidden md:block fixed inset-y-0 left-0 z-50 transition-all duration-300", isCollapsed ? "w-20" : "w-64")}>
-        <SidebarContent collapsed={isCollapsed} onToggleCollapse={() => setIsCollapsed(!isCollapsed)} />
+      {/* Desktop Fixed Left Sidebar: toggles between w-60 (full) and w-16 (mini icon sidebar) matching Screenshot 3 */}
+      <aside
+        className={cn(
+          "hidden md:block shrink-0 h-screen select-none transition-all duration-300 ease-in-out bg-[#030330]",
+          isDesktopCollapsed ? "w-16" : "w-60"
+        )}
+      >
+        <div className="w-full h-full overflow-hidden">
+          <SidebarNavigation
+            isCollapsed={isDesktopCollapsed}
+            onOpenModal={(modal) => setActiveModal(modal)}
+          />
+        </div>
       </aside>
 
-      {/* Main Content */}
-      <main className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", isCollapsed ? "md:ml-20" : "md:ml-64")}>
-        {/* Top Header */}
-        <header className="sticky top-0 z-40 h-16 bg-background/80 backdrop-blur-md border-b border-border flex items-center justify-between px-6">
-            <div className="flex items-center gap-4">
-                <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
-                    <SheetTrigger asChild>
-                        <Button variant="ghost" size="icon" className="md:hidden">
-                            <Menu className="w-5 h-5"/>
-                        </Button>
-                    </SheetTrigger>
-                    <SheetContent side="left" className="p-0 w-64 border-r-0">
-                        <SidebarContent onClose={() => setIsMobileOpen(false)}/>
-                    </SheetContent>
-                </Sheet>
-                
-                <div className="relative hidden md:block w-96">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/>
-                    <Input placeholder={t('search_all_placeholder')} className="pl-9 bg-secondary/50 border-transparent focus-visible:bg-background focus-visible:border-primary/50 transition-all rounded-full h-9 text-sm"/>
-                </div>
+      {/* Main Content Area with Bomahut Top Header Bar */}
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden transition-all duration-300">
+        {/* Top Header Bar */}
+        <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (typeof window !== "undefined" && window.innerWidth < 768) {
+                  setIsMobileOpen((prev) => !prev);
+                } else {
+                  setIsDesktopCollapsed((prev) => !prev);
+                }
+              }}
+              className="p-1.5 -ml-1 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+              title={isDesktopCollapsed ? "Maximize Sidebar" : "Minimize Sidebar"}
+              aria-label="Toggle Navigation Sidebar"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100 font-medium text-xs sm:text-sm">
+              <HeaderIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span>{headerTitle}</span>
             </div>
+          </div>
 
-            <div className="flex items-center gap-3">
-                <Popover>
-                    <PopoverTrigger asChild>
-                        <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-secondary">
-                            <Bell className="w-5 h-5 text-muted-foreground"/>
-                            {unreadCount > 0 && <span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-background"></span>}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-80 p-0" align="end">
-                        <div className="p-4 font-medium border-b text-sm">{t('notifications')}</div>
-                        <ScrollArea className="h-[300px]">
-                            {notifications.length === 0 ? (
-                                <div className="p-4 text-center text-muted-foreground text-sm">{t('no_notifications') || "No notifications"}</div>
-                            ) : (
-                                notifications.map((notification) => (
-                                    <div 
-                                        key={notification.id} 
-                                        className={cn("p-4 border-b last:border-0 hover:bg-muted/50 cursor-pointer transition-colors", !notification.read && "bg-muted/30")}
-                                        onClick={() => handleMarkAsRead(notification.id)}
-                                    >
-                                        <div className="flex justify-between items-start mb-1">
-                                            <span className={cn("text-sm font-medium", !notification.read && "text-primary")}>{notification.title}</span>
-                                            <span className="text-[10px] text-muted-foreground">{notification.time}</span>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground line-clamp-2">{notification.message}</p>
-                                    </div>
-                                ))
-                            )}
-                        </ScrollArea>
-                    </PopoverContent>
-                </Popover>
-            </div>
+          {/* Center Search Input */}
+          <div className="relative w-64 md:w-80 lg:w-96 hidden sm:block">
+            <input
+              type="text"
+              placeholder="Search... Pages, Actions, Tutorials"
+              className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-3 pr-8 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+            />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
+          </div>
+
+          {/* Right Logout */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 font-medium transition cursor-pointer"
+            >
+              <Power className="w-3.5 h-3.5" />
+              <span>Logout</span>
+            </button>
+          </div>
         </header>
-        
-        <div className="flex-1 p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+        {/* Scrollable Page Body */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#f4f6fa] dark:bg-slate-950 flex flex-col justify-between">
+          <div className="flex-1">
             {children}
-        </div>
-        <footer className="border-t border-border py-6 px-6 md:px-8 bg-background/50 backdrop-blur-sm mt-auto">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-                <p>&copy; {new Date().getFullYear()} Dwello. All rights reserved.</p>
-                <div className="flex items-center gap-4">
-                    <Link href="/privacy" className="hover:text-primary transition-colors cursor-pointer">Privacy Policy</Link>
-                    <Link href="/terms" className="hover:text-primary transition-colors cursor-pointer">Terms of Service</Link>
-                    <Link href="/support" className="hover:text-primary transition-colors cursor-pointer">Support</Link>
-                </div>
-            </div>
-        </footer>
-      </main>
-    </div>);
+          </div>
+          <footer className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+            © {new Date().getFullYear()} MakaaziHub. All rights reserved.
+          </footer>
+        </main>
+      </div>
+
+      {/* Global Action Modals triggered from Nav */}
+      <ActionModals
+        modalType={activeModal}
+        onClose={() => setActiveModal(null)}
+      />
+    </div>
+  );
 }
