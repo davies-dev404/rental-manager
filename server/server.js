@@ -150,6 +150,21 @@ app.get('/', (req, res) => {
     res.send('Rental Manager API is running...');
 });
 
+app.get('/api/health', (req, res) => {
+    const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    const dbState = states[mongoose.connection.readyState] || 'unknown';
+    res.json({
+        status: 'ok',
+        uptime: Math.floor(process.uptime()),
+        database: {
+            status: dbState,
+            readyState: mongoose.connection.readyState,
+            host: mongoose.connection.host || null
+        },
+        env: process.env.NODE_ENV || 'development'
+    });
+});
+
 // Error Handling Middleware
 app.use((err, req, res, next) => {
     console.error('Unhandled Server Error:', err.stack || err.message);
