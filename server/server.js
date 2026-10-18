@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -69,8 +72,12 @@ const connectDB = async () => {
     cached.conn = null;
 
     const isServerless = !!(process.env.VERCEL || process.env.RENDER || process.env.AWS_LAMBDA_FUNCTION_NAME);
-    const atlasFallback = 'mongodb+srv://kipsoikibet2_db_user:Tango12@cluster0.4dri13h.mongodb.net/rental_manager?retryWrites=true&w=majority';
-    const uri = process.env.MONGODB_URI || (isServerless ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
+    const uri = process.env.MONGODB_URI || (isServerless ? null : 'mongodb://127.0.0.1:27017/rental_manager');
+
+    if (!uri) {
+        console.error('❌ MONGODB_URI environment variable is missing.');
+        throw new Error('MONGODB_URI environment variable is missing. Please configure MONGODB_URI in your environment or hosting dashboard.');
+    }
 
     const opts = {
         serverSelectionTimeoutMS: 5000,
