@@ -69,8 +69,7 @@ const connectDB = async () => {
     cached.conn = null;
 
     const isServerless = !!(process.env.VERCEL || process.env.RENDER || process.env.AWS_LAMBDA_FUNCTION_NAME);
-    // Point fallback to 'test' DB where the actual collections (users, properties, settings, etc.) reside
-    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/test?retryWrites=true&w=majority';
+    const atlasFallback = 'mongodb+srv://kipsoikibet2_db_user:Tango12@cluster0.4dri13h.mongodb.net/rental_manager?retryWrites=true&w=majority';
     const uri = process.env.MONGODB_URI || (isServerless ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
 
     const opts = {
