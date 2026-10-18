@@ -41,43 +41,58 @@ app.use(cors({
 app.use(express.json());
 app.use(morgan('dev'));
 
-// Database Connection
+// Database Connection with serverless-safe caching
 const startRentReminders = require('./cron/rentReminder');
 
-let isConnected = false;
+// Use a global cache so the connection survives hot/warm Lambda/Vercel invocations
+let cached = global._mongooseConnection;
+if (!cached) {
+    cached = global._mongooseConnection = { conn: null, promise: null };
+}
 
 const connectDB = async () => {
-    if (isConnected || mongoose.connection.readyState === 1) {
-        return;
+    // Already connected
+    if (cached.conn && mongoose.connection.readyState === 1) {
+        return cached.conn;
     }
-    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/test?retryWrites=true&w=majority';
-    const uri = process.env.MONGODB_URI || (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.RENDER ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
-    try {
-        await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
-        isConnected = true;
-        console.log('✅ MongoDB Connected successfully');
-        if (process.env.NODE_ENV !== 'production') {
+
+    // Return in-flight promise to avoid multiple concurrent connects
+    if (cached.promise) {
+        return await cached.promise;
+    }
+
+    const isServerless = !!(process.env.VERCEL || process.env.RENDER || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/rental_manager?retryWrites=true&w=majority&appName=Cluster0';
+    const uri = process.env.MONGODB_URI || (isServerless ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
+
+    const opts = {
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+        socketTimeoutMS: 30000,
+        bufferCommands: false, // Fail fast — don't buffer operations waiting for connection
+    };
+
+    cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
+        console.log('✅ MongoDB Connected:', uri.split('@')[1]?.split('/')[0] || 'local');
+        if (!isServerless) {
             startRentReminders();
         }
-    } catch (err) {
-        console.warn('⚠️ Primary MongoDB connection failed:', err.message);
-        if (uri !== 'mongodb://127.0.0.1:27017/rental_manager') {
-            try {
-                await mongoose.connect('mongodb://127.0.0.1:27017/rental_manager', { serverSelectionTimeoutMS: 2000 });
-                isConnected = true;
-                console.log('✅ Connected to local MongoDB fallback');
-            } catch (localErr) {
-                console.error('❌ MongoDB Connection Error:', localErr.message);
-                throw err;
-            }
-        } else {
-            throw err;
-        }
-    }
+        cached.conn = mongooseInstance;
+        return mongooseInstance;
+    }).catch((err) => {
+        // Reset on failure so next call retries
+        cached.promise = null;
+        console.error('❌ MongoDB Connection Error:', err.message);
+        throw err;
+    });
+
+    return await cached.promise;
 };
 
-// Initiate connection on boot
-connectDB().catch(err => console.error('Initial DB connect error:', err.message));
+// Initiate connection on boot (non-serverless environments)
+if (!process.env.VERCEL) {
+    connectDB().catch(err => console.error('Initial DB connect error:', err.message));
+}
 
 // Middleware to ensure DB is connected before processing API requests (essential for Vercel Serverless)
 app.use(async (req, res, next) => {

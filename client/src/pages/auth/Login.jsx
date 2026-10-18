@@ -252,7 +252,7 @@ export default function LoginPage() {
         setOtpCountdown(600);
         setOtpCode("");
         toast({
-          title: "Account Created! 🎉",
+          title: "Account Created! ",
           description: "Please enter the verification code sent to your email to verify your account."
         });
         return;
