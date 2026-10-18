@@ -167,7 +167,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
 
   if (isCollapsed) {
     return (
-      <div className="flex flex-col h-full bg-[#030330] text-[#9fa7d6] select-none border-r border-[#0d0f4d] w-16 items-center justify-between py-2">
+      <div className="flex flex-col h-full bg-[#0a1e35] text-[#a8bfd4] select-none border-r border-[#1a3a5c] w-16 items-center justify-between py-2">
         {/* Main Navigation Icons matching Screenshot 3 */}
         <div className="flex-1 w-full space-y-2 pt-2">
           {menuItems.map((item) => {
@@ -185,11 +185,11 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                 <div
                   className={cn(
                     "relative flex items-center justify-center h-10 w-full transition-colors cursor-pointer",
-                    isTopActive ? "text-white" : "text-[#8e96cb] hover:text-white"
+                    isTopActive ? "text-white" : "text-[#7fa8c0] hover:text-white"
                   )}
                 >
                   {isTopActive && (
-                    <div className="absolute left-0 top-1 bottom-1 w-1 bg-[#00d2b4] rounded-r-lg" />
+                    <div className="absolute left-0 top-1 bottom-1 w-1 bg-[#00a99d] rounded-r-lg" />
                   )}
                   <item.icon className="w-5 h-5 shrink-0" />
                 </div>
@@ -199,9 +199,9 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
         </div>
 
         {/* Footer Icons matching Screenshot 3 */}
-        <div className="w-full pt-2 border-t border-[#0d0f4d]/80 flex flex-col items-center gap-2.5 bg-[#030330] pb-2">
+        <div className="w-full pt-2 border-t border-[#1a3a5c]/80 flex flex-col items-center gap-2.5 bg-[#0a1e35] pb-2">
           <Link href="/support" onClick={onClose} title="Support">
-            <div className="p-1.5 text-[#8e96cb] hover:text-white rounded-md transition cursor-pointer">
+            <div className="p-1.5 text-[#7fa8c0] hover:text-white rounded-md transition cursor-pointer">
               <Headphones className="w-4 h-4" />
             </div>
           </Link>
@@ -213,13 +213,13 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
               });
             }}
             title="Tutorials"
-            className="p-1.5 text-[#8e96cb] hover:text-white rounded-md transition cursor-pointer"
+            className="p-1.5 text-[#7fa8c0] hover:text-white rounded-md transition cursor-pointer"
           >
             <Video className="w-4 h-4" />
           </div>
           {/* Flask + Demo Switch */}
-          <div className="flex items-center justify-center gap-1 pt-1.5 border-t border-[#0d0f4d] w-full px-1" title="Demo Mode">
-            <FlaskConical className="w-3.5 h-3.5 text-[#8e96cb] shrink-0" />
+          <div className="flex items-center justify-center gap-1 pt-1.5 border-t border-[#1a3a5c] w-full px-1" title="Demo Mode">
+            <FlaskConical className="w-3.5 h-3.5 text-[#7fa8c0] shrink-0" />
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
@@ -236,9 +236,9 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#04043b] text-[#9fa7d6] select-none border-r border-[#0d0f4d]">
+    <div className="flex flex-col h-full bg-[#0d2240] text-[#a8bfd4] select-none border-r border-[#1a3a5c]">
       {/* Brand Header */}
-      <div className="px-5 py-5 border-b border-[#0d0f4d]/80 flex items-center justify-between">
+      <div className="px-5 py-5 border-b border-[#1a3a5c]/80 flex items-center justify-between">
         <Link href="/" onClick={onClose} className="cursor-pointer">
           <DwelloLogo />
         </Link>
@@ -260,17 +260,17 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                   type="button"
                   onClick={() => toggleSubmenu(item.id)}
                   className={cn(
-                    "w-full flex items-center justify-between px-5 py-2.5 text-[13.5px] font-medium transition-colors text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/60 cursor-pointer"
+                    "w-full flex items-center justify-between px-5 py-2.5 text-[13.5px] font-medium transition-colors text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/60 cursor-pointer"
                   )}
                 >
                   <div className="flex items-center gap-3">
-                    <item.icon className="w-4 h-4 text-[#8e96cb] shrink-0" />
+                    <item.icon className="w-4 h-4 text-[#7fa8c0] shrink-0" />
                     <span>{item.label}</span>
                   </div>
                   {isExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-[#7c83b8]" />
+                    <ChevronDown className="w-3.5 h-3.5 text-[#6e96af]" />
                   ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-[#7c83b8]" />
+                    <ChevronRight className="w-3.5 h-3.5 text-[#6e96af]" />
                   )}
                 </button>
 
@@ -286,7 +286,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                               if (onOpenModal) onOpenModal(sub.action);
                               if (onClose) onClose();
                             }}
-                            className="w-full text-left pl-12 pr-4 py-2 text-[13px] text-[#8e96cb] hover:text-white hover:bg-[#0c0e52]/40 transition-colors block cursor-pointer"
+                            className="w-full text-left pl-12 pr-4 py-2 text-[13px] text-[#7fa8c0] hover:text-white hover:bg-[#132d4a]/40 transition-colors block cursor-pointer"
                           >
                             {sub.label}
                           </button>
@@ -313,12 +313,12 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                           className={cn(
                             "relative pl-12 pr-4 py-2 text-[13px] transition-colors block cursor-pointer",
                             isSubActive
-                              ? "text-white font-semibold bg-[#0c0e52]/80"
-                              : "text-[#8e96cb] hover:text-white hover:bg-[#0c0e52]/40"
+                              ? "text-white font-semibold bg-[#132d4a]/80"
+                              : "text-[#7fa8c0] hover:text-white hover:bg-[#132d4a]/40"
                           )}
                         >
                           {isSubActive && (
-                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00d2b4] rounded-r-lg" />
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00a99d] rounded-r-lg" />
                           )}
                           <span>{sub.label}</span>
                         </Link>
@@ -336,18 +336,18 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                 className={cn(
                   "relative flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium transition-colors cursor-pointer",
                   isTopActive
-                    ? "text-white font-semibold bg-[#0c0e52]"
-                    : "text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/60"
+                    ? "text-white font-semibold bg-[#132d4a]"
+                    : "text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/60"
                 )}
               >
                 {/* Active Teal vertical bar on the very left edge */}
                 {isTopActive && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00d2b4] rounded-r-lg" />
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00a99d] rounded-r-lg" />
                 )}
                 <item.icon
                   className={cn(
                     "w-4 h-4 shrink-0",
-                    isTopActive ? "text-white" : "text-[#8e96cb]"
+                    isTopActive ? "text-white" : "text-[#7fa8c0]"
                   )}
                 />
                 <span>{item.label}</span>
@@ -358,10 +358,10 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       </div>
 
       {/* Sidebar Footer Controls */}
-      <div className="p-4 border-t border-[#0d0f4d]/80 space-y-2 bg-[#030330]">
+      <div className="p-4 border-t border-[#1a3a5c]/80 space-y-2 bg-[#0a1e35]">
         <Link href="/support" onClick={onClose}>
-          <div className="flex items-center gap-3 px-3 py-2 text-xs text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/50 rounded-md transition cursor-pointer">
-            <Headphones className="w-3.5 h-3.5 text-[#8e96cb]" />
+          <div className="flex items-center gap-3 px-3 py-2 text-xs text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/50 rounded-md transition cursor-pointer">
+            <Headphones className="w-3.5 h-3.5 text-[#7fa8c0]" />
             <span>Support</span>
           </div>
         </Link>
@@ -373,16 +373,16 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
               description: "Opening MakaziFlow video tutorials and documentation."
             });
           }}
-          className="flex items-center gap-3 px-3 py-2 text-xs text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/50 rounded-md transition cursor-pointer"
+          className="flex items-center gap-3 px-3 py-2 text-xs text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/50 rounded-md transition cursor-pointer"
         >
-          <Video className="w-3.5 h-3.5 text-[#8e96cb]" />
+          <Video className="w-3.5 h-3.5 text-[#7fa8c0]" />
           <span>Tutorials</span>
         </div>
 
         {/* Demo mode with Flask icon and toggle switch matching the screenshot */}
-        <div className="pt-2 border-t border-[#0d0f4d] flex items-center justify-between px-3 py-1 text-xs text-[#9fa7d6]">
+        <div className="pt-2 border-t border-[#1a3a5c] flex items-center justify-between px-3 py-1 text-xs text-[#a8bfd4]">
           <div className="flex items-center gap-3">
-            <FlaskConical className="w-3.5 h-3.5 text-[#8e96cb]" />
+            <FlaskConical className="w-3.5 h-3.5 text-[#7fa8c0]" />
             <span>Demo mode</span>
           </div>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -494,7 +494,7 @@ export default function AppLayout({ children }) {
       {/* Desktop Fixed Left Sidebar: toggles between w-60 (full) and w-16 (mini icon sidebar) matching Screenshot 3 */}
       <aside
         className={cn(
-          "hidden md:block shrink-0 h-screen select-none transition-all duration-300 ease-in-out bg-[#030330]",
+          "hidden md:block shrink-0 h-screen select-none transition-all duration-300 ease-in-out bg-[#0a1e35]",
           isDesktopCollapsed ? "w-16" : "w-60"
         )}
       >
@@ -572,3 +572,4 @@ export default function AppLayout({ children }) {
     </div>
   );
 }
+

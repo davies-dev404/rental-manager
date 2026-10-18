@@ -45,14 +45,14 @@ router.post('/login', async (req, res) => {
           message: `
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
               <div style="text-align:center;margin-bottom:20px;">
-                <h1 style="color:#06083b;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#2563eb;">Flow</span></h1>
+                <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
                 <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
               </div>
               <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
               <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
                 Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
               </p>
-              <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#06083b;text-align:center;padding:18px 0;background:#f0f4ff;border:1px dashed #93c5fd;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+              <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
                 ${loginOtp}
               </div>
               <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
@@ -118,14 +118,14 @@ router.post('/resend-login-otp', async (req, res) => {
         message: `
           <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
             <div style="text-align:center;margin-bottom:20px;">
-              <h1 style="color:#06083b;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#2563eb;">Flow</span></h1>
+              <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
               <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
             </div>
             <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
             <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
               Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
             </p>
-            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#06083b;text-align:center;padding:18px 0;background:#f0f4ff;border:1px dashed #93c5fd;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
               ${loginOtp}
             </div>
             <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
@@ -423,9 +423,9 @@ router.post('/forgot-password', async (req, res) => {
                 email: user.email,
                 subject: 'MakaziFlow - Password Reset Code',
                 message: `<div style="font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 8px;">
-                    <h2 style="color: #06083b;">MakaziFlow Password Reset Request</h2>
+                    <h2 style="color: #0d2240;">MakaziFlow Password Reset Request</h2>
                     <p style="color: #475569;">You requested a password reset for your MakaziFlow account. Use the verification code below:</p>
-                    <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #2563eb; padding: 16px 0; text-align: center;">${resetCode}</div>
+                    <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #00a99d; padding: 16px 0; text-align: center;">${resetCode}</div>
                     <p style="color: #64748b; font-size: 13px;">This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
                 </div>`
             });
@@ -734,3 +734,4 @@ router.post('/apple', async (req, res) => {
 });
 
 module.exports = router;
+

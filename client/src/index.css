@@ -58,97 +58,167 @@
   --radius: 0.5rem;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   MakaziFlow Brand Palette — extracted from logo
+   Primary:  #0d2240  (deep navy)
+   Accent:   #00a99d  (teal / cyan-green)
+   Mid-navy: #1a3a5c  (hover state)
+═══════════════════════════════════════════════════════════ */
 :root {
-  /* Modern Corporate Clean - Blue & Emerald */
+  /* MakaziFlow Theme — Navy + Teal */
   --background: 210 20% 98%;
-  --foreground: 222 47% 11%;
+  --foreground: 214 47% 11%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 214 47% 11%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
+  --popover-foreground: 214 47% 11%;
 
-  --primary: 221 83% 53%; /* Vivid Blue */
-  --primary-foreground: 210 40% 98%;
+  /* Primary = teal #00a99d → hsl(176 100% 33%) */
+  --primary: 176 100% 33%;
+  --primary-foreground: 0 0% 100%;
 
   --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11.2%;
+  --secondary-foreground: 214 47% 11%;
 
   --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted-foreground: 215 16% 47%;
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222 47% 11.2%;
+  --accent: 176 80% 92%;
+  --accent-foreground: 176 100% 22%;
 
-  --destructive: 0 84.2% 60.2%;
+  --destructive: 0 84% 60%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221 83% 53%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  /* ring = teal */
+  --ring: 176 100% 33%;
 
   --radius: 0.5rem;
 
-  --chart-1: 221 83% 53%;
-  --chart-2: 160 84% 39%; /* Emerald */
+  /* Charts */
+  --chart-1: 176 100% 33%;   /* teal */
+  --chart-2: 214 72% 18%;    /* navy */
   --chart-3: 197 37% 24%;
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
 
-  --sidebar: 222 47% 11%;
+  /* Sidebar — deep navy */
+  --sidebar: 214 72% 10%;           /* #0d1e33 deep navy */
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary: 176 100% 33%;  /* teal highlight */
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 17%;
+  --sidebar-accent: 214 60% 16%;    /* slightly lighter navy */
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 17%;
-  --sidebar-ring: 224 76% 48%;
+  --sidebar-border: 214 50% 14%;
+  --sidebar-ring: 176 100% 33%;
 }
 
 .dark {
-  --background: 222 47% 11%;
+  --background: 214 47% 8%;
   --foreground: 210 40% 98%;
 
-  --card: 222 47% 11%;
+  --card: 214 47% 10%;
   --card-foreground: 210 40% 98%;
 
-  --popover: 222 47% 11%;
+  --popover: 214 47% 10%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 217 91% 60%;
-  --primary-foreground: 222 47% 11.2%;
+  --primary: 176 90% 40%;
+  --primary-foreground: 214 47% 8%;
 
-  --secondary: 217.2 32.6% 17.5%;
+  --secondary: 214 33% 17%;
   --secondary-foreground: 210 40% 98%;
 
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted: 214 33% 17%;
+  --muted-foreground: 215 20% 65%;
 
-  --accent: 217.2 32.6% 17.5%;
+  --accent: 214 33% 17%;
   --accent-foreground: 210 40% 98%;
 
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 0 63% 31%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 224 76% 48%;
+  --border: 214 33% 17%;
+  --input: 214 33% 17%;
+  --ring: 176 90% 40%;
 
-  --chart-1: 220 70% 50%;
+  --chart-1: 176 80% 45%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
 
-  --sidebar: 217 33% 10%;
+  --sidebar: 214 72% 6%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-primary: 224 76% 48%;
+  --sidebar-primary: 176 90% 38%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 15%;
+  --sidebar-accent: 214 50% 11%;
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 15%;
-  --sidebar-ring: 224 76% 48%;
+  --sidebar-border: 214 50% 10%;
+  --sidebar-ring: 176 90% 38%;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Global brand color overrides
+   Remaps the hardcoded hex values used across JSX files
+   to the MakaziFlow palette without touching every file.
+═══════════════════════════════════════════════════════════ */
+
+/* ------ Primary action buttons: old navy → new navy ------ */
+/* bg-[#06083b], bg-[#0b1065], bg-[#161c8a] → #0d2240 */
+[class*="bg-[#06083b]"],
+[class*="bg-[#0b1065]"],
+[class*="bg-[#161c8a]"] {
+  background-color: #0d2240 !important;
+}
+[class*="hover\:bg-[#0b1065]"]:hover,
+[class*="hover\:bg-[#161c8a]"]:hover,
+[class*="hover\:bg-[#0b1065]"]:hover {
+  background-color: #1a3a5c !important;
+}
+
+/* ------ Accent / teal buttons: old indigo → new teal ------ */
+/* bg-[#4f46e5], bg-[#4338ca], bg-[#3b49df] → #00a99d */
+[class*="bg-[#4f46e5]"],
+[class*="bg-[#3b49df]"] {
+  background-color: #00a99d !important;
+}
+[class*="hover\:bg-[#4338ca]"]:hover,
+[class*="hover\:bg-[#4f46e5]"]:hover {
+  background-color: #008f85 !important;
+}
+
+/* ------ Text colors ------ */
+[class*="text-[#0b1065]"],
+[class*="text-[#06083b]"] {
+  color: #0d2240 !important;
+}
+
+/* ------ Border colors ------ */
+[class*="border-[#0b1065]"],
+[class*="border-[#06083b]"] {
+  border-color: #0d2240 !important;
+}
+
+/* ------ Focus rings ------ */
+[class*="focus\:ring-[#0b1065]"]:focus,
+[class*="focus\:border-[#0b1065]"]:focus {
+  --tw-ring-color: #00a99d !important;
+  border-color: #00a99d !important;
+}
+
+/* ------ Hover bg tints ------ */
+[class*="hover\:bg-[#0b1065]\/5"]:hover {
+  background-color: rgba(0, 169, 157, 0.08) !important;
+}
+
+/* ------ Login page sign-in buttons (inline styles override) ------ */
+/* Catch the old blue ring from Login.jsx */
+[class*="focus\:border-blue-500"]:focus {
+  border-color: #00a99d !important;
 }
 
 @layer base {
@@ -177,22 +247,20 @@
   }
 }
 
-/* Sleek custom scrollbar for Bomahut-style sidebar */
-
+/* Sleek custom scrollbar — MakaziFlow navy */
 .custom-sidebar-scroll::-webkit-scrollbar {
   width: 5px;
 }
 
 .custom-sidebar-scroll::-webkit-scrollbar-track {
-  background: #020224;
+  background: #0a1a2e;
 }
 
 .custom-sidebar-scroll::-webkit-scrollbar-thumb {
-  background: #1e226d;
+  background: #1a3a5c;
   border-radius: 4px;
 }
 
 .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background: #2b3196;
+  background: #00a99d;
 }
-

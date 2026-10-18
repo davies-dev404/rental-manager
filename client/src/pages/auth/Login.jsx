@@ -393,7 +393,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={isOtpVerifying || otpCode.replace(/\D/g, "").length !== 6}
-                className="w-full h-10 bg-[#06083b] hover:bg-[#0b1065] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="w-full h-10 bg-[#0d2240] hover:bg-[#1a3a5c] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
                 {isOtpVerifying ? (
                   <>
@@ -441,7 +441,7 @@ export default function LoginPage() {
               onClick={() => setRole("admin")}
               className={`px-5 py-2 text-xs font-semibold rounded-l-md transition-colors cursor-pointer ${
                 role === "admin"
-                  ? "bg-[#3b49df] text-white"
+                  ? "bg-[#0d2240] text-white"
                   : "bg-slate-500 text-white hover:bg-slate-600"
               }`}
             >
@@ -452,7 +452,7 @@ export default function LoginPage() {
               onClick={() => setRole("tenant")}
               className={`px-6 py-2 text-xs font-semibold rounded-r-md transition-colors cursor-pointer ${
                 role === "tenant"
-                  ? "bg-[#3b49df] text-white"
+                  ? "bg-[#0d2240] text-white"
                   : "bg-slate-500 text-white hover:bg-slate-600"
               }`}
             >
@@ -496,7 +496,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-10 bg-[#06083b] hover:bg-[#0b1065] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer"
+                className="w-full h-10 bg-[#0d2240] hover:bg-[#1a3a5c] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer"
               >
                 {isLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
                 Sign In
@@ -645,7 +645,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full h-10 bg-[#4f46e5] hover:bg-[#4338ca] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer"
+                className="w-full h-10 bg-[#00a99d] hover:bg-[#008f85] text-white font-medium text-xs rounded-md shadow-xs transition-colors cursor-pointer"
               >
                 {isLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
                 Create Account
@@ -719,7 +719,7 @@ export default function LoginPage() {
                 type="submit"
                 disabled={isForgotLoading}
                 size="sm"
-                className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold"
+                className="bg-[#0d2240] hover:bg-[#1a3a5c] text-white text-xs font-semibold"
               >
                 {isForgotLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
                 Send Reset Link
