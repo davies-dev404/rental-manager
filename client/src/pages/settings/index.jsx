@@ -10,6 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Info,
   Save,
   Download,
@@ -142,7 +150,29 @@ export default function SettingsPage() {
       "OVERDUE NOTICE: Dear {tenant_name}, your rent of KES {amount_due} for Unit {unit_number} was due on {due_date}. Please settle promptly to avoid penalties."
   });
 
-  // Team Members
+  // Team Members & Form View
+  const [teamView, setTeamView] = useState("list"); // "list" | "form"
+  const [hideTeamOptional, setHideTeamOptional] = useState(false);
+  const [teamForm, setTeamForm] = useState({
+    username: "",
+    email: "",
+    role: "editor",
+    properties: "",
+    phone: "",
+    firstName: "",
+    lastName: ""
+  });
+  const [teamPermissions, setTeamPermissions] = useState({
+    payment: { view: false, all: true },
+    invoice: { view: false, all: true },
+    unitutility: { view: false, all: true },
+    tenant: { view: false, all: true },
+    unit: { view: false, all: true },
+    property: { view: false, all: true },
+    message: { view: false, all: true }
+  });
+  const [teamFinancialTotals, setTeamFinancialTotals] = useState(true);
+
   const [teamMembers, setTeamMembers] = useState([
     { id: "1", name: "David M.", email: "david@dwello.co.ke", role: "Administrator", status: "Active" },
     { id: "2", name: "Joseph K.", email: "joseph@dwello.co.ke", role: "Caretaker", status: "Active" },
@@ -724,90 +754,344 @@ export default function SettingsPage() {
 
           {/* ────────────────── 3. TEAM ────────────────── */}
           {activeTab === "team" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                Team
-              </h2>
-
-              <div className="flex flex-col sm:flex-row gap-3 p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border">
-                <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Invite Colleague by Email</Label>
-                  <Input
-                    placeholder="colleague@domain.com"
-                    value={newTeamEmail}
-                    onChange={(e) => setNewTeamEmail(e.target.value)}
-                    className="h-9 text-xs"
-                  />
-                </div>
-                <div className="w-48 space-y-1">
-                  <Label className="text-xs">Role</Label>
-                  <select
-                    value={newTeamRole}
-                    onChange={(e) => setNewTeamRole(e.target.value)}
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+            teamView === "form" ? (
+              <div className="space-y-6 animate-in fade-in duration-200 max-w-4xl pb-12">
+                {/* Top Back Button */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setTeamView("list")}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
                   >
-                    <option value="Administrator">Administrator (Full Access)</option>
-                    <option value="Property Manager">Property Manager</option>
-                    <option value="Caretaker">Caretaker</option>
-                    <option value="Accountant">Accountant</option>
-                  </select>
+                    &larr; Back
+                  </button>
                 </div>
-                <div className="flex items-end">
+
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">Team Form</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Use this form to add members of your team.</p>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!teamForm.username.trim()) {
+                      toast({ variant: "destructive", title: "Username Required", description: "Please enter a username." });
+                      return;
+                    }
+                    if (!teamForm.email.trim()) {
+                      toast({ variant: "destructive", title: "Email Required", description: "Please enter an email address." });
+                      return;
+                    }
+                    const newMember = {
+                      id: String(Date.now()),
+                      name: teamForm.username,
+                      email: teamForm.email,
+                      role: teamForm.role,
+                      status: "Active"
+                    };
+                    setTeamMembers([newMember, ...teamMembers]);
+                    toast({ title: "Team Member Added", description: `Added ${teamForm.username} (${teamForm.role}) to team.` });
+                    setTeamView("list");
+                    setTeamForm({
+                      username: "",
+                      email: "",
+                      role: "editor",
+                      properties: "",
+                      phone: "",
+                      firstName: "",
+                      lastName: ""
+                    });
+                  }}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-6 text-xs"
+                >
+                  {/* Row: username */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                    <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                      username
+                    </label>
+                    <div className="flex-1 max-w-lg">
+                      <input
+                        type="text"
+                        value={teamForm.username}
+                        onChange={(e) => setTeamForm({ ...teamForm, username: e.target.value })}
+                        placeholder="username"
+                        className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Row: Email */}
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+                    <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                      Email
+                    </label>
+                    <div className="flex-1 max-w-lg">
+                      <input
+                        type="email"
+                        value={teamForm.email}
+                        onChange={(e) => setTeamForm({ ...teamForm, email: e.target.value })}
+                        placeholder="Please enter an email"
+                        className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                      />
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Used for password recovery</p>
+                    </div>
+                  </div>
+
+                  {/* Row: Role */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                    <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                      Role
+                    </label>
+                    <div className="flex-1 max-w-lg">
+                      <select
+                        value={teamForm.role}
+                        onChange={(e) => setTeamForm({ ...teamForm, role: e.target.value })}
+                        className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                      >
+                        <option value="editor">editor</option>
+                        <option value="admin">admin</option>
+                        <option value="manager">manager</option>
+                        <option value="caretaker">caretaker</option>
+                        <option value="accountant">accountant</option>
+                        <option value="viewer">viewer</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Row: Properties */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                    <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                      Properties
+                    </label>
+                    <div className="flex-1 max-w-lg">
+                      <input
+                        type="text"
+                        value={teamForm.properties}
+                        onChange={(e) => setTeamForm({ ...teamForm, properties: e.target.value })}
+                        placeholder="Please select property(s)"
+                        className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Hide Toggle */}
+                  <div className="flex justify-center py-1">
+                    <button
+                      type="button"
+                      onClick={() => setHideTeamOptional(!hideTeamOptional)}
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                    >
+                      {hideTeamOptional ? "Show Optional Fields" : "Hide \u2191"}
+                    </button>
+                  </div>
+
+                  {!hideTeamOptional && (
+                    <>
+                      {/* Row: Phone Number (optional) */}
+                      <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+                        <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                          Phone Number (optional)
+                        </label>
+                        <div className="flex-1 max-w-lg">
+                          <div className="flex items-center gap-2">
+                            <span className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
+                              <span>🇰🇪</span>
+                              <span>+254</span>
+                            </span>
+                            <input
+                              type="tel"
+                              value={teamForm.phone}
+                              onChange={(e) => setTeamForm({ ...teamForm, phone: e.target.value })}
+                              placeholder="712345678"
+                              className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                            />
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                            The phone number should be in international format: country code then phone number.
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">Used to send text alerts</p>
+                        </div>
+                      </div>
+
+                      {/* Row: First Name (optional) */}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                        <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                          First Name (optional)
+                        </label>
+                        <div className="flex-1 max-w-lg">
+                          <input
+                            type="text"
+                            value={teamForm.firstName}
+                            onChange={(e) => setTeamForm({ ...teamForm, firstName: e.target.value })}
+                            placeholder="First Name"
+                            className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Row: Last Name (optional) */}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+                        <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                          Last Name (optional)
+                        </label>
+                        <div className="flex-1 max-w-lg">
+                          <input
+                            type="text"
+                            value={teamForm.lastName}
+                            onChange={(e) => setTeamForm({ ...teamForm, lastName: e.target.value })}
+                            placeholder="Last name ..."
+                            className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Team Member Permissions (matching Screenshot 3 & 4) */}
+                  <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Team Member Permissions</h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Use these settings to determine whether the team member should only view or be able to create, edit and view.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      {[
+                        { key: "payment", label: "payment" },
+                        { key: "invoice", label: "invoice" },
+                        { key: "unitutility", label: "unitutility" },
+                        { key: "tenant", label: "tenant" },
+                        { key: "unit", label: "unit" },
+                        { key: "property", label: "property" },
+                        { key: "message", label: "message" }
+                      ].map((perm) => (
+                        <div key={perm.key} className="flex items-center gap-6 sm:gap-12">
+                          <span className="w-28 text-xs text-slate-700 dark:text-slate-300">{perm.label}</span>
+                          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={teamPermissions[perm.key]?.view}
+                              onChange={(e) =>
+                                setTeamPermissions({
+                                  ...teamPermissions,
+                                  [perm.key]: { ...teamPermissions[perm.key], view: e.target.checked }
+                                })
+                              }
+                              className="rounded accent-blue-600"
+                            />
+                            <span>View</span>
+                          </label>
+                          <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={teamPermissions[perm.key]?.all}
+                              onChange={(e) =>
+                                setTeamPermissions({
+                                  ...teamPermissions,
+                                  [perm.key]: { ...teamPermissions[perm.key], all: e.target.checked }
+                                })
+                              }
+                              className="rounded accent-blue-600"
+                            />
+                            <span>All</span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Financial totals section */}
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 text-xs">financial totals</p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                            Income totals on the dashboard, page summaries and financial reports. Leave on unless this member should not see them.
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={teamFinancialTotals}
+                            onChange={(e) => setTeamFinancialTotals(e.target.checked)}
+                            className="rounded accent-blue-600"
+                          />
+                          <span>View</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-4 max-w-lg mx-auto sm:ml-48">
+                    <Button
+                      type="submit"
+                      className="w-full bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold h-9 rounded-md shadow-xs transition cursor-pointer"
+                    >
+                      + Add Team Member
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Bottom Back Button */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setTeamView("list")}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+                  >
+                    &larr; Back
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+                    Team
+                  </h2>
                   <Button
-                    onClick={() => {
-                      if (!newTeamEmail.trim()) return;
-                      setTeamMembers([
-                        ...teamMembers,
-                        {
-                          id: String(Date.now()),
-                          name: newTeamEmail.split("@")[0],
-                          email: newTeamEmail,
-                          role: newTeamRole,
-                          status: "Active"
-                        }
-                      ]);
-                      setNewTeamEmail("");
-                      toast({ title: "Team Member Added" });
-                    }}
+                    onClick={() => setTeamView("form")}
                     className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs"
                   >
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Member
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Team Member
                   </Button>
                 </div>
-              </div>
 
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/80 border-b">
-                    <tr>
-                      <th className="py-2.5 px-4 text-left font-semibold">Name</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">Email</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">Role</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">Status</th>
-                      <th className="py-2.5 px-4 text-center font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {teamMembers.map((member) => (
-                      <tr key={member.id} className="hover:bg-slate-50/50">
-                        <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">{member.name}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{member.email}</td>
-                        <td className="py-3 px-4"><Badge variant="outline" className="text-[10px]">{member.role}</Badge></td>
-                        <td className="py-3 px-4 text-emerald-600 font-medium">{member.status}</td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => setTeamMembers(teamMembers.filter((m) => m.id !== member.id))}
-                            className="text-rose-500 hover:text-rose-700"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
+                <div className="border rounded-xl overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 dark:bg-slate-800/80 border-b">
+                      <tr>
+                        <th className="py-2.5 px-4 text-left font-semibold">Name</th>
+                        <th className="py-2.5 px-4 text-left font-semibold">Email</th>
+                        <th className="py-2.5 px-4 text-left font-semibold">Role</th>
+                        <th className="py-2.5 px-4 text-left font-semibold">Status</th>
+                        <th className="py-2.5 px-4 text-center font-semibold">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y">
+                      {teamMembers.map((member) => (
+                        <tr key={member.id} className="hover:bg-slate-50/50">
+                          <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">{member.name}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{member.email}</td>
+                          <td className="py-3 px-4"><Badge variant="outline" className="text-[10px]">{member.role}</Badge></td>
+                          <td className="py-3 px-4 text-emerald-600 font-medium">{member.status}</td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => setTeamMembers(teamMembers.filter((m) => m.id !== member.id))}
+                              className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )
           )}
 
           {/* ────────────────── 4. ALERTS ────────────────── */}

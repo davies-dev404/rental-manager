@@ -261,6 +261,741 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
     );
 }
 
+// ─── Sub-View: Tenant Form (Bomahut Format matching User Screenshots 3 & 4) ───
+function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  // Form states
+  const [propertyId, setPropertyId] = useState("");
+  const [unitId, setUnitId] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  // Optional fields toggle
+  const [hideOptional, setHideOptional] = useState(false);
+
+  // Optional fields
+  const [depositType, setDepositType] = useState("");
+  const [depositAmountPaid, setDepositAmountPaid] = useState("");
+  const [depositAmountReturned, setDepositAmountReturned] = useState("");
+  const [deposits, setDeposits] = useState([]);
+
+  const [accountNumber, setAccountNumber] = useState("");
+  const [nationalId, setNationalId] = useState("");
+  const [email, setEmail] = useState("");
+  const [kraPin, setKraPin] = useState("");
+  const [penaltyType, setPenaltyType] = useState("");
+  const [notes, setNotes] = useState("");
+  const [moveInDate, setMoveInDate] = useState("");
+  const [moveOutDate, setMoveOutDate] = useState("");
+
+  // Other phone numbers
+  const [otherPhones, setOtherPhones] = useState([]);
+  const [otherFirstName, setOtherFirstName] = useState("");
+  const [otherPhone, setOtherPhone] = useState("");
+
+  // Next of Kin
+  const [nextOfKins, setNextOfKins] = useState([
+    { name: "", phone: "", relationship: "", otherInfo: "" }
+  ]);
+
+  // Bank Payer Names
+  const [bankPayerNames, setBankPayerNames] = useState([]);
+  const [newBankPayer, setNewBankPayer] = useState("");
+
+  const [leaseStartDate, setLeaseStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [leaseExpiryDate, setLeaseExpiryDate] = useState("");
+
+  // Filter units for selected property
+  const propertyUnits = units.filter(u => {
+    const pId = typeof u.propertyId === "object" ? (u.propertyId?._id || u.propertyId?.id) : u.propertyId;
+    return String(pId) === String(propertyId);
+  });
+
+  const handleAddDeposit = () => {
+    if (!depositType && !depositAmountPaid) return;
+    setDeposits([...deposits, { type: depositType || "General Deposit", paid: depositAmountPaid, returned: depositAmountReturned || "0" }]);
+    setDepositType("");
+    setDepositAmountPaid("");
+    setDepositAmountReturned("");
+  };
+
+  const handleAddOtherPhone = () => {
+    if (!otherPhone) return;
+    setOtherPhones([...otherPhones, { name: otherFirstName, phone: otherPhone }]);
+    setOtherFirstName("");
+    setOtherPhone("");
+  };
+
+  const handleAddNextOfKin = () => {
+    setNextOfKins([...nextOfKins, { name: "", phone: "", relationship: "", otherInfo: "" }]);
+  };
+
+  const handleRemoveNextOfKin = (idx) => {
+    if (nextOfKins.length > 1) {
+      setNextOfKins(nextOfKins.filter((_, i) => i !== idx));
+    }
+  };
+
+  const handleUpdateNextOfKin = (idx, field, val) => {
+    const copy = [...nextOfKins];
+    copy[idx][field] = val;
+    setNextOfKins(copy);
+  };
+
+  const handleAddBankPayer = () => {
+    if (!newBankPayer.trim()) return;
+    setBankPayerNames([...bankPayerNames, newBankPayer.trim()]);
+    setNewBankPayer("");
+  };
+
+  const handleClear = () => {
+    setPropertyId("");
+    setUnitId("");
+    setFirstName("");
+    setLastName("");
+    setPhone("");
+    setDeposits([]);
+    setDepositType("");
+    setDepositAmountPaid("");
+    setDepositAmountReturned("");
+    setAccountNumber("");
+    setNationalId("");
+    setEmail("");
+    setKraPin("");
+    setPenaltyType("");
+    setNotes("");
+    setMoveInDate("");
+    setMoveOutDate("");
+    setOtherPhones([]);
+    setOtherFirstName("");
+    setOtherPhone("");
+    setNextOfKins([{ name: "", phone: "", relationship: "", otherInfo: "" }]);
+    setBankPayerNames([]);
+    setNewBankPayer("");
+    setLeaseStartDate(new Date().toISOString().split("T")[0]);
+    setLeaseExpiryDate("");
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!propertyId && properties.length > 0) {
+      toast({ variant: "destructive", title: "Property Required", description: "Please select a property." });
+      return;
+    }
+    if (!unitId && propertyUnits.length > 0) {
+      toast({ variant: "destructive", title: "Unit Required", description: "Please select a unit." });
+      return;
+    }
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (!fullName) {
+      toast({ variant: "destructive", title: "Name Required", description: "Please enter First Name and/or Last Name." });
+      return;
+    }
+    if (!phone.trim()) {
+      toast({ variant: "destructive", title: "Phone Number Required", description: "Please enter a valid phone number." });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.addTenant({
+        name: fullName,
+        phone: phone.startsWith("+") ? phone : `+254${phone.replace(/^0+/, "")}`,
+        email: email || `${firstName.toLowerCase() || "tenant"}@makaziflow.com`,
+        unitId: unitId || (propertyUnits[0]?._id || propertyUnits[0]?.id),
+        nationalId: nationalId || "ID-" + Math.floor(100000 + Math.random() * 900000),
+        idType: "national_id",
+        leaseStart: leaseStartDate,
+        leaseEnd: leaseExpiryDate,
+        notes,
+        accountNumber,
+        kraPin,
+        deposits,
+        nextOfKin: nextOfKins
+      });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      toast({ title: "Tenant Added", description: `Tenant ${fullName} added successfully.` });
+      if (onSuccess) onSuccess();
+      onBack();
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Failed to add tenant." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      {/* Top Back Button */}
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+        >
+          &larr; Back
+        </button>
+      </div>
+
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Tenant Form</h2>
+      </div>
+
+      {/* Form Card (matching User Screenshots 3 & 4) */}
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-5 text-xs"
+      >
+        {/* Row 1: Select Property */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+            Select Property
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={propertyId}
+              onChange={(e) => {
+                setPropertyId(e.target.value);
+                setUnitId("");
+              }}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              <option value="">
+                {properties.length === 0
+                  ? "No properties yet — add one from the Properties page"
+                  : "Select Property"}
+              </option>
+              {properties.map((p) => (
+                <option key={p._id || p.id} value={p._id || p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              If the property is not available in the list, please go to the <span className="text-blue-600 underline">properties page</span> to add it.
+            </p>
+          </div>
+        </div>
+
+        {/* Row 2: Select Unit */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+            Select Unit
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={unitId}
+              onChange={(e) => setUnitId(e.target.value)}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              <option value="">Select Unit</option>
+              {propertyUnits.map((u) => (
+                <option key={u._id || u.id} value={u._id || u.id}>
+                  Unit {u.unitNumber} ({u.type}) - KES {u.rentAmount || 0}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              If the unit is not available in the list, please go to the <span className="text-blue-600 underline">units page</span> to add it.
+            </p>
+          </div>
+        </div>
+
+        {/* Row 3: First Name */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+            First Name
+          </label>
+          <div className="flex-1 max-w-lg">
+            <input
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First Name"
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+          </div>
+        </div>
+
+        {/* Row 4: Last Name */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+            Last Name
+          </label>
+          <div className="flex-1 max-w-lg">
+            <input
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name ..."
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+          </div>
+        </div>
+
+        {/* Row 5: Phone Number */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+            Phone Number
+          </label>
+          <div className="flex-1 max-w-lg">
+            <div className="flex items-center gap-2">
+              <span className="h-9 px-3 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
+                <span>🇰🇪</span>
+                <span>+254</span>
+              </span>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="712345678"
+                className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+              />
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              The phone number should be in international format: country code then phone number.
+            </p>
+          </div>
+        </div>
+
+        {/* Hide / Show Optional Fields toggle */}
+        <div className="flex justify-center py-1">
+          <button
+            type="button"
+            onClick={() => setHideOptional(!hideOptional)}
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+          >
+            {hideOptional ? "Show Optional Fields" : "Hide \u2191"}
+          </button>
+        </div>
+
+        {!hideOptional && (
+          <>
+            {/* Deposit (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                Deposit (optional)
+              </label>
+              <div className="flex-1 max-w-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={depositType}
+                    onChange={(e) => setDepositType(e.target.value)}
+                    placeholder="deposit type ..."
+                    className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddDeposit}
+                    className="h-9 w-9 flex items-center justify-center border border-slate-300 dark:border-slate-700 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-base font-medium cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-slate-500">Amount Paid</span>
+                    <input
+                      type="number"
+                      value={depositAmountPaid}
+                      onChange={(e) => setDepositAmountPaid(e.target.value)}
+                      placeholder="amount paid ..."
+                      className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-slate-500">Amount Returned</span>
+                    <input
+                      type="number"
+                      value={depositAmountReturned}
+                      onChange={(e) => setDepositAmountReturned(e.target.value)}
+                      placeholder="amount returned ..."
+                      className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                    />
+                  </div>
+                </div>
+                {deposits.length > 0 && (
+                  <div className="space-y-1 pt-1">
+                    {deposits.map((d, idx) => (
+                      <div key={idx} className="flex justify-between p-2 bg-slate-50 dark:bg-slate-800/60 rounded text-xs">
+                        <span>{d.type}: <strong>KES {d.paid}</strong></span>
+                        <button type="button" onClick={() => setDeposits(deposits.filter((_, i) => i !== idx))} className="text-rose-500 hover:underline">Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Account Number (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                Account Number (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="text"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value)}
+                  placeholder="Account Number. ..."
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Used when reconciling payments.</p>
+              </div>
+            </div>
+
+            {/* National ID (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                National ID (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="text"
+                  value={nationalId}
+                  onChange={(e) => setNationalId(e.target.value)}
+                  placeholder="National ID number ..."
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Email (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Email (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email ..."
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Kra/Tax Pin (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Kra/Tax Pin (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="text"
+                  value={kraPin}
+                  onChange={(e) => setKraPin(e.target.value)}
+                  placeholder="Tax Pin ..."
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Rent Payment Penalty (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Rent Payment Penalty (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <select
+                  value={penaltyType}
+                  onChange={(e) => setPenaltyType(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                >
+                  <option value="">Select Penalty Type</option>
+                  <option value="fixed_1000">Fixed KES 1,000</option>
+                  <option value="fixed_2000">Fixed KES 2,000</option>
+                  <option value="pct_5">5% of Monthly Rent</option>
+                  <option value="pct_10">10% of Monthly Rent</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Notes (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                Notes (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="notes ..."
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Move In Date (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Move In Date (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="date"
+                  value={moveInDate}
+                  onChange={(e) => setMoveInDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Move Out Date (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Move Out Date (optional)
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="date"
+                  value={moveOutDate}
+                  onChange={(e) => setMoveOutDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Other phone numbers (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                Other phone numbers (optional)
+              </label>
+              <div className="flex-1 max-w-lg space-y-2">
+                <p className="text-[11px] text-slate-500">first name and phone number are used when reconciling payments.</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={otherFirstName}
+                    onChange={(e) => setOtherFirstName(e.target.value)}
+                    placeholder="first name"
+                    className="w-1/3 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                  />
+                  <div className="flex-1 flex items-center gap-2">
+                    <span className="h-9 px-2 border border-slate-300 dark:border-slate-700 rounded-md bg-slate-50 dark:bg-slate-800 flex items-center gap-1 text-[11px]">
+                      <span>🇰🇪</span>
+                      <span>+254</span>
+                    </span>
+                    <input
+                      type="tel"
+                      value={otherPhone}
+                      onChange={(e) => setOtherPhone(e.target.value)}
+                      placeholder="phone"
+                      className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddOtherPhone}
+                    className="h-9 w-9 flex items-center justify-center border border-slate-300 dark:border-slate-700 rounded-md text-slate-600 hover:bg-slate-50 transition text-base font-medium cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Next of Kin (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                Next of Kin (optional)
+              </label>
+              <div className="flex-1 max-w-lg space-y-3">
+                {nextOfKins.map((kin, idx) => (
+                  <div key={idx} className="p-3.5 bg-slate-50/60 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-xs text-slate-700 dark:text-slate-300">Next of Kin #{idx + 1}</span>
+                      {nextOfKins.length > 1 && (
+                        <button type="button" onClick={() => handleRemoveNextOfKin(idx)} className="text-rose-500 hover:text-rose-700">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-500">Name</span>
+                        <input
+                          type="text"
+                          value={kin.name}
+                          onChange={(e) => handleUpdateNextOfKin(idx, "name", e.target.value)}
+                          placeholder="Name"
+                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-500">Phone</span>
+                        <input
+                          type="tel"
+                          value={kin.phone}
+                          onChange={(e) => handleUpdateNextOfKin(idx, "phone", e.target.value)}
+                          placeholder="+254..."
+                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-500">Relationship</span>
+                        <input
+                          type="text"
+                          value={kin.relationship}
+                          onChange={(e) => handleUpdateNextOfKin(idx, "relationship", e.target.value)}
+                          placeholder="Relationship"
+                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-500">Other Info</span>
+                        <input
+                          type="text"
+                          value={kin.otherInfo}
+                          onChange={(e) => handleUpdateNextOfKin(idx, "otherInfo", e.target.value)}
+                          placeholder="Other information"
+                          className="w-full h-8 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddNextOfKin}
+                  className="h-8 px-3 border border-slate-300 dark:border-slate-700 rounded-md text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1 cursor-pointer"
+                >
+                  + Add Next of Kin
+                </button>
+              </div>
+            </div>
+
+            {/* Bank Payer Names (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0 flex items-center justify-end gap-1">
+                <span>Bank Payer Names (optional)</span>
+                <span className="w-3.5 h-3.5 rounded-full border border-slate-400 text-[10px] flex items-center justify-center font-bold text-slate-500">i</span>
+              </label>
+              <div className="flex-1 max-w-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newBankPayer}
+                    onChange={(e) => setNewBankPayer(e.target.value)}
+                    placeholder="Enter Full Name ..."
+                    className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddBankPayer}
+                    className="h-9 w-9 flex items-center justify-center border border-slate-300 dark:border-slate-700 rounded-md text-slate-600 hover:bg-slate-50 transition text-base font-medium cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+                {bankPayerNames.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {bankPayerNames.map((name, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs">
+                        <span>{name}</span>
+                        <button type="button" onClick={() => setBankPayerNames(bankPayerNames.filter((_, i) => i !== idx))} className="text-rose-500 hover:text-rose-700 font-bold">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lease Start Date (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0 flex items-center justify-end gap-1">
+                <span>Lease Start Date (optional)</span>
+                <span className="w-3.5 h-3.5 rounded-full border border-slate-400 text-[10px] flex items-center justify-center font-bold text-slate-500">i</span>
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="date"
+                  value={leaseStartDate}
+                  onChange={(e) => setLeaseStartDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* Lease Expiry Date (optional) */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0 flex items-center justify-end gap-1">
+                <span>Lease Expiry Date (optional)</span>
+                <span className="w-3.5 h-3.5 rounded-full border border-slate-400 text-[10px] flex items-center justify-center font-bold text-slate-500">i</span>
+              </label>
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="date"
+                  value={leaseExpiryDate}
+                  onChange={(e) => setLeaseExpiryDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
+            {/* File upload (optional) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+              <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+                File upload (optional)
+              </label>
+              <div className="flex-1 max-w-lg space-y-1">
+                <input
+                  type="file"
+                  className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-slate-300 file:text-xs file:font-medium file:bg-slate-50 hover:file:bg-slate-100 cursor-pointer"
+                />
+                <p className="text-[11px] text-slate-400">File can be lease agreement, or any other tenant document</p>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Submit Actions */}
+        <div className="pt-4 space-y-2 max-w-lg mx-auto sm:ml-58">
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-semibold h-9 rounded-md shadow-xs transition cursor-pointer"
+          >
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            + Add Tenant
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleClear}
+            className="w-full border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold h-9 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+          >
+            Clear
+          </Button>
+        </div>
+      </form>
+
+      {/* Bottom Back Button */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+        >
+          &larr; Back
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sub-View: Bulk Add Tenants (Screenshot 1) ──────────────────────────────
 function BulkAddTenantsView({ properties = [], units = [], onBack }) {
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
@@ -1644,8 +2379,14 @@ export default function TenantsPage() {
     const queryClient = useQueryClient();
     const { toast } = useToast();
 
-    // View state matching Bomahut sub-pages: 'list' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
-    const [view, setView] = useState("list");
+    // View state matching Bomahut sub-pages: 'list' | 'add_tenant' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
+    const [view, setView] = useState(() => {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("action") === "add") return "add_tenant";
+      }
+      return "list";
+    });
 
     const { data: tenants = [], isLoading } = useQuery({
         queryKey: ["tenants"],
@@ -1773,6 +2514,17 @@ export default function TenantsPage() {
     };
 
     // Sub-view Routing matching Screenshots
+    if (view === "add_tenant") {
+      return (
+        <TenantFormView
+          properties={properties}
+          units={units}
+          onBack={() => setView("list")}
+          onSuccess={() => setView("list")}
+        />
+      );
+    }
+
     if (view === "bulk_add") {
       return (
         <BulkAddTenantsView
@@ -1896,7 +2648,13 @@ export default function TenantsPage() {
       <div className="space-y-4 max-w-7xl mx-auto">
         {/* Top Actions — matching Bomahut Screenshot 2 */}
         <div className="flex items-center justify-end gap-2">
-          <AddTenantDialog />
+          <Button
+            onClick={() => setView("add_tenant")}
+            className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-4 font-semibold gap-1.5 cursor-pointer shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Tenant
+          </Button>
 
           {/* Send Reminders button matching Bomahut Screenshot 4 */}
           <Button

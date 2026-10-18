@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePreferences } from "@/lib/currency";
@@ -1157,7 +1158,13 @@ function PropertyRowActions({ property }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PropertiesPage() {
     const { t } = useTranslation();
-    const [view, setView] = useState("list"); // 'list' | 'form'
+    const [view, setView] = useState(() => {
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("action") === "add") return "form";
+        }
+        return "list";
+    }); // 'list' | 'form'
     const [search, setSearch] = useState("");
     const [collapseSummary, setCollapseSummary] = useState(false);
     const [collapseTable, setCollapseTable] = useState(false);

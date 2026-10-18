@@ -209,7 +209,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
             onClick={() => {
               toast({
                 title: "Tutorials & Guides",
-                description: "Opening MakaaziHub video tutorials and documentation."
+                description: "Opening MakaziFlow video tutorials and documentation."
               });
             }}
             title="Tutorials"
@@ -370,7 +370,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
           onClick={() => {
             toast({
               title: "Tutorials & Guides",
-              description: "Opening MakaaziHub video tutorials and documentation."
+              description: "Opening MakaziFlow video tutorials and documentation."
             });
           }}
           className="flex items-center gap-3 px-3 py-2 text-xs text-[#9fa7d6] hover:text-white hover:bg-[#0c0e52]/50 rounded-md transition cursor-pointer"
@@ -559,7 +559,7 @@ export default function AppLayout({ children }) {
             {children}
           </div>
           <footer className="mt-8 pt-4 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-            © {new Date().getFullYear()} MakaaziHub. All rights reserved.
+            © {new Date().getFullYear()} MakaziFlow. All rights reserved.
           </footer>
         </main>
       </div>

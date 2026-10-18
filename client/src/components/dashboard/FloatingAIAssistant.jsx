@@ -18,7 +18,7 @@ export default function FloatingAIAssistant() {
   const [messages, setMessages] = useState([
     {
       sender: "bot",
-      text: "Hello! I'm your MakaaziHub Assistant. You can ask me anything about tenant arrears, occupancy rates, billing, or automated reminders.",
+      text: "Hello! I'm your MakaziFlow Assistant. You can ask me anything about tenant arrears, occupancy rates, billing, or automated reminders.",
       time: "Just now"
     }
   ]);
@@ -98,7 +98,7 @@ export default function FloatingAIAssistant() {
       } else if (q.includes("remind") || q.includes("sms")) {
         reply = `Draft SMS ready:\n"Dear Tenant, this is a friendly reminder that your rent for Unit [Unit] is pending. Please pay via M-Pesa Paybill 247247 A/C [Unit]. Thank you, Management."`;
       } else if (q.includes("bank") || q.includes("statement") || q.includes("upload")) {
-        reply = `You can upload your M-Pesa or Bank Statement Excel/CSV in the 'More Actions' card by clicking 'Upload Bank Statement'. MakaaziHub will automatically reconcile tenant payments by matching M-Pesa codes!`;
+        reply = `You can upload your M-Pesa or Bank Statement Excel/CSV in the 'More Actions' card by clicking 'Upload Bank Statement'. MakaziFlow will automatically reconcile tenant payments by matching M-Pesa codes!`;
       } else {
         reply = `I can help you monitor live collections, calculate arrears, reconcile M-Pesa payments, and generate monthly invoices for your properties.`;
       }
@@ -141,7 +141,7 @@ export default function FloatingAIAssistant() {
             }
           }}
           className="flex items-center gap-2 bg-[#09154a] hover:bg-[#0c1f6d] active:scale-95 text-white px-4 py-2.5 rounded-full shadow-xl border border-blue-500/30 transition-all cursor-grab active:cursor-grabbing font-medium text-sm group"
-          title="MakaaziHub AI Assistant"
+          title="MakaziFlow AI Assistant"
         >
           <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0 group-hover:scale-110 transition-transform">
             <MessageSquare className="w-3.5 h-3.5 fill-current" />
@@ -167,7 +167,7 @@ export default function FloatingAIAssistant() {
                 <Bot className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">MakaaziHub Assistant</h3>
+                <h3 className="font-semibold text-sm">MakaziFlow Assistant</h3>
                 <p className="text-[11px] text-blue-200">Live Property & Financial AI</p>
               </div>
             </div>

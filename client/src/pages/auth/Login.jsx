@@ -121,7 +121,7 @@ export default function LoginPage() {
         });
       } else {
         // Fallback demo/offline mode: let user still see and test OTP verification
-        setOtpEmail(usernameOrEmail.includes("@") ? usernameOrEmail : `${usernameOrEmail}@makaazihub.com`);
+        setOtpEmail(usernameOrEmail.includes("@") ? usernameOrEmail : `${usernameOrEmail}@makaziflow.com`);
         setOtpName(usernameOrEmail.split("@")[0] || "Property Manager");
         setIsOtpStep(true);
         setOtpCountdown(180);
@@ -288,7 +288,7 @@ export default function LoginPage() {
 
       toast({
         title: "Account Created! 🎉",
-        description: "Welcome to MakaaziHub."
+        description: "Welcome to MakaziFlow."
       });
       setLocation("/");
     } catch (err) {
@@ -340,10 +340,8 @@ export default function LoginPage() {
         <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in duration-200">
           
           {/* Brand Logo Header */}
-          <div className="text-center mb-5">
-            <h1 className="text-3xl sm:text-4xl font-heading font-bold tracking-tight text-[#2f55d4]">
-              MakaaziHub
-            </h1>
+          <div className="flex flex-col items-center justify-center mb-5">
+            <img src="/logo.png" alt="MakaziFlow" className="h-20 w-auto object-contain" />
           </div>
 
           {/* Security Badge Icon */}
@@ -448,10 +446,8 @@ export default function LoginPage() {
         <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in duration-200">
           
           {/* Brand Logo Header */}
-          <div className="text-center mb-6">
-            <h1 className="text-3xl sm:text-4xl font-heading font-bold tracking-tight text-[#2f55d4]">
-              MakaaziHub
-            </h1>
+          <div className="flex flex-col items-center justify-center mb-6">
+            <img src="/logo.png" alt="MakaziFlow" className="h-24 w-auto object-contain" />
           </div>
 
           {/* Role Switcher Tabs */}
@@ -551,10 +547,8 @@ export default function LoginPage() {
         <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-200">
           
           {/* Brand Logo Header */}
-          <div className="text-center mb-1">
-            <h1 className="text-3xl sm:text-4xl font-heading font-bold tracking-tight text-[#2f55d4]">
-              MakaaziHub
-            </h1>
+          <div className="flex flex-col items-center justify-center mb-1">
+            <img src="/logo.png" alt="MakaziFlow" className="h-20 w-auto object-contain" />
           </div>
 
           <h2 className="text-base font-normal text-slate-800 mb-6">
@@ -658,7 +652,7 @@ export default function LoginPage() {
                 <Link href="/privacy" target="_blank" className="text-slate-900 font-semibold hover:underline">
                   Privacy Policy
                 </Link>{" "}
-                of MakaaziHub
+                of MakaziFlow
               </label>
             </div>
 

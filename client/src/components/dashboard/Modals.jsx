@@ -426,7 +426,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 <p className="text-xs text-muted-foreground mt-1">Supported formats: .XLSX, .CSV, .PDF</p>
               </div>
               <p className="text-xs text-slate-500">
-                MakaaziHub matches transactions using tenant M-Pesa codes, account numbers, and phone numbers automatically.
+                MakaziFlow matches transactions using tenant M-Pesa codes, account numbers, and phone numbers automatically.
               </p>
             </div>
             <DialogFooter>
@@ -692,7 +692,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
             <DialogHeader>
               <DialogTitle className="text-xl font-bold flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-blue-600" />
-                Renew MakaaziHub Subscription
+                Renew MakaziFlow Subscription
               </DialogTitle>
               <DialogDescription>
                 Your current subscription expires on 24/10/2026.
@@ -1025,6 +1025,278 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
             <DialogFooter>
               <Button onClick={onClose} className="bg-blue-600 hover:bg-blue-700 text-white">
                 Close
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {/* Bulk Upload Utilities */}
+        {modalType === "bulk_upload_utilities" && (
+          <div>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-2 text-[#0b1065] dark:text-blue-400">
+                <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                Bulk Upload Utilities
+              </DialogTitle>
+              <DialogDescription>
+                Upload an Excel or CSV file containing utility meter readings across units.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Select Property</Label>
+                <select
+                  value={formData.propertyName}
+                  onChange={(e) => handleChange("propertyName", e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+                >
+                  <option value="">All Properties / Default</option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Utility Type</Label>
+                <select
+                  value={formData.utilityType}
+                  onChange={(e) => handleChange("utilityType", e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+                >
+                  <option value="Water">Water (Metered)</option>
+                  <option value="Electricity">Electricity</option>
+                  <option value="Garbage">Garbage Collection</option>
+                  <option value="Sewer">Sewer</option>
+                  <option value="Gas">Gas</option>
+                </select>
+              </div>
+
+              <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition">
+                <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                <p className="font-semibold text-slate-700 dark:text-slate-200">
+                  Drop meter readings spreadsheet here or browse
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">Supported formats: .XLSX, .CSV</p>
+              </div>
+
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-[11px] text-blue-800 dark:text-blue-300">
+                <span className="font-semibold">Format tip:</span> Columns should include Unit Number, Previous Reading, Current Reading, Rate.
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={onClose} className="text-xs">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold px-4"
+                disabled={loading}
+                onClick={() =>
+                  handleSubmit(
+                    "Bulk Utilities Uploaded",
+                    `Processed meter readings file for ${formData.utilityType || "Water"}. Invoices queued.`
+                  )
+                }
+              >
+                {loading ? "Processing..." : "Upload & Process"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {/* Generate Rent Invoices */}
+        {modalType === "generate_rent_invoices" && (
+          <div>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-2 text-[#0b1065] dark:text-blue-400">
+                <Building className="w-5 h-5 text-blue-600" />
+                Generate Rent Invoices
+              </DialogTitle>
+              <DialogDescription>
+                Generate monthly rent invoices for all occupied units according to lease terms.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Select Property</Label>
+                <select
+                  value={formData.propertyName}
+                  onChange={(e) => handleChange("propertyName", e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+                >
+                  <option value="">All Properties</option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Billing Month / Period</Label>
+                  <Input
+                    type="month"
+                    defaultValue={new Date().toISOString().slice(0, 7)}
+                    className="text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Invoice Due Date</Label>
+                  <Input
+                    type="date"
+                    defaultValue={new Date(new Date().getFullYear(), new Date().getMonth(), 5).toISOString().split("T")[0]}
+                    className="text-xs h-9"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="flex justify-between font-medium">
+                  <span className="text-slate-600 dark:text-slate-300">Target Units:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">All Occupied Units</span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span className="text-slate-600 dark:text-slate-300">Invoice Terms:</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">Standard Monthly Rent</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="rentSendSms"
+                  defaultChecked
+                  className="rounded border-input text-blue-600 cursor-pointer"
+                />
+                <Label htmlFor="rentSendSms" className="text-xs font-normal cursor-pointer">
+                  Send SMS notification with payment details to tenants
+                </Label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={onClose} className="text-xs">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold px-4"
+                disabled={loading}
+                onClick={() =>
+                  handleSubmit(
+                    "Rent Invoices Generated",
+                    `Rent invoices successfully created and queued for dispatch.`
+                  )
+                }
+              >
+                {loading ? "Generating..." : "Generate Invoices"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {/* Generate Other Bills Invoices */}
+        {modalType === "generate_other_bills" && (
+          <div>
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold flex items-center gap-2 text-[#0b1065] dark:text-blue-400">
+                <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+                Generate Other Bills Invoices
+              </DialogTitle>
+              <DialogDescription>
+                Batch generate separate invoices for utilities, service charge, garbage, and parking.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Select Property</Label>
+                <select
+                  value={formData.propertyName}
+                  onChange={(e) => handleChange("propertyName", e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+                >
+                  <option value="">All Properties</option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Bill Categories to Inlcude</Label>
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="rounded text-blue-600" />
+                    <span>Water Bill</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="rounded text-blue-600" />
+                    <span>Garbage Collection</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="rounded text-blue-600" />
+                    <span>Electricity / Power</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="rounded text-blue-600" />
+                    <span>Service Charge</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Billing Month</Label>
+                  <Input
+                    type="month"
+                    defaultValue={new Date().toISOString().slice(0, 7)}
+                    className="text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Due Date</Label>
+                  <Input
+                    type="date"
+                    defaultValue={new Date(new Date().getFullYear(), new Date().getMonth(), 10).toISOString().split("T")[0]}
+                    className="text-xs h-9"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="otherBillsSendSms"
+                  defaultChecked
+                  className="rounded border-input text-blue-600 cursor-pointer"
+                />
+                <Label htmlFor="otherBillsSendSms" className="text-xs font-normal cursor-pointer">
+                  Send SMS breakdown to tenants with M-Pesa paybill details
+                </Label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={onClose} className="text-xs">
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold px-4"
+                disabled={loading}
+                onClick={() =>
+                  handleSubmit(
+                    "Other Bills Invoices Generated",
+                    `Utility and service charge invoices created and scheduled for dispatch.`
+                  )
+                }
+              >
+                {loading ? "Generating..." : "Generate Bills"}
               </Button>
             </DialogFooter>
           </div>

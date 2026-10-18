@@ -573,12 +573,14 @@ export default function UtilitiesPage() {
           Record Utility
         </Button>
         <Button
-          onClick={() =>
+          onClick={() => {
+            const ev = new CustomEvent("open_action_modal", { detail: { type: "bulk_upload_utilities" } });
+            window.dispatchEvent(ev);
             toast({
               title: "Bulk Upload Utilities",
-              description: "Upload an Excel/CSV file with meter readings."
-            })
-          }
+              description: "Upload Excel/CSV meter readings file."
+            });
+          }}
           variant="outline"
           className="text-xs h-8 px-4 text-[#0b1065] border-slate-300 hover:bg-slate-50 transition cursor-pointer"
         >

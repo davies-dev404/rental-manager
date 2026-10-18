@@ -21,8 +21,11 @@ router.get('/', protect, async (req, res) => {
         { propertyId: { $in: propIds } }
       ]
     };
-    if (propertyId) {
-      query = { propertyId, $or: query.$or };
+    if (propertyId && propertyId !== '[object Object]' && propertyId.trim() !== '') {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(propertyId)) {
+        query = { propertyId, $or: query.$or };
+      }
     }
     const units = await Unit.find(query).populate('propertyId', 'name location');
     res.json(units);

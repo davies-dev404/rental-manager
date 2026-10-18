@@ -259,7 +259,13 @@ export const api = {
   // Units (Real)
   getUnits: async (propertyId) => {
     let url = `${API_URL}/units`;
-    if (propertyId) url += `?propertyId=${propertyId}`;
+    let id = propertyId;
+    if (id && typeof id === 'object') {
+      id = id._id || id.id || null;
+    }
+    if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
+      url += `?propertyId=${encodeURIComponent(id)}`;
+    }
     const response = await fetch(url, { headers: getAuthHeaders() });
     if (!response.ok) return []; // Fallback empty
     return await response.json();

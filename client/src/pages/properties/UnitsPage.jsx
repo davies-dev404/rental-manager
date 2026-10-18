@@ -21,46 +21,286 @@ const unitSchema = z.object({
   rentAmount: z.string().min(1, 'Rent is required'),
 });
 
-function AddUnitDialog({ properties, open, onOpenChange }) {
+// ─── Unit Form View (Bomahut Layout matching User Screenshot 1) ───────────
+function UnitFormView({ properties, onBack, onSuccess }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  // Form states
   const [propertyId, setPropertyId] = useState('');
-  const form = useForm({ resolver: zodResolver(unitSchema), defaultValues: { unitNumber: '', type: 'Apartment', rentAmount: '' } });
-  const mutation = useMutation({
-    mutationFn: api.addUnit,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['properties'] }); queryClient.invalidateQueries({ queryKey: ['stats'] }); onOpenChange(false); form.reset(); toast({ title: 'Unit Added' }); },
-    onError: () => toast({ variant: 'destructive', title: 'Error', description: 'Failed to add unit.' }),
-  });
+  const [unitName, setUnitName] = useState('');
+  const [rentAmount, setRentAmount] = useState('');
+  const [taxRate, setTaxRate] = useState('');
+  const [recurringBills, setRecurringBills] = useState([]);
+  const [newBillType, setNewBillType] = useState('');
+  const [newBillAmount, setNewBillAmount] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const handleAddRecurringBill = () => {
+    if (!newBillType || !newBillAmount) return;
+    setRecurringBills([...recurringBills, { type: newBillType, amount: newBillAmount }]);
+    setNewBillType('');
+    setNewBillAmount('');
+  };
+
+  const handleRemoveRecurringBill = (index) => {
+    setRecurringBills(recurringBills.filter((_, i) => i !== index));
+  };
+
+  const handleClear = () => {
+    setPropertyId('');
+    setUnitName('');
+    setRentAmount('');
+    setTaxRate('');
+    setRecurringBills([]);
+    setNewBillType('');
+    setNewBillAmount('');
+    setNotes('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!propertyId && properties.length > 0) {
+      toast({ variant: 'destructive', title: 'Property Required', description: 'Please select a property.' });
+      return;
+    }
+    if (!unitName.trim()) {
+      toast({ variant: 'destructive', title: 'Unit ID / Name Required', description: 'Please enter a unit name or number.' });
+      return;
+    }
+    if (!rentAmount) {
+      toast({ variant: 'destructive', title: 'Rent Amount Required', description: 'Please enter monthly rent.' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.addUnit({
+        propertyId,
+        unitNumber: unitName,
+        rentAmount,
+        type: 'Apartment',
+        status: 'vacant',
+        bedrooms: '1',
+        bathrooms: '1',
+        taxRate: taxRate || '7.5',
+        notes,
+        recurringBills
+      });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      toast({ title: 'Unit Added', description: `Unit ${unitName} added successfully.` });
+      if (onSuccess) onSuccess();
+      onBack();
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to add unit.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Add Unit</DialogTitle><DialogDescription>Add a new unit to a property.</DialogDescription></DialogHeader>
-        <div className="mb-3">
-          <Label className="text-xs mb-1.5 block">Property</Label>
-          <Select value={propertyId} onValueChange={setPropertyId}>
-            <SelectTrigger><SelectValue placeholder="Select a property" /></SelectTrigger>
-            <SelectContent>{properties.map(p => <SelectItem key={p._id || p.id} value={p._id || p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+      {/* Top Back Button */}
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+        >
+          &larr; Back
+        </button>
+      </div>
+
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Unit Form</h2>
+      </div>
+
+      {/* Form Card (matching Screenshot 1) */}
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-5 text-xs"
+      >
+        {/* Row 1: Select Property */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+            Select Property
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={propertyId}
+              onChange={(e) => setPropertyId(e.target.value)}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              <option value="">
+                {properties.length === 0
+                  ? 'No properties yet \u2014 add one from the Properties page'
+                  : 'Select Property'}
+              </option>
+              {properties.map((p) => (
+                <option key={p._id || p.id} value={p._id || p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(v => mutation.mutate({ ...v, propertyId, status: 'vacant', bedrooms: '1', bathrooms: '1' }))} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={form.control} name="unitNumber" render={({ field }) => (<FormItem><FormLabel className="text-xs">Unit No.</FormLabel><FormControl><Input placeholder="A1" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="type" render={({ field }) => (
-                <FormItem><FormLabel className="text-xs">Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent><SelectItem value="Apartment">Apartment</SelectItem><SelectItem value="Bedsitter">Bedsitter</SelectItem><SelectItem value="Studio">Studio</SelectItem><SelectItem value="Shop">Shop</SelectItem><SelectItem value="Office">Office</SelectItem></SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
+
+        {/* Row 2: Unit ID/Name */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+            Unit ID/Name
+          </label>
+          <div className="flex-1 max-w-lg">
+            <input
+              type="text"
+              value={unitName}
+              onChange={(e) => setUnitName(e.target.value)}
+              placeholder="Unit ID/Name ..."
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+          </div>
+        </div>
+
+        {/* Row 3: Rent Amount */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+            Rent Amount
+          </label>
+          <div className="flex-1 max-w-lg">
+            <input
+              type="number"
+              value={rentAmount}
+              onChange={(e) => setRentAmount(e.target.value)}
+              placeholder="rent amount ..."
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+          </div>
+        </div>
+
+        {/* Row 4: Tax Rate % (optional) */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+            Tax Rate % (optional)
+          </label>
+          <div className="flex-1 max-w-lg">
+            <input
+              type="number"
+              step="0.1"
+              value={taxRate}
+              onChange={(e) => setTaxRate(e.target.value)}
+              placeholder="tax rate ..."
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Residential units tax rate is usually 7.5%. Commercial units tax rate is usually 16%.
+            </p>
+          </div>
+        </div>
+
+        {/* Row 5: Other Recurring Bills (optional) */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0 flex items-center justify-end gap-1">
+            <span>Other Recurring Bills</span>
+            <span className="w-3.5 h-3.5 rounded-full border border-slate-400 text-[10px] flex items-center justify-center font-bold text-slate-500">i</span>
+            <span className="text-slate-500">(optional)</span>
+          </label>
+          <div className="flex-1 max-w-lg space-y-2">
+            <div className="space-y-2">
+              <select
+                value={newBillType}
+                onChange={(e) => setNewBillType(e.target.value)}
+                className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+              >
+                <option value="">Select bill type</option>
+                <option value="Garbage">Garbage Collection</option>
+                <option value="Security">Security / Watchman</option>
+                <option value="Service Charge">Service Charge</option>
+                <option value="Water Fixed">Water (Fixed Fee)</option>
+                <option value="WiFi">Internet / WiFi</option>
+                <option value="Parking">Parking Fee</option>
+              </select>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={newBillAmount}
+                  onChange={(e) => setNewBillAmount(e.target.value)}
+                  placeholder="amount"
+                  className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddRecurringBill}
+                  className="h-9 w-9 flex items-center justify-center border border-slate-300 dark:border-slate-700 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-base font-medium cursor-pointer"
+                >
+                  +
+                </button>
+              </div>
             </div>
-            <FormField control={form.control} name="rentAmount" render={({ field }) => (<FormItem><FormLabel className="text-xs">Rent (KES)</FormLabel><FormControl><Input type="number" placeholder="25000" {...field} /></FormControl><FormMessage /></FormItem>)} />
-            <DialogFooter><Button type="submit" disabled={mutation.isPending || !propertyId}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Add Unit</Button></DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+
+            {recurringBills.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                {recurringBills.map((b, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700 text-xs">
+                    <span>{b.type}: <strong>KES {Number(b.amount).toLocaleString()}</strong></span>
+                    <button type="button" onClick={() => handleRemoveRecurringBill(idx)} className="text-rose-500 hover:underline">Remove</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Row 6: Notes (optional) */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 pt-2 shrink-0">
+            Notes (optional)
+          </label>
+          <div className="flex-1 max-w-lg">
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="notes ..."
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            />
+          </div>
+        </div>
+
+        {/* Submit Actions */}
+        <div className="pt-4 space-y-2 max-w-lg mx-auto sm:ml-58">
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-semibold h-9 rounded-md shadow-xs transition cursor-pointer"
+          >
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            + Add Unit
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleClear}
+            className="w-full border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold h-9 rounded-md hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+          >
+            Clear
+          </Button>
+        </div>
+      </form>
+
+      {/* Bottom Back Button */}
+      <div className="pt-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+        >
+          &larr; Back
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -139,6 +379,13 @@ function BulkAddUnitsDialog({ properties, open, onOpenChange }) {
 
 export default function UnitsPage() {
   const { toast } = useToast();
+  const [view, setView] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("action") === "add") return "add_unit";
+    }
+    return "list";
+  }); // 'list' | 'add_unit'
   const [selectedProperty, setSelectedProperty] = useState('all');
   const [showVacantOnly, setShowVacantOnly] = useState(false);
   const [search, setSearch] = useState('');
@@ -147,7 +394,6 @@ export default function UnitsPage() {
   const [collapseUnits, setCollapseUnits] = useState(false);
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  const [addUnitOpen, setAddUnitOpen] = useState(false);
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadPropId, setDownloadPropId] = useState('all');
@@ -180,9 +426,19 @@ export default function UnitsPage() {
     const a = document.createElement('a'); a.href = encodeURI(csv); a.download = 'rent_schedule.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     toast({ title: 'Downloaded', description: rows.length + ' units exported.' }); setDownloadOpen(false);
   };
+
+  if (view === 'add_unit') {
+    return (
+      <UnitFormView
+        properties={properties}
+        onBack={() => setView('list')}
+        onSuccess={() => setView('list')}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      <AddUnitDialog properties={properties} open={addUnitOpen} onOpenChange={setAddUnitOpen} />
       <BulkAddUnitsDialog properties={properties} open={bulkAddOpen} onOpenChange={setBulkAddOpen} />
       <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -196,7 +452,7 @@ export default function UnitsPage() {
         </DialogContent>
       </Dialog>
       <div className="flex items-center justify-end gap-2.5">
-        <Button onClick={() => setAddUnitOpen(true)} className="bg-[#0b1065] hover:bg-[#0c0e52] text-white text-xs h-8 px-4 font-semibold shadow-sm"><Plus className="w-3.5 h-3.5 mr-1.5" />Add Unit</Button>
+        <Button onClick={() => setView('add_unit')} className="bg-[#0b1065] hover:bg-[#0c0e52] text-white text-xs h-8 px-4 font-semibold shadow-sm"><Plus className="w-3.5 h-3.5 mr-1.5" />Add Unit</Button>
         <Button onClick={() => setBulkAddOpen(true)} variant="outline" className="border-[#0b1065] text-[#0b1065] hover:bg-[#0b1065]/5 text-xs h-8 px-4 font-semibold bg-white dark:bg-slate-900">Bulk Add Units</Button>
         <Button onClick={() => setDownloadOpen(true)} variant="outline" className="border-[#0b1065] text-[#0b1065] hover:bg-[#0b1065]/5 text-xs h-8 px-4 font-semibold bg-white dark:bg-slate-900"><Download className="w-3.5 h-3.5 mr-1.5" />Rent Schedule</Button>
       </div>

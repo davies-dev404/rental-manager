@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   // Active modal state
   const [activeModal, setActiveModal] = useState(null);
@@ -458,13 +460,13 @@ export default function Dashboard() {
               {/* Right buttons */}
               <div className="space-y-2">
                 <button
-                  onClick={() => openModal("add_tenant")}
+                  onClick={() => setLocation("/tenants?action=add")}
                   className="w-full px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer text-center"
                 >
                   Add Tenants
                 </button>
                 <button
-                  onClick={() => (window.location.href = "/tenants")}
+                  onClick={() => setLocation("/tenants")}
                   className="w-full px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer text-center"
                 >
                   Manage Tenants
@@ -474,13 +476,7 @@ export default function Dashboard() {
 
             <div className="mt-6 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex justify-end">
               <button
-                onClick={() =>
-                  openModal("view_insights", {
-                    title: "Occupancy Overview",
-                    type: "occupancy",
-                    desc: "Occupied units breakdown and vacancy duration."
-                  })
-                }
+                onClick={() => setLocation("/reports/insights")}
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
               >
                 View Insights <ChevronRight className="w-3.5 h-3.5" />
@@ -581,20 +577,20 @@ export default function Dashboard() {
             {/* 2-Column Action Buttons Grid */}
             <div className="grid grid-cols-2 gap-3 text-xs">
               <button
-                onClick={() => openModal("add_utilities")}
+                onClick={() => setLocation("/utilities")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add Utilities
               </button>
               <button
-                onClick={() => openModal("add_invoice")}
+                onClick={() => setLocation("/financials/invoices")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add Invoice
               </button>
 
               <button
-                onClick={() => openModal("bulk_add_invoices")}
+                onClick={() => setLocation("/financials/invoices")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Bulk Add Invoices
@@ -607,49 +603,39 @@ export default function Dashboard() {
               </button>
 
               <button
-                onClick={() => openModal("add_tenant")}
+                onClick={() => setLocation("/tenants?action=add")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add Tenant
               </button>
               <button
-                onClick={() => openModal("add_unit")}
+                onClick={() => setLocation("/units?action=add")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add Unit
               </button>
 
               <button
-                onClick={() => openModal("add_property")}
+                onClick={() => setLocation("/properties?action=add")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add Property
               </button>
               <button
-                onClick={() => openModal("shift_tenant")}
+                onClick={() => setLocation("/tenants")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Shift Tenant
               </button>
 
               <button
-                onClick={() =>
-                  toast({
-                    title: "Rent Invoices Queued",
-                    description: "Batch rent invoices for the current billing cycle generated."
-                  })
-                }
+                onClick={() => setLocation("/financials/invoices")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Generate Rent Invoices
               </button>
               <button
-                onClick={() =>
-                  toast({
-                    title: "Other Bills Invoices Queued",
-                    description: "Water, garbage, and electricity invoices dispatched."
-                  })
-                }
+                onClick={() => setLocation("/financials/invoices")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Generate Other Bills Invoices
@@ -662,7 +648,7 @@ export default function Dashboard() {
                 Send Message
               </button>
               <button
-                onClick={() => openModal("add_to_team")}
+                onClick={() => setLocation("/settings?tab=team")}
                 className="py-2.5 px-3 font-medium text-blue-600 dark:text-blue-400 border border-blue-500/40 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition cursor-pointer text-center"
               >
                 Add To Team
