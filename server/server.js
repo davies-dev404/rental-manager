@@ -41,6 +41,9 @@ app.use(cors({
 app.use(express.json());
 app.use(morgan('dev'));
 
+// Global bufferCommands setting: fail fast if disconnected instead of buffering and timing out after 10s
+mongoose.set('bufferCommands', false);
+
 // Database Connection with serverless-safe caching
 const startRentReminders = require('./cron/rentReminder');
 
@@ -51,25 +54,30 @@ if (!cached) {
 }
 
 const connectDB = async () => {
-    // Already connected
-    if (cached.conn && mongoose.connection.readyState === 1) {
-        return cached.conn;
+    // 1. If already fully connected, return immediately
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+        return mongoose.connection;
     }
 
-    // Return in-flight promise to avoid multiple concurrent connects
-    if (cached.promise) {
+    // 2. If currently connecting, wait for the in-flight promise
+    if (mongoose.connection && mongoose.connection.readyState === 2 && cached.promise) {
         return await cached.promise;
     }
 
+    // 3. Otherwise (disconnected or readyState 0/3), reset cache and initiate fresh connection
+    cached.promise = null;
+    cached.conn = null;
+
     const isServerless = !!(process.env.VERCEL || process.env.RENDER || process.env.AWS_LAMBDA_FUNCTION_NAME);
-    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/rental_manager?retryWrites=true&w=majority&appName=Cluster0';
+    // Point fallback to 'test' DB where the actual collections (users, properties, settings, etc.) reside
+    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/test?retryWrites=true&w=majority';
     const uri = process.env.MONGODB_URI || (isServerless ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
 
     const opts = {
-        serverSelectionTimeoutMS: 10000,
-        connectTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
         socketTimeoutMS: 30000,
-        bufferCommands: false, // Fail fast — don't buffer operations waiting for connection
+        maxPoolSize: 10,
     };
 
     cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
@@ -80,8 +88,9 @@ const connectDB = async () => {
         cached.conn = mongooseInstance;
         return mongooseInstance;
     }).catch((err) => {
-        // Reset on failure so next call retries
+        // Reset on failure so next call retries cleanly
         cached.promise = null;
+        cached.conn = null;
         console.error('❌ MongoDB Connection Error:', err.message);
         throw err;
     });
