@@ -62,7 +62,7 @@ export function PreferencesProvider({ children }) {
                      setTheme(settings.theme);
                 }
             } catch (e) {
-                console.error("Failed to load settings", e);
+                console.warn("Could not load remote preferences, using cached values:", e.message);
                 const storedCur = localStorage.getItem("rental_currency");
                 const storedTZ = localStorage.getItem("rental_timezone");
                 if (storedCur) setCurrency(storedCur);

@@ -1,0 +1,32 @@
+{
+  "name": "rental-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MakaziFlow Rental Manager Application",
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "start": "node server/server.js",
+    "server": "node server/server.js",
+    "client": "npm --prefix client run dev",
+    "dev": "npm --prefix client run dev"
+  },
+  "dependencies": {
+    "africastalking": "^0.7.8",
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.0.2",
+    "morgan": "^1.10.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^7.0.12",
+    "otplib": "^12.0.1",
+    "pdfkit": "^0.17.2",
+    "qrcode": "^1.5.4",
+    "zod": "^4.2.1"
+  }
+}

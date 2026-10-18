@@ -29,36 +29,52 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email });
 
     if (user && (await user.matchPassword(password))) {
-      // Generate a 6-digit login OTP
+      // Generate a 6-digit login OTP (valid for 10 minutes)
       const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
       user.otp = loginOtp;
-      user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+      user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
       await user.save();
 
-      // Send OTP via email (non-blocking failure)
+      // Send OTP via email
+      let emailSent = false;
+      let emailError = null;
       try {
         await sendEmail({
           email: user.email,
-          subject: 'MakaaziHub — Your Login Verification Code',
+          subject: 'MakaziFlow — Your Login Verification Code',
           message: `
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
-              <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
-              <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to MakaaziHub. It expires in <strong>3 minutes</strong>.</p>
-              <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
-              <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
+            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+              <div style="text-align:center;margin-bottom:20px;">
+                <h1 style="color:#06083b;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#2563eb;">Flow</span></h1>
+                <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
+              </div>
+              <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
+              <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+                Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
+              </p>
+              <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#06083b;text-align:center;padding:18px 0;background:#f0f4ff;border:1px dashed #93c5fd;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+                ${loginOtp}
+              </div>
+              <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+                If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
+              </p>
             </div>`
         });
+        emailSent = true;
         console.log(`📧 Login OTP email dispatched to ${user.email}`);
       } catch (emailErr) {
-        console.error('Login OTP email failed (non-fatal):', emailErr.message);
+        emailError = emailErr.message;
+        console.error('Login OTP email failed:', emailErr.message);
       }
 
-      await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email}`, 'auth', 'info');
+      await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
 
       return res.json({
         requiresOTP: true,
         email: user.email,
-        name: user.name
+        name: user.name,
+        emailSent,
+        emailError: emailSent ? undefined : emailError
       });
     } else {
       await logActivity('System', 'Login Failed', `Failed login attempt for ${email}`, 'auth', 'warning');
@@ -86,35 +102,51 @@ router.post('/resend-login-otp', async (req, res) => {
       return res.status(404).json({ message: 'No account found with this email' });
     }
 
-    // Generate fresh 6-digit OTP (3 minutes)
+    // Generate fresh 6-digit OTP (10 minutes)
     const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
     user.otp = loginOtp;
-    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
     await user.save();
 
     // Send OTP via email
+    let emailSent = false;
+    let emailError = null;
     try {
       await sendEmail({
         email: user.email,
-        subject: 'MakaaziHub — Your Login Verification Code',
+        subject: 'MakaziFlow — Your Login Verification Code',
         message: `
-          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:8px;">
-            <h2 style="color:#1e293b;margin-bottom:8px;">Login Verification</h2>
-            <p style="color:#475569;margin-bottom:16px;">Use the code below to complete your sign-in to MakaaziHub. It expires in <strong>3 minutes</strong>.</p>
-            <div style="font-size:32px;font-weight:700;letter-spacing:6px;color:#2563eb;text-align:center;padding:16px 0;background:#eff6ff;border-radius:6px;margin-bottom:16px;">${loginOtp}</div>
-            <p style="color:#64748b;font-size:13px;">If you did not attempt to log in, please ignore this email or contact support immediately.</p>
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+            <div style="text-align:center;margin-bottom:20px;">
+              <h1 style="color:#06083b;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#2563eb;">Flow</span></h1>
+              <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
+            </div>
+            <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
+            <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
+            </p>
+            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#06083b;text-align:center;padding:18px 0;background:#f0f4ff;border:1px dashed #93c5fd;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+              ${loginOtp}
+            </div>
+            <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+              If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
+            </p>
           </div>`
       });
+      emailSent = true;
       console.log(`📧 Login OTP email resent to ${user.email}`);
     } catch (emailErr) {
+      emailError = emailErr.message;
       console.error('Resend login OTP email failed:', emailErr.message);
     }
 
-    await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email}`, 'auth', 'info');
+    await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email}`, 'auth', emailSent ? 'info' : 'warning');
 
     return res.json({
       success: true,
-      message: 'A new verification code has been sent to your email.'
+      message: 'A new verification code has been sent to your email.',
+      emailSent,
+      emailError: emailSent ? undefined : emailError
     });
   } catch (error) {
     console.error('Resend login OTP error:', error.message);
@@ -218,7 +250,7 @@ router.post('/register', async (req, res) => {
         try {
             await sendEmail({
               email: user.email,
-              subject: 'Your MakaaziHub Verification Code',
+              subject: 'Your MakaziFlow Verification Code',
               message: `<p>Your verification code is: <strong>${otp}</strong>. It expires in 10 minutes.</p>`
             });
         } catch (emailError) {
@@ -230,7 +262,7 @@ router.post('/register', async (req, res) => {
           try {
             await sendSMS({
               phone: user.phone,
-              message: `Your MakaaziHub verification code is: ${otp}`
+              message: `Your MakaziFlow verification code is: ${otp}`
             });
           } catch (smsError) {
             console.error('SMS send failed (non-fatal):', smsError.message);
@@ -389,10 +421,10 @@ router.post('/forgot-password', async (req, res) => {
         try {
             await sendEmail({
                 email: user.email,
-                subject: 'MakaaziHub - Password Reset Code',
+                subject: 'MakaziFlow - Password Reset Code',
                 message: `<div style="font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 8px;">
-                    <h2 style="color: #1e293b;">Password Reset Request</h2>
-                    <p style="color: #475569;">You requested a password reset for your MakaaziHub account. Use the verification code below:</p>
+                    <h2 style="color: #06083b;">MakaziFlow Password Reset Request</h2>
+                    <p style="color: #475569;">You requested a password reset for your MakaziFlow account. Use the verification code below:</p>
                     <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #2563eb; padding: 16px 0; text-align: center;">${resetCode}</div>
                     <p style="color: #64748b; font-size: 13px;">This code will expire in 15 minutes. If you did not request this, please ignore this email.</p>
                 </div>`

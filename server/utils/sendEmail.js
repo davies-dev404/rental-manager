@@ -1,13 +1,16 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
+const mongoose = require('mongoose');
 const Settings = require('../models/Settings');
 
 const sendEmail = async (options) => {
   let settings = null;
   try {
-    settings = await Settings.findOne();
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      settings = await Settings.findOne().maxTimeMS(2000).lean();
+    }
   } catch (err) {
-    console.error("Failed to load settings:", err.message);
+    console.warn("Could not load DB settings for email, using fallback:", err.message);
   }
 
   // Helper to compile email content
@@ -16,7 +19,7 @@ const sendEmail = async (options) => {
     to: options.email,
     subject: options.subject,
     html: options.message,
-    attachments: options.attachments // Note: SendGrid needs specific handling for attachments if we use it, but basic text is priority.
+    attachments: options.attachments
   });
 
   const errors = [];
@@ -29,7 +32,7 @@ const sendEmail = async (options) => {
     if (apiKey) {
       try {
         console.log("Attempting to send via SendGrid (DB Config)...");
-        await sendViaSendGrid(apiKey, options, settings.orgEmail || 'noreply@rental.com', settings.orgName || 'Rental Manager');
+        await sendViaSendGrid(apiKey, options, settings.orgEmail || 'noreply@makaziflow.com', settings.orgName || 'MakaziFlow');
         console.log(`📧 Email sent successfully (via SendGrid DB) to ${options.email}`);
         return;
       } catch (err) {
@@ -43,7 +46,7 @@ const sendEmail = async (options) => {
 
   // --- STRATEGY 2: DB SMTP ---
   const smtpSettings = settings?.integrations?.email?.smtp;
-  const isPlaceholder = (h) => h && (h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io');
+  const isPlaceholder = (h) => !h || h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io';
 
   if (smtpSettings && smtpSettings.host && !isPlaceholder(smtpSettings.host)) {
     try {
@@ -56,12 +59,12 @@ const sendEmail = async (options) => {
         port: port,
         secure: secure,
         auth: { user: smtpSettings.user, pass: smtpSettings.pass },
-        connectionTimeout: 10000, // Reduced timeout for faster fallback
+        connectionTimeout: 10000,
         greetingTimeout: 5000
       });
 
-      const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@rental.com';
-      const fromName = settings?.orgName || process.env.FROM_NAME || 'MakaaziHub';
+      const fromEmail = smtpSettings.fromEmail || process.env.FROM_EMAIL || process.env.SMTP_USER || 'daviesquan8@gmail.com';
+      const fromName = settings?.orgName || process.env.FROM_NAME || 'MakaziFlow';
 
       await transporter.sendMail(getMailOptions(fromName, fromEmail));
       console.log(`📧 Email sent successfully (via DB SMTP) to ${options.email}`);
@@ -72,32 +75,34 @@ const sendEmail = async (options) => {
     }
   }
 
-  // --- STRATEGY 3: Env SMTP ---
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const envHost = process.env.SMTP_HOST;
-      const envPort = Number(process.env.SMTP_PORT) || 587;
-      const envSecure = envPort === 465;
+  // --- STRATEGY 3: Env / Default SMTP (Gmail Fallback) ---
+  const envHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const envUser = process.env.SMTP_USER || 'daviesquan8@gmail.com';
+  const envPass = process.env.SMTP_PASS || 'ethjknultcruugok';
+  const envPort = Number(process.env.SMTP_PORT) || 465;
+  const envSecure = envPort === 465;
 
-      console.log(`Attempting SMTP (ENV): ${envHost}:${envPort}`);
+  if (envHost && envUser && envPass) {
+    try {
+      console.log(`Attempting SMTP (ENV/Default): ${envHost}:${envPort}`);
       const transporter = nodemailer.createTransport({
         host: envHost,
         port: envPort,
         secure: envSecure,
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        auth: { user: envUser, pass: envPass },
         connectionTimeout: 10000,
         greetingTimeout: 5000
       });
 
-      const envFromEmail = process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@rental.com';
-      const envFromName = process.env.FROM_NAME || settings?.orgName || 'MakaaziHub';
+      const envFromEmail = process.env.FROM_EMAIL || envUser;
+      const envFromName = process.env.FROM_NAME || settings?.orgName || 'MakaziFlow';
 
       await transporter.sendMail(getMailOptions(envFromName, envFromEmail));
-      console.log(`📧 Email sent successfully (via ENV SMTP) to ${options.email}`);
+      console.log(`📧 Email sent successfully (via SMTP) to ${options.email}`);
       return;
     } catch (err) {
-      console.error("❌ ENV SMTP Failed:", err.message);
-      errors.push(`ENV SMTP: ${err.message}`);
+      console.error("❌ SMTP Failed:", err.message);
+      errors.push(`SMTP: ${err.message}`);
     }
   }
 
@@ -105,7 +110,7 @@ const sendEmail = async (options) => {
   if (process.env.SENDGRID_API_KEY) {
     try {
       console.log("Attempting fallback to SendGrid (Env)...");
-      await sendViaSendGrid(process.env.SENDGRID_API_KEY, options, process.env.FROM_EMAIL || 'noreply@rental.com', 'Rental Manager');
+      await sendViaSendGrid(process.env.SENDGRID_API_KEY, options, process.env.FROM_EMAIL || 'noreply@makaziflow.com', 'MakaziFlow');
       console.log(`📧 Email sent successfully (via SendGrid Env) to ${options.email}`);
       return;
     } catch (err) {
@@ -115,7 +120,7 @@ const sendEmail = async (options) => {
   }
 
   // Failure
-  const finalError = `All methods failed. Errors: [${errors.join(' | ')}]`;
+  const finalError = `All email sending methods failed. Errors: [${errors.join(' | ')}]`;
   console.error(finalError);
   throw new Error(finalError);
 };

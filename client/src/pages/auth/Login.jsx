@@ -91,20 +91,29 @@ export default function LoginPage() {
       const res = await login(usernameOrEmail.trim(), password);
 
       if (res && res.requiresOTP) {
-        // Backend generated an OTP and returned requiresOTP
+        // Backend generated an OTP and sent email
         setOtpEmail(res.email || usernameOrEmail.trim());
         setOtpName(res.name || "");
         setIsOtpStep(true);
         setOtpCountdown(180);
         setOtpCode("");
-        toast({
-          title: "Verification Code Sent ✉️",
-          description: `A 6-digit code has been sent to ${res.email || usernameOrEmail.trim()}`
-        });
+
+        if (res.emailSent === false) {
+          toast({
+            variant: "destructive",
+            title: "Email Dispatch Issue ⚠️",
+            description: `Login code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
+          });
+        } else {
+          toast({
+            title: "Verification Code Sent ✉️",
+            description: `A 6-digit verification code has been sent to ${res.email || usernameOrEmail.trim()}`
+          });
+        }
         return;
       }
 
-      // If token is directly returned (bypass or standard login)
+      // If token is directly returned
       if (res && res.token) {
         toast({
           title: "Welcome Back",
@@ -113,24 +122,11 @@ export default function LoginPage() {
         setLocation("/");
       }
     } catch (err) {
-      if (err.message && err.message.toLowerCase().includes("invalid")) {
-        toast({
-          variant: "destructive",
-          title: "Sign In Failed",
-          description: err.message || "Invalid credentials."
-        });
-      } else {
-        // Fallback demo/offline mode: let user still see and test OTP verification
-        setOtpEmail(usernameOrEmail.includes("@") ? usernameOrEmail : `${usernameOrEmail}@makaziflow.com`);
-        setOtpName(usernameOrEmail.split("@")[0] || "Property Manager");
-        setIsOtpStep(true);
-        setOtpCountdown(180);
-        setOtpCode("");
-        toast({
-          title: "Verification Code Sent ✉️",
-          description: `Enter the 6-digit code sent to your email (or use demo code: 123456).`
-        });
-      }
+      toast({
+        variant: "destructive",
+        title: "Sign In Failed",
+        description: err.message || "Invalid email or password."
+      });
     } finally {
       setIsLoading(false);
     }
@@ -155,32 +151,15 @@ export default function LoginPage() {
       const res = await verifyLoginOtp(otpEmail, cleanOtp);
       toast({
         title: "Welcome Back! 👋",
-        description: `Logged in as ${res?.name || otpName}`
+        description: `Logged in as ${res?.name || "User"}`
       });
       setLocation("/");
     } catch (err) {
-      // Offline fallback: if code is 123456 or demo mode
-      if (cleanOtp === "123456" || err.message?.includes("fetch")) {
-        const demoUser = {
-          id: "USR-" + Date.now().toString().slice(-4),
-          name: otpName || "Property Manager",
-          email: otpEmail,
-          role: role === "tenant" ? "tenant" : "admin",
-          token: "demo-token-" + Date.now()
-        };
-        localStorage.setItem("rental_user", JSON.stringify(demoUser));
-        toast({
-          title: "Welcome Back! 👋",
-          description: `Logged in as ${demoUser.name}`
-        });
-        setLocation("/");
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Verification Failed",
-          description: err.message || "Invalid or expired verification code."
-        });
-      }
+      toast({
+        variant: "destructive",
+        title: "Verification Failed",
+        description: err.message || "Invalid or expired verification code. Please check and try again."
+      });
     } finally {
       setIsOtpVerifying(false);
     }
@@ -191,17 +170,25 @@ export default function LoginPage() {
     if (isResendingOtp || otpCountdown > 150) return;
     setIsResendingOtp(true);
     try {
-      await resendLoginOtp(otpEmail);
+      const res = await resendLoginOtp(otpEmail);
       setOtpCountdown(180);
-      toast({
-        title: "Code Resent ✉️",
-        description: `A new 6-digit verification code was sent to ${otpEmail}.`
-      });
+      if (res && res.emailSent === false) {
+        toast({
+          variant: "destructive",
+          title: "Resend Warning ⚠️",
+          description: `Email sending failed: ${res.emailError || "Check SMTP setup"}`
+        });
+      } else {
+        toast({
+          title: "Code Resent ✉️",
+          description: `A new 6-digit verification code was sent to ${otpEmail}.`
+        });
+      }
     } catch (err) {
-      setOtpCountdown(180);
       toast({
-        title: "Code Resent",
-        description: `New verification code dispatched (Demo code: 123456).`
+        variant: "destructive",
+        title: "Resend Failed",
+        description: err.message || "Could not resend verification code. Please try again."
       });
     } finally {
       setIsResendingOtp(false);
@@ -248,18 +235,13 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const fullPhone = signupPhone ? `${signupCountryCode}${signupPhone.replace(/^0+/, "")}` : "";
-      let regRes;
-      try {
-        regRes = await api.registerUser({
-          name: signupUsername,
-          email: signupEmail,
-          password: signupPassword,
-          phone: fullPhone,
-          role: "admin"
-        });
-      } catch {
-        // Fallback for offline/client mode
-      }
+      const regRes = await api.registerUser({
+        name: signupUsername,
+        email: signupEmail,
+        password: signupPassword,
+        phone: fullPhone,
+        role: "admin"
+      });
 
       // If backend requires verification
       if (regRes?.requiresVerification) {
@@ -316,17 +298,19 @@ export default function LoginPage() {
 
     setIsForgotLoading(true);
     try {
-      try {
-        await api.forgotPassword(forgotEmail);
-      } catch {
-        // Fallback
-      }
+      await api.forgotPassword(forgotEmail);
       toast({
-        title: "Reset Link Dispatched",
-        description: `Instructions have been sent to ${forgotEmail}.`
+        title: "Reset Code Dispatched",
+        description: `Password reset instructions have been sent to ${forgotEmail}.`
       });
       setShowForgotDialog(false);
       setForgotEmail("");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Request Failed",
+        description: err.message || "Could not process password reset request."
+      });
     } finally {
       setIsForgotLoading(false);
     }

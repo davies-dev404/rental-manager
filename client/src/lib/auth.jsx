@@ -23,46 +23,26 @@ export function AuthProvider({ children }) {
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
     const login = async (email, password) => {
-        try {
-            const result = await api.login(email, password);
-            // Server now always returns requiresOTP:true after credentials pass
-            if (result.requiresOTP) {
-                return result; // Let Login.jsx show the OTP dialog
-            }
-            // Fallback: token returned directly (e.g. future admin bypass)
-            setUser(result);
-            localStorage.setItem("rental_user", JSON.stringify(result));
-            toast({ title: "Welcome back", description: `Logged in as ${result.name}` });
+        const result = await api.login(email, password);
+        // Server returns requiresOTP: true after credentials pass
+        if (result.requiresOTP) {
             return result;
-        } catch (error) {
-            toast({ variant: "destructive", title: "Login failed", description: error.message || "Invalid credentials" });
-            throw error;
         }
+        setUser(result);
+        localStorage.setItem("rental_user", JSON.stringify(result));
+        return result;
     };
 
     // Step 2: submit the login OTP and finalise the session.
     const verifyLoginOtp = async (email, otp) => {
-        try {
-            const result = await api.verifyLoginOtp(email, otp);
-            setUser(result);
-            localStorage.setItem("rental_user", JSON.stringify(result));
-            toast({ title: "Welcome back! 👋", description: `Logged in as ${result.name}` });
-            return result;
-        } catch (error) {
-            toast({ variant: "destructive", title: "Verification Failed", description: error.message || "Invalid or expired code" });
-            throw error;
-        }
+        const result = await api.verifyLoginOtp(email, otp);
+        setUser(result);
+        localStorage.setItem("rental_user", JSON.stringify(result));
+        return result;
     };
 
     const resendLoginOtp = async (email) => {
-        try {
-            const result = await api.resendLoginOtp(email);
-            toast({ title: "Code Resent ✉️", description: "A new 6-digit code has been sent to your email." });
-            return result;
-        } catch (error) {
-            toast({ variant: "destructive", title: "Resend Failed", description: error.message || "Failed to resend code" });
-            throw error;
-        }
+        return await api.resendLoginOtp(email);
     };
 
     const socialLogin = async (provider, payload) => {

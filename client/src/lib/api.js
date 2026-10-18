@@ -1,7 +1,38 @@
 // Real API Implementation connected to MERN Backend
 import { toast } from "sonner"; // Assuming sonner is used, or replace with console for now if imports differ
 
-export const API_URL = import.meta.env.VITE_API_URL || '/api';
+export const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_DIR || '/api';
+
+async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
+  const contentType = response.headers.get('content-type') || '';
+  let data = null;
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!response.ok) {
+    if (data && (data.message || data.error)) {
+      throw new Error(data.message || data.error);
+    }
+    if (response.status === 405) {
+      throw new Error('API Method Not Allowed (405). The requested endpoint does not accept this method or is not deployed properly.');
+    }
+    if (response.status === 404) {
+      throw new Error('API Endpoint Not Found (404). Please ensure the backend server is reachable.');
+    }
+    if (response.status >= 500) {
+      throw new Error(`Server Error (${response.status}): The backend encountered an issue. Please try again.`);
+    }
+    throw new Error(defaultErrorMsg);
+  }
+
+  return data !== null ? data : {};
+}
 
 export const getAuthHeaders = () => {
   const storedUser = localStorage.getItem("rental_user");
@@ -19,75 +50,39 @@ export const api = {
   getAuthHeaders, // Expose for direct fetch use
   // Users
   login: async (email, password) => {
-    try {
-        const response = await fetch(`${API_URL}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Login failed');
-        }
-        
-        return await response.json();
-    } catch (error) {
-        throw error;
-    }
+    const response = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    return await parseApiResponse(response, 'Login failed');
   },
 
   verifyLoginOtp: async (email, otp) => {
-    try {
-      const response = await fetch(`${API_URL}/auth/verify-login-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp })
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'OTP verification failed');
-      }
-      return await response.json();
-    } catch (error) {
-      throw error;
-    }
+    const response = await fetch(`${API_URL}/auth/verify-login-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp })
+    });
+    return await parseApiResponse(response, 'OTP verification failed');
   },
 
   resendLoginOtp: async (email) => {
-    try {
-      const response = await fetch(`${API_URL}/auth/resend-login-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to resend verification code');
-      }
-      return await response.json();
-    } catch (error) {
-      throw error;
-    }
+    const response = await fetch(`${API_URL}/auth/resend-login-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    return await parseApiResponse(response, 'Failed to resend verification code');
   },
 
   registerUser: async (userData) => {
-    try {
-        const response = await fetch(`${API_URL}/auth/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(userData)
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Registration failed');
-        }
-        
-        return await response.json();
-    } catch (error) {
-        throw error;
-    }
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData)
+    });
+    return await parseApiResponse(response, 'Registration failed');
   },
 
   googleAuth: async (payload) => {
@@ -494,9 +489,15 @@ export const api = {
     return response.ok;
   },
   getSettings: async () => {
-    const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders() });
-    if (!response.ok) return {}; // Return empty if failed or not set up
-    return await response.json();
+    try {
+      const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders() });
+      if (!response.ok) return {};
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) return {};
+      return await response.json();
+    } catch {
+      return {};
+    }
   },
   updateSettings: async (settings) => {
     const response = await fetch(`${API_URL}/settings`, {

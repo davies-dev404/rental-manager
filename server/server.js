@@ -50,13 +50,10 @@ const connectDB = async () => {
     if (isConnected || mongoose.connection.readyState === 1) {
         return;
     }
-    const primaryUri = process.env.MONGODB_URI;
-    if (!primaryUri) {
-        console.error('❌ MONGODB_URI environment variable is missing!');
-    }
-    const uri = primaryUri || 'mongodb://127.0.0.1:27017/rental_manager';
+    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/rental_manager?retryWrites=true&w=majority';
+    const uri = process.env.MONGODB_URI || (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.RENDER ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
     try {
-        await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+        await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
         isConnected = true;
         console.log('✅ MongoDB Connected successfully');
         if (process.env.NODE_ENV !== 'production') {
@@ -125,10 +122,14 @@ app.get('/', (req, res) => {
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Internal Server Error' });
+    console.error('Unhandled Server Error:', err.stack || err.message);
+    res.status(500).json({ message: 'Internal Server Error', error: err.message });
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+    });
+}
+
+module.exports = app;
