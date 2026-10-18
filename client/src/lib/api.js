@@ -1,7 +1,22 @@
 // Real API Implementation connected to MERN Backend
 import { toast } from "sonner"; // Assuming sonner is used, or replace with console for now if imports differ
 
-export const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_DIR || '/api';
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_DIR;
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    if (!envUrl || envUrl.startsWith('http://localhost') || envUrl.startsWith('http://127.0.0.1')) {
+      return '/api';
+    }
+  }
+  if (import.meta.env.PROD) {
+    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+      return '/api';
+    }
+  }
+  return envUrl || '/api';
+};
+
+export const API_URL = getApiUrl();
 
 async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
   const contentType = response.headers.get('content-type') || '';
