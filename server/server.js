@@ -50,7 +50,7 @@ const connectDB = async () => {
     if (isConnected || mongoose.connection.readyState === 1) {
         return;
     }
-    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/rental_manager?retryWrites=true&w=majority';
+    const atlasFallback = 'mongodb+srv://davis:Tango12@cluster0.6nlji3n.mongodb.net/test?retryWrites=true&w=majority';
     const uri = process.env.MONGODB_URI || (process.env.NODE_ENV === 'production' || process.env.VERCEL || process.env.RENDER ? atlasFallback : 'mongodb://127.0.0.1:27017/rental_manager');
     try {
         await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
