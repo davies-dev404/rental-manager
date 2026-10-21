@@ -32,7 +32,7 @@ router.post('/login', async (req, res) => {
       // Generate a 6-digit login OTP (valid for 10 minutes)
       const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
       user.otp = loginOtp;
-      user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
       await user.save();
 
       // Send OTP via email
@@ -50,7 +50,7 @@ router.post('/login', async (req, res) => {
               </div>
               <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
               <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
+                Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
               </p>
               <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
                 ${loginOtp}
@@ -102,10 +102,10 @@ router.post('/resend-login-otp', async (req, res) => {
       return res.status(404).json({ message: 'No account found with this email' });
     }
 
-    // Generate fresh 6-digit OTP (10 minutes)
+    // Generate fresh 6-digit OTP (3 minutes)
     const loginOtp = Math.floor(100000 + Math.random() * 900000).toString();
     user.otp = loginOtp;
-    user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
     await user.save();
 
     // Send OTP via email
@@ -123,7 +123,7 @@ router.post('/resend-login-otp', async (req, res) => {
             </div>
             <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
             <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>10 minutes</strong>.
+              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
             </p>
             <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
               ${loginOtp}
@@ -231,7 +231,7 @@ router.post('/register', async (req, res) => {
 
       // 2. Generate OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+      const otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 mins
 
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
       const user = await User.create({
@@ -250,8 +250,24 @@ router.post('/register', async (req, res) => {
         try {
             await sendEmail({
               email: user.email,
-              subject: 'Your MakaziFlow Verification Code',
-              message: `<p>Your verification code is: <strong>${otp}</strong>. It expires in 10 minutes.</p>`
+              subject: 'MakaziFlow — Your Email Verification Code',
+              message: `
+                <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+                  <div style="text-align:center;margin-bottom:20px;">
+                    <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
+                    <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
+                  </div>
+                  <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Verify Your Email</h2>
+                  <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+                    Welcome to MakaziFlow! Use the code below to verify your email address. This code expires in <strong>3 minutes</strong>.
+                  </p>
+                  <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+                    ${otp}
+                  </div>
+                  <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+                    If you did not create a MakaziFlow account, please ignore this email.
+                  </p>
+                </div>`
             });
         } catch (emailError) {
             console.error('Email send failed (non-fatal):', emailError.message);

@@ -76,9 +76,9 @@ const sendEmail = async (options) => {
   }
 
   // --- STRATEGY 3: Env / Default SMTP (Gmail Fallback) ---
-  const envHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const envUser = process.env.SMTP_USER || 'daviesquan8@gmail.com';
-  const envPass = process.env.SMTP_PASS || 'ethjknultcruugok';
+  const envHost = process.env.SMTP_HOST;
+  const envUser = process.env.SMTP_USER;
+  const envPass = process.env.SMTP_PASS;
   const envPort = Number(process.env.SMTP_PORT) || 465;
   const envSecure = envPort === 465;
 
@@ -101,7 +101,7 @@ const sendEmail = async (options) => {
       console.log(`📧 Email sent successfully (via SMTP) to ${options.email}`);
       return;
     } catch (err) {
-      console.error("❌ SMTP Failed:", err.message);
+      console.error(`❌ SMTP Failed (${envHost}:${envPort}):`, err.message);
       errors.push(`SMTP: ${err.message}`);
     }
   }
