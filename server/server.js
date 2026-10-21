@@ -30,9 +30,8 @@ app.use(cors({
         if (!origin) return callback(null, true);
         const allowedOrigins = [
             'http://localhost:5173', 
-            'https://rental-manager-2sto.vercel.app', 
-            'https://rental-manager-sikj.onrender.com',
-            'https://rental-manager-seven.vercel.app'
+            'https://rental-manager-gold.vercel.app/', 
+            'https://rental-manager-1-7jmg.onrender.com',
         ];
         if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
             return callback(null, true);
