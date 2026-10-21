@@ -1,6 +1,6 @@
 const getEmailTemplate = (title, content, settings) => {
-    const orgName = settings?.orgName || "MakaaziHub";
-    const orgEmail = settings?.orgEmail || "support@makaazihub.com";
+    const orgName = settings?.orgName || "MakaaziFlow";
+    const orgEmail = settings?.orgEmail || "[EMAIL_ADDRESS]";
     const primaryColor = "#0f172a";
     const accentColor = "#10b981";
 
