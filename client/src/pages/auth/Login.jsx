@@ -50,10 +50,27 @@ export default function LoginPage() {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // Forgot password dialog
+  // Forgot password dialog & 2-step OTP reset state
   const [showForgotDialog, setShowForgotDialog] = useState(false);
+  const [forgotStep, setForgotStep] = useState(1); // 1 = Request OTP, 2 = Enter OTP & Reset Password
   const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+  const [forgotResendCountdown, setForgotResendCountdown] = useState(0);
+
+  // Countdown timer for Forgot Password Resend OTP
+  useEffect(() => {
+    let timer;
+    if (forgotResendCountdown > 0) {
+      timer = setInterval(() => {
+        setForgotResendCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [forgotResendCountdown]);
 
   // Countdown timer for OTP
   useEffect(() => {
@@ -284,10 +301,23 @@ export default function LoginPage() {
     }
   };
 
-  // Handle Forgot Password Submit
+  // Reset forgot password state helper
+  const resetForgotState = () => {
+    setForgotStep(1);
+    setForgotEmail("");
+    setForgotOtp("");
+    setForgotNewPassword("");
+    setForgotConfirmPassword("");
+    setShowForgotNewPassword(false);
+    setIsForgotLoading(false);
+    setForgotResendCountdown(0);
+  };
+
+  // Handle Forgot Password - Step 1: Request OTP
   const handleForgotSubmit = async (e) => {
     if (e) e.preventDefault();
-    if (!forgotEmail) {
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) {
       toast({
         variant: "destructive",
         title: "Email Required",
@@ -298,18 +328,122 @@ export default function LoginPage() {
 
     setIsForgotLoading(true);
     try {
-      await api.forgotPassword(forgotEmail);
-      toast({
-        title: "Reset Code Dispatched",
-        description: `Password reset instructions have been sent to ${forgotEmail}.`
-      });
-      setShowForgotDialog(false);
-      setForgotEmail("");
+      const res = await api.forgotPassword(cleanEmail);
+      if (res && res.emailSent === false) {
+        toast({
+          variant: "destructive",
+          title: "Email Dispatch Warning ⚠️",
+          description: `Reset code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
+        });
+      } else {
+        toast({
+          title: "Reset Code Sent ✉️",
+          description: `A 6-digit verification code has been sent to ${cleanEmail}`
+        });
+      }
+      setForgotStep(2);
+      setForgotResendCountdown(60);
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Request Failed",
         description: err.message || "Could not process password reset request."
+      });
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
+  // Handle Resend Reset OTP
+  const handleResendForgotOtp = async () => {
+    if (forgotResendCountdown > 0 || isForgotLoading) return;
+    const cleanEmail = forgotEmail.trim();
+    if (!cleanEmail) return;
+
+    setIsForgotLoading(true);
+    try {
+      const res = await api.forgotPassword(cleanEmail);
+      if (res && res.emailSent === false) {
+        toast({
+          variant: "destructive",
+          title: "Email Dispatch Warning ⚠️",
+          description: `Reset code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
+        });
+      } else {
+        toast({
+          title: "Code Resent ✉️",
+          description: `A fresh 6-digit verification code has been sent to ${cleanEmail}`
+        });
+      }
+      setForgotResendCountdown(60);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Resend Failed",
+        description: err.message || "Could not resend reset code."
+      });
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
+  // Handle Forgot Password - Step 2: Verify OTP and Reset Password
+  const handleResetSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const cleanOtp = forgotOtp.replace(/\D/g, "").slice(0, 6);
+
+    if (cleanOtp.length !== 6) {
+      toast({
+        variant: "destructive",
+        title: "Incomplete Code",
+        description: "Please enter the full 6-digit verification code sent to your email."
+      });
+      return;
+    }
+
+    if (!forgotNewPassword) {
+      toast({
+        variant: "destructive",
+        title: "Password Required",
+        description: "Please enter your new password."
+      });
+      return;
+    }
+
+    if (forgotNewPassword.length < 8) {
+      toast({
+        variant: "destructive",
+        title: "Password Too Short",
+        description: "Password must be at least 8 characters long."
+      });
+      return;
+    }
+
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Passwords Do Not Match",
+        description: "The confirmation password does not match your new password."
+      });
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      const res = await api.resetPassword(forgotEmail.trim(), cleanOtp, forgotNewPassword);
+      toast({
+        title: "Password Reset Successfully! 🎉",
+        description: res?.message || "Your password has been updated. You can now sign in."
+      });
+      setShowForgotDialog(false);
+      setUsernameOrEmail(forgotEmail.trim());
+      setPassword("");
+      resetForgotState();
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Reset Failed",
+        description: err.message || "Invalid or expired verification code."
       });
     } finally {
       setIsForgotLoading(false);
@@ -678,54 +812,181 @@ export default function LoginPage() {
         </div>
       )}
 
-      {/* Forgot Password Modal */}
-      <Dialog open={showForgotDialog} onOpenChange={setShowForgotDialog}>
+      {/* Forgot Password Modal (2-Step: Request OTP -> Verify OTP & Set New Password) */}
+      <Dialog 
+        open={showForgotDialog} 
+        onOpenChange={(open) => {
+          setShowForgotDialog(open);
+          if (!open) resetForgotState();
+        }}
+      >
         <DialogContent className="max-w-md p-6 bg-white border border-slate-200 rounded-xl shadow-xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900">
-              Reset Your Password
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Enter your registered email address and we will send you instructions to reset your password.
-            </DialogDescription>
-          </DialogHeader>
+          {forgotStep === 1 ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <KeyRound className="w-5 h-5 text-[#00a99d]" />
+                  Reset Your Password
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Enter your registered email address and we will send you a 6-digit verification code.
+                </DialogDescription>
+              </DialogHeader>
 
-          <form onSubmit={handleForgotSubmit} className="space-y-4 pt-2">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 mb-1 block">
-                Email Address
-              </label>
-              <input
-                type="email"
-                required
-                value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full h-10 px-3 text-xs bg-white border border-slate-300 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
-              />
-            </div>
+              <form onSubmit={handleForgotSubmit} className="space-y-4 pt-2">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full h-10 px-3 text-xs bg-white border border-slate-300 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#00a99d]"
+                  />
+                </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowForgotDialog(false)}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isForgotLoading}
-                size="sm"
-                className="bg-[#0d2240] hover:bg-[#1a3a5c] text-white text-xs font-semibold"
-              >
-                {isForgotLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
-                Send Reset Link
-              </Button>
-            </DialogFooter>
-          </form>
+                <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowForgotDialog(false);
+                      resetForgotState();
+                    }}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isForgotLoading}
+                    size="sm"
+                    className="bg-[#00a99d] hover:bg-[#008f85] text-white text-xs font-semibold"
+                  >
+                    {isForgotLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                    Send Reset Code
+                  </Button>
+                </DialogFooter>
+              </form>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-[#00a99d]" />
+                  Verify Code & Set Password
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  We sent a 6-digit verification code to <span className="font-semibold text-slate-800">{forgotEmail}</span>. Enter the code and choose your new password.
+                </DialogDescription>
+              </DialogHeader>
+
+              <form onSubmit={handleResetSubmit} className="space-y-4 pt-2">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">
+                      6-Digit Verification Code
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setForgotStep(1)}
+                      className="text-[11px] text-[#00a99d] hover:underline"
+                    >
+                      Change email
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    required
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="••••••"
+                    className="w-full h-11 text-center text-xl font-mono tracking-[0.5em] font-bold bg-slate-50 border border-slate-300 rounded-md text-slate-900 placeholder:text-slate-300 focus:outline-none focus:border-[#00a99d] focus:bg-white"
+                  />
+                  <div className="flex justify-end mt-1">
+                    <button
+                      type="button"
+                      disabled={forgotResendCountdown > 0 || isForgotLoading}
+                      onClick={handleResendForgotOtp}
+                      className="text-[11px] font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50 transition-colors"
+                    >
+                      {forgotResendCountdown > 0
+                        ? `Resend code in ${forgotResendCountdown}s`
+                        : "Resend code"}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showForgotNewPassword ? "text" : "password"}
+                      required
+                      value={forgotNewPassword}
+                      onChange={(e) => setForgotNewPassword(e.target.value)}
+                      placeholder="Minimum 8 characters"
+                      className="w-full h-10 px-3 pr-9 text-xs bg-white border border-slate-300 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#00a99d]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Must include uppercase, lowercase, number, and special character.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-700 mb-1 block">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type={showForgotNewPassword ? "text" : "password"}
+                    required
+                    value={forgotConfirmPassword}
+                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your new password"
+                    className="w-full h-10 px-3 text-xs bg-white border border-slate-300 rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#00a99d]"
+                  />
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setForgotStep(1)}
+                    className="text-xs"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isForgotLoading}
+                    size="sm"
+                    className="bg-[#00a99d] hover:bg-[#008f85] text-white text-xs font-semibold"
+                  >
+                    {isForgotLoading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                    Reset Password
+                  </Button>
+                </DialogFooter>
+              </form>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
