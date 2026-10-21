@@ -35,6 +35,9 @@ const settingsSchema = new mongoose.Schema({
           sendgrid: {
               apiKey: { type: String, default: '' }
           },
+          resend: {
+              apiKey: { type: String, default: '' }
+          },
           gmail: {
               clientId: { type: String, default: '' },
               clientSecret: { type: String, default: '' }

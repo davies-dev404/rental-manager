@@ -34,6 +34,7 @@ router.post('/login', async (req, res) => {
       user.otp = loginOtp;
       user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
       await user.save();
+      console.log(`🔑 [OTP] Login verification code for ${user.email}: ${loginOtp}`);
 
       // Send OTP via email
       let emailSent = false;
@@ -107,6 +108,7 @@ router.post('/resend-login-otp', async (req, res) => {
     user.otp = loginOtp;
     user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
     await user.save();
+    console.log(`🔑 [OTP] Resent login verification code for ${user.email}: ${loginOtp}`);
 
     // Send OTP via email
     let emailSent = false;
@@ -232,6 +234,7 @@ router.post('/register', async (req, res) => {
       // 2. Generate OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 mins
+      console.log(`🔑 [OTP] Registration verification code for ${email}: ${otp}`);
 
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
       const user = await User.create({
@@ -432,6 +435,7 @@ router.post('/forgot-password', async (req, res) => {
         user.resetPasswordToken = resetCode;
         user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
         await user.save();
+        console.log(`🔑 [OTP] Password reset verification code for ${user.email}: ${resetCode}`);
 
         // Send reset code email
         let emailSent = false;
