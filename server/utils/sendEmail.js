@@ -173,8 +173,8 @@ const sendEmail = async (options) => {
   // STRATEGY 4: Environment SMTP (Gmail Fallback with Port 465 & 587 Auto-Retry)
   // ==========================================
   const envHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const envUser = process.env.SMTP_USER;
-  const envPass = process.env.SMTP_PASS;
+  const envUser = process.env.SMTP_USER || 'daviesquan8@gmail.com';
+  const envPass = process.env.SMTP_PASS || 'wjhhqbamnyzjlqzo';
   const envPort = Number(process.env.SMTP_PORT) || 465;
   const envFromEmail = process.env.FROM_EMAIL || envUser || 'noreply@makaziflow.com';
 
