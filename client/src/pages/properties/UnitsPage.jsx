@@ -107,9 +107,9 @@ function UnitFormView({ properties, onBack, onSuccess }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
         >
-          &larr; Back
+          ← Back
         </button>
       </div>
 
@@ -295,9 +295,9 @@ function UnitFormView({ properties, onBack, onSuccess }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
         >
-          &larr; Back
+          ← Back
         </button>
       </div>
     </div>
@@ -453,8 +453,8 @@ export default function UnitsPage() {
       </Dialog>
       <div className="flex items-center justify-end gap-2.5">
         <Button onClick={() => setView('add_unit')} className="bg-[#0b1065] hover:bg-[#0c0e52] text-white text-xs h-8 px-4 font-semibold shadow-sm"><Plus className="w-3.5 h-3.5 mr-1.5" />Add Unit</Button>
-        <Button onClick={() => setBulkAddOpen(true)} variant="outline" className="border-[#0b1065] text-[#0b1065] hover:bg-[#0b1065]/5 text-xs h-8 px-4 font-semibold bg-white dark:bg-slate-900">Bulk Add Units</Button>
-        <Button onClick={() => setDownloadOpen(true)} variant="outline" className="border-[#0b1065] text-[#0b1065] hover:bg-[#0b1065]/5 text-xs h-8 px-4 font-semibold bg-white dark:bg-slate-900"><Download className="w-3.5 h-3.5 mr-1.5" />Rent Schedule</Button>
+        <Button onClick={() => setBulkAddOpen(true)} className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-8 px-4 font-semibold shadow-sm">Bulk Add Units</Button>
+        <Button onClick={() => setDownloadOpen(true)} className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-8 px-4 font-semibold shadow-sm"><Download className="w-3.5 h-3.5 mr-1.5" />Rent Schedule</Button>
       </div>
       <div className="flex flex-col md:flex-row gap-4 items-start">
         <aside className="w-full md:w-64 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4 shadow-xs">

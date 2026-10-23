@@ -437,9 +437,9 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
         >
-          &larr; Back
+          ← Back
         </button>
       </div>
 
@@ -987,9 +987,9 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
         >
-          &larr; Back
+          ← Back
         </button>
       </div>
     </div>

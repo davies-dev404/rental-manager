@@ -11,15 +11,21 @@ const ActivityLog = require('../models/ActivityLog');
 const logActivity = async (user, action, description, type = 'info', status = 'success') => {
   try {
     let userName = 'System';
+    let userId = null;
+    let userEmail = null;
     
     if (user && typeof user === 'string') {
         userName = user;
-    } else if (user && user.name) {
-        userName = user.name;
+    } else if (user && typeof user === 'object') {
+        userName = user.name || user.email || 'User';
+        userId = user._id || user.id || null;
+        userEmail = user.email || null;
     }
 
     await ActivityLog.create({
       user: userName,
+      userId,
+      userEmail,
       action,
       description,
       type,

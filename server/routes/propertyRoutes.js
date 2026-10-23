@@ -15,14 +15,18 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
+const logActivity = require('../utils/logActivity');
+
 // @desc    Create a property
 // @route   POST /api/properties
 // @access  Private (Admin/Caretaker)
 router.post('/', protect, async (req, res) => {
   try {
     const property = await Property.create({ ...req.body, user: req.user.id });
+    await logActivity(req.user, 'Create Property', `Created property "${property.name}" in ${property.location || 'N/A'}`, 'property', 'success');
     res.status(201).json(property);
   } catch (error) {
+    await logActivity(req.user, 'Create Property Failed', `Failed to create property: ${error.message}`, 'property', 'error');
     res.status(400).json({ message: error.message });
   }
 });
@@ -34,6 +38,7 @@ router.put('/:id', protect, async (req, res) => {
   try {
     const property = await Property.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
     if (!property) return res.status(404).json({ message: 'Property not found' });
+    await logActivity(req.user, 'Update Property', `Updated property "${property.name}"`, 'property', 'success');
     res.json(property);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -47,8 +52,9 @@ router.delete('/:id', protect, admin, async (req, res) => {
   try {
     const property = await Property.findOne({ _id: req.params.id, user: req.user.id });
     if (!property) return res.status(404).json({ message: 'Property not found' });
-    
+    const propName = property.name;
     await property.deleteOne();
+    await logActivity(req.user, 'Delete Property', `Deleted property "${propName}"`, 'property', 'warning');
     res.json({ message: 'Property removed' });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   Dialog,
@@ -17,11 +17,22 @@ import { CheckCircle2, Send, Upload, DollarSign, Smartphone, Users, Building, Sh
 
 export function ActionModals({ modalType, onClose, initialData = {} }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
 
   const { data: properties = [] } = useQuery({
     queryKey: ["properties"],
     queryFn: api.getProperties
+  });
+
+  const { data: units = [] } = useQuery({
+    queryKey: ["units"],
+    queryFn: () => api.getUnits()
+  });
+
+  const { data: tenants = [] } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: api.getTenants
   });
 
   // Form states
@@ -44,17 +55,124 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
     teamEmail: "",
     teamRole: "Caretaker",
     propertyName: "",
-    unitsCount: "0"
+    propertyAddress: "",
+    unitsCount: "10",
+    // Tenant form fields
+    tenantName: "",
+    tenantPhone: "",
+    tenantEmail: "",
+    tenantIdNumber: "",
+    tenantUnitId: "",
+    tenantRent: "20000",
+    tenantDeposit: "20000",
+    // Unit form fields
+    unitNumber: "",
+    unitType: "1 Bedroom",
+    unitRent: "20000",
+    unitDeposit: "20000",
+    propertyId: "",
+    // Maintenance fields
+    maintenanceCategory: "Plumbing / Leakage",
+    maintenanceLocation: "",
+    maintenanceCost: "4500",
+    maintenancePriority: "Medium",
+    maintenanceDesc: ""
   });
 
   const handleChange = (field, val) => {
     setFormData((prev) => ({ ...prev, [field]: val }));
   };
 
-  const handleSubmit = (actionTitle, successDesc, customEvent = null, customData = null) => {
+  const handleSubmit = async (actionTitle, successDesc, customEvent = null, customData = null) => {
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      if (modalType === "record_payment") {
+        if (!formData.amount || Number(formData.amount) <= 0) {
+          toast({ variant: "destructive", title: "Amount Required", description: "Please enter a valid amount." });
+          setLoading(false);
+          return;
+        }
+        await api.recordPayment({
+          tenant: formData.tenant,
+          unit: formData.unit,
+          amount: Number(formData.amount),
+          date: formData.date,
+          method: formData.method,
+          reference: formData.reference
+        });
+        queryClient.invalidateQueries({ queryKey: ["payments"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+        queryClient.invalidateQueries({ queryKey: ["debtors"] });
+        queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      } else if (modalType === "add_property") {
+        if (!formData.propertyName) {
+          toast({ variant: "destructive", title: "Name Required", description: "Please provide a property name." });
+          setLoading(false);
+          return;
+        }
+        await api.addProperty({
+          name: formData.propertyName,
+          location: formData.propertyAddress || "Nairobi",
+          totalUnits: Number(formData.unitsCount || 10)
+        });
+        queryClient.invalidateQueries({ queryKey: ["properties"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+      } else if (modalType === "add_unit") {
+        const propId = formData.propertyId || properties[0]?._id || properties[0]?.id;
+        if (!propId) {
+          toast({ variant: "destructive", title: "Property Required", description: "Please create a property first." });
+          setLoading(false);
+          return;
+        }
+        await api.addUnit({
+          propertyId: propId,
+          unitNumber: formData.unitNumber || "1A",
+          type: formData.unitType || "1 Bedroom",
+          rentAmount: Number(formData.unitRent || 20000),
+          status: "vacant"
+        });
+        queryClient.invalidateQueries({ queryKey: ["units"] });
+        queryClient.invalidateQueries({ queryKey: ["properties"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+      } else if (modalType === "add_tenant") {
+        if (!formData.tenantName || !formData.tenantPhone) {
+          toast({ variant: "destructive", title: "Information Required", description: "Tenant name and phone are required." });
+          setLoading(false);
+          return;
+        }
+        await api.addTenant({
+          name: formData.tenantName,
+          phone: formData.tenantPhone,
+          email: formData.tenantEmail || `${formData.tenantName.toLowerCase().replace(/[^a-z0-9]/g, '')}@gmail.com`,
+          nationalId: formData.tenantIdNumber || "12345678",
+          unitId: formData.tenantUnitId || undefined,
+          rentAmount: Number(formData.tenantRent || 0),
+          deposit: Number(formData.tenantDeposit || 0)
+        });
+        queryClient.invalidateQueries({ queryKey: ["tenants"] });
+        queryClient.invalidateQueries({ queryKey: ["units"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+        queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      } else if (modalType === "maintenance") {
+        await api.addExpense({
+          title: `Maintenance: ${formData.maintenanceCategory || "Repair"}`,
+          amount: Number(formData.maintenanceCost || 0),
+          description: formData.maintenanceDesc || `${formData.maintenanceCategory} at ${formData.maintenanceLocation || "Property"}`,
+          category: "maintenance"
+        });
+        queryClient.invalidateQueries({ queryKey: ["expenses"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+      } else if (modalType === "send_reminders" || modalType === "remind_tenant") {
+        await api.addReminder({
+          tenantId: modalType === "remind_tenant" && initialData.id ? initialData.id : "all_debtors",
+          type: "rent_due",
+          method: "sms",
+          customNote: formData.message,
+          sendImmediately: true
+        });
+        queryClient.invalidateQueries({ queryKey: ["reminders"] });
+      }
+
       toast({
         title: actionTitle,
         description: successDesc
@@ -63,7 +181,15 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         window.dispatchEvent(new CustomEvent(customEvent, { detail: customData }));
       }
       onClose();
-    }, 500);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Action Failed",
+        description: err.message || "Failed to process request."
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!modalType) return null;
@@ -452,46 +578,73 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Full Name</Label>
-                  <Input placeholder="e.g. John Doe" />
+                  <Input 
+                    placeholder="e.g. John Doe" 
+                    value={formData.tenantName}
+                    onChange={(e) => handleChange("tenantName", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Phone Number</Label>
-                  <Input placeholder="+254 7XX XXX XXX" />
+                  <Input 
+                    placeholder="+254 7XX XXX XXX" 
+                    value={formData.tenantPhone}
+                    onChange={(e) => handleChange("tenantPhone", e.target.value)}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>National ID / Passport</Label>
-                  <Input placeholder="e.g. 32415678" />
+                  <Input 
+                    placeholder="e.g. 32415678" 
+                    value={formData.tenantIdNumber}
+                    onChange={(e) => handleChange("tenantIdNumber", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Assign Unit</Label>
-                  <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs">
-                    <option>Unit 2B (Vacant - KES 18,000)</option>
-                    <option>Unit 3C (Vacant - KES 22,000)</option>
-                    <option>Unit 4A (Vacant - KES 20,000)</option>
-                    <option>Unit 5B (Vacant - KES 15,000)</option>
+                  <select 
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                    value={formData.tenantUnitId}
+                    onChange={(e) => handleChange("tenantUnitId", e.target.value)}
+                  >
+                    <option value="">-- Select Available Unit --</option>
+                    {units.map((u) => (
+                      <option key={u._id || u.id} value={u._id || u.id}>
+                        Unit {u.unitNumber} ({u.status || "vacant"} - KES {Number(u.rentAmount || 0).toLocaleString()})
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Monthly Rent (KES)</Label>
-                  <Input type="number" defaultValue="20000" />
+                  <Input 
+                    type="number" 
+                    value={formData.tenantRent}
+                    onChange={(e) => handleChange("tenantRent", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Deposit (KES)</Label>
-                  <Input type="number" defaultValue="20000" />
+                  <Input 
+                    type="number" 
+                    value={formData.tenantDeposit}
+                    onChange={(e) => handleChange("tenantDeposit", e.target.value)}
+                  />
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button
+                disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={() => handleSubmit("Tenant Added", "New tenant successfully onboarded and assigned to unit.")}
               >
-                Save Tenant
+                {loading ? "Saving..." : "Save Tenant"}
               </Button>
             </DialogFooter>
           </div>
@@ -505,40 +658,74 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <DialogDescription>Add a new rental unit or apartment.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 text-sm">
+              <div className="space-y-1.5">
+                <Label>Belongs to Property</Label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                  value={formData.propertyId}
+                  onChange={(e) => handleChange("propertyId", e.target.value)}
+                >
+                  <option value="">-- Select Property --</option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p._id || p.id}>
+                      {p.name} ({p.location || "Kenya"})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Unit Label / Door No.</Label>
-                  <Input placeholder="e.g. 2C, B4" />
+                  <Input 
+                    placeholder="e.g. 2C, B4" 
+                    value={formData.unitNumber}
+                    onChange={(e) => handleChange("unitNumber", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Bedrooms / Type</Label>
-                  <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs">
-                    <option>1 Bedroom</option>
-                    <option>2 Bedrooms</option>
-                    <option>3 Bedrooms</option>
-                    <option>Studio / Bedsitter</option>
-                    <option>Commercial Space</option>
+                  <select 
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                    value={formData.unitType}
+                    onChange={(e) => handleChange("unitType", e.target.value)}
+                  >
+                    <option value="1 Bedroom">1 Bedroom</option>
+                    <option value="2 Bedrooms">2 Bedrooms</option>
+                    <option value="3 Bedrooms">3 Bedrooms</option>
+                    <option value="Studio / Bedsitter">Studio / Bedsitter</option>
+                    <option value="Commercial Space">Commercial Space</option>
                   </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Monthly Rent (KES)</Label>
-                  <Input type="number" placeholder="25000" />
+                  <Input 
+                    type="number" 
+                    placeholder="25000" 
+                    value={formData.unitRent}
+                    onChange={(e) => handleChange("unitRent", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Deposit (KES)</Label>
-                  <Input type="number" placeholder="25000" />
+                  <Input 
+                    type="number" 
+                    placeholder="25000" 
+                    value={formData.unitDeposit}
+                    onChange={(e) => handleChange("unitDeposit", e.target.value)}
+                  />
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button
+                disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={() => handleSubmit("Unit Created", "New unit added to your property inventory.")}
               >
-                Create Unit
+                {loading ? "Creating..." : "Create Unit"}
               </Button>
             </DialogFooter>
           </div>
@@ -554,26 +741,39 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
             <div className="space-y-4 py-4 text-sm">
               <div className="space-y-1.5">
                 <Label>Property Name</Label>
-                <Input placeholder="e.g. Sunset Heights Apartments" />
+                <Input 
+                  placeholder="e.g. Sunset Heights Apartments" 
+                  value={formData.propertyName}
+                  onChange={(e) => handleChange("propertyName", e.target.value)}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Location / Address</Label>
-                  <Input placeholder="e.g. Kilimani, Nairobi" />
+                  <Input 
+                    placeholder="e.g. Kilimani, Nairobi" 
+                    value={formData.propertyAddress}
+                    onChange={(e) => handleChange("propertyAddress", e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Total Units Count</Label>
-                  <Input type="number" defaultValue="20" />
+                  <Input 
+                    type="number" 
+                    value={formData.unitsCount}
+                    onChange={(e) => handleChange("unitsCount", e.target.value)}
+                  />
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button
+                disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 onClick={() => handleSubmit("Property Created", "New property building established.")}
               >
-                Save Property
+                {loading ? "Saving..." : "Save Property"}
               </Button>
             </DialogFooter>
           </div>

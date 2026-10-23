@@ -140,28 +140,34 @@ export default function InsightsPage() {
                         </td>
                       </tr>
                     ) : (
-                      debtors.map((d, index) => (
-                        <tr
-                          key={index}
-                          className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          <td className="py-2.5 px-4 text-slate-800 dark:text-slate-200 font-medium">
-                            {d.propertyName || d.property || "-"}
-                          </td>
-                          <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
-                            {Number(d.balance || 0).toLocaleString()} KES
-                          </td>
-                          <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
-                            1
-                          </td>
-                          <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
-                            0.00 KES
-                          </td>
-                          <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
-                            0
-                          </td>
-                        </tr>
-                      ))
+                      debtors.map((d, index) => {
+                        const tObj = d.tenant || d;
+                        const tenantName = tObj.name || d.name || "Tenant";
+                        const unitName = tObj.unitId?.unitNumber || tObj.unitNumber || d.unitNumber || "Unit";
+                        const dueAmount = Number(d.totalDue ?? d.balance ?? d.rentDue ?? tObj.rentAmount ?? 0);
+                        return (
+                          <tr
+                            key={index}
+                            className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                          >
+                            <td className="py-2.5 px-4 text-slate-800 dark:text-slate-200 font-medium">
+                              {tenantName} ({unitName})
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              {dueAmount.toLocaleString()} KES
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              1
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              0.00 KES
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
+                              0
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>

@@ -134,9 +134,9 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-900 rounded-md shadow hover:bg-slate-800 dark:hover:bg-slate-100 transition cursor-pointer"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-4 h-4 text-white dark:text-slate-900" /> Back
         </button>
       </div>
 
@@ -362,9 +362,9 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-900 rounded-md shadow hover:bg-slate-800 dark:hover:bg-slate-100 transition cursor-pointer"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-4 h-4 text-white dark:text-slate-900" /> Back
         </button>
       </div>
     </div>
@@ -407,9 +407,9 @@ function UploadBankStatementView({ onBack, onAddPayments }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-900 rounded-md shadow hover:bg-slate-800 dark:hover:bg-slate-100 transition cursor-pointer"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-4 h-4 text-white dark:text-slate-900" /> Back
         </button>
       </div>
 
@@ -570,9 +570,9 @@ function UploadBankStatementView({ onBack, onAddPayments }) {
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-white dark:text-slate-900 rounded-md shadow hover:bg-slate-800 dark:hover:bg-slate-100 transition cursor-pointer"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-4 h-4 text-white dark:text-slate-900" /> Back
         </button>
       </div>
     </div>
@@ -585,7 +585,18 @@ export default function PaymentsPageBomahut() {
   const { formatCurrency } = usePreferences();
   const queryClient = useQueryClient();
 
-  const [view, setView] = useState("list"); // 'list' | 'record_payment' | 'upload_statement'
+  const [view, setView] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("action") === "record" || params.get("action") === "add") {
+        return "record_payment";
+      }
+      if (params.get("action") === "upload_statement" || params.get("action") === "upload") {
+        return "upload_statement";
+      }
+    }
+    return "list";
+  }); // 'list' | 'record_payment' | 'upload_statement'
   const [selectedPayments, setSelectedPayments] = useState([]);
 
   const { data: payments = [], isLoading } = useQuery({
@@ -626,6 +637,8 @@ export default function PaymentsPageBomahut() {
     });
     queryClient.invalidateQueries({ queryKey: ["payments"] });
     queryClient.invalidateQueries({ queryKey: ["stats"] });
+    queryClient.invalidateQueries({ queryKey: ["debtors"] });
+    queryClient.invalidateQueries({ queryKey: ["tenants"] });
   };
 
   const allPayments = [

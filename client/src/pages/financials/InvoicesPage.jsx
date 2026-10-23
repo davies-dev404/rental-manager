@@ -809,9 +809,8 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
           <div className="flex items-center justify-between pt-2">
             <Button
               type="button"
-              variant="outline"
               onClick={() => setStep(1)}
-              className="text-xs h-8 px-4"
+              className="text-xs h-8 px-4 text-white bg-[#0b1065] hover:bg-[#161c8a] border-0 shadow-sm font-semibold cursor-pointer"
             >
               ← Back to Setup
             </Button>

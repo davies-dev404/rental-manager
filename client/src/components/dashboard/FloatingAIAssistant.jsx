@@ -25,6 +25,16 @@ export default function FloatingAIAssistant() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
 
+  // Tip visibility state (hide once dragged or dismissed)
+  const [showTip, setShowTip] = useState(() => {
+    return localStorage.getItem("dwello_hide_ai_drag_tip") !== "true";
+  });
+
+  const dismissTip = () => {
+    setShowTip(false);
+    localStorage.setItem("dwello_hide_ai_drag_tip", "true");
+  };
+
   // Dragging state
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -42,6 +52,7 @@ export default function FloatingAIAssistant() {
     const handleMouseMove = (moveEvent) => {
       if (!isDragging.current) return;
       hasMoved.current = true;
+      dismissTip();
       setPosition({
         x: moveEvent.clientX - dragStart.current.x,
         y: moveEvent.clientY - dragStart.current.y
@@ -127,9 +138,18 @@ export default function FloatingAIAssistant() {
           touchAction: "none"
         }}
       >
-        {!isOpen && (
-          <div className="mb-1.5 px-3 py-1 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-md border border-slate-700 pointer-events-none animate-in fade-in">
-            Tip: press and hold to move me anywhere
+        {!isOpen && showTip && (
+          <div className="mb-1.5 px-3 py-1 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-md border border-slate-700 pointer-events-none animate-in fade-in flex items-center gap-1.5">
+            <span>Tip: press and hold to move me anywhere</span>
+            <span 
+              onClick={(e) => {
+                e.stopPropagation();
+                dismissTip();
+              }}
+              className="text-slate-400 hover:text-white cursor-pointer ml-1 text-xs"
+            >
+              &times;
+            </span>
           </div>
         )}
 

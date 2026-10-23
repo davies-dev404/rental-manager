@@ -13,7 +13,7 @@ const paymentSchema = new mongoose.Schema({
     amount: { type: Number, default: 0 }
   }],
   date: { type: Date, default: Date.now },
-  method: { type: String, enum: ['cash', 'bank', 'mobile_money', 'lipa_na_mpesa'] }, // Aligned with frontend
+  method: { type: String, default: 'cash' }, // cash, bank, mobile_money, M-Pesa, etc.
   status: { type: String, enum: ['paid', 'partial', 'overdue', 'Completed', 'Pending', 'Failed', 'pending', 'unpaid', 'Unpaid'], default: 'paid' },
   monthCovered: { type: String }, // YYYY-MM
   type: { type: String, default: 'Rent' }, // Rent, Deposit, Utility, Combined

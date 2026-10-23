@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -42,54 +44,265 @@ import {
   Database
 } from "lucide-react";
 
+// ─── Audit Trail Sub-Component (Scoped to current account) ─────────────────────────
+function AuditTrailTab() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState("all");
+
+  const auditQuery = useQuery({
+    queryKey: ["activity-logs"],
+    queryFn: api.getActivityLogs,
+    staleTime: 15_000
+  });
+  const logs = auditQuery.data || [];
+
+  const handleClear = async () => {
+    if (!window.confirm("Are you sure you want to clear your account activity audit trail?")) return;
+    try {
+      await api.clearActivityLogs();
+      auditQuery.refetch();
+      toast({ title: "Audit Trail Cleared", description: "Your account activity logs have been reset." });
+    } catch {
+      toast({ title: "Error", description: "Could not clear logs.", variant: "destructive" });
+    }
+  };
+
+  const fmtTime = (ts) => {
+    try {
+      return new Date(ts).toLocaleString("en-KE", {
+        day: "2-digit", month: "short", year: "numeric",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+      });
+    } catch { return ts; }
+  };
+
+  const statusColor = (s = "") => {
+    const v = (s || "").toLowerCase();
+    if (v === "success") return "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20";
+    if (v === "error" || v === "failed") return "bg-rose-500/10 text-rose-600 border border-rose-500/20";
+    if (v === "warning") return "bg-amber-500/10 text-amber-600 border border-amber-500/20";
+    return "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200";
+  };
+
+  const isLogForCurrentUser = (log) => {
+    if (!user) return false;
+
+    const myId = String(user._id || user.id || "");
+    const myEmail = (user.email || "").trim().toLowerCase();
+    const myName = (user.name || "").trim().toLowerCase();
+
+    // 1. If log has an explicit userId, it MUST match current user's ID
+    if (log.userId) {
+      return Boolean(myId && String(log.userId) === myId);
+    }
+
+    // 2. If log has an explicit userEmail, it MUST match current user's email
+    if (log.userEmail) {
+      return Boolean(myEmail && log.userEmail.trim().toLowerCase() === myEmail);
+    }
+
+    const logUser = (log.user || "").trim().toLowerCase();
+
+    // 3. If log was recorded under "System", only show if description explicitly mentions my email
+    if (logUser === "system") {
+      const desc = (log.description || "").toLowerCase();
+      return Boolean(myEmail && desc.includes(myEmail));
+    }
+
+    // 4. If log has a username, verify that it matches my account's name or email prefix
+    if (logUser) {
+      if (myName && (logUser === myName || logUser.includes(myName) || myName.includes(logUser))) {
+        return true;
+      }
+      const emailPrefix = myEmail ? myEmail.split("@")[0] : "";
+      if (emailPrefix && (logUser === emailPrefix || logUser.includes(emailPrefix))) {
+        return true;
+      }
+    }
+
+    // 5. If description targets current user's email
+    if (myEmail && log.description && log.description.toLowerCase().includes(myEmail)) {
+      return true;
+    }
+
+    // Reject any log belonging to another user/account
+    return false;
+  };
+
+  const filteredLogs = logs.filter(log => {
+    // Strict account isolation: reject logs from other accounts
+    if (!isLogForCurrentUser(log)) {
+      return false;
+    }
+
+    const matchesSearch =
+      !searchTerm ||
+      (log.action && log.action.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (log.description && log.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (log.type && log.type.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesType = filterType === "all" || (log.type && log.type.toLowerCase() === filterType.toLowerCase());
+    return matchesSearch && matchesType;
+  });
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+              Audit Trail
+            </h2>
+            <Badge className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 text-xs font-medium">
+              Account: {user?.name || user?.email || "Davis"}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Tracking database updates, property edits, payments, and actions performed under your account.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => auditQuery.refetch()}
+            disabled={auditQuery.isFetching}
+            className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-8 px-3 font-semibold shadow-sm cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${auditQuery.isFetching ? "animate-spin" : ""}`} />
+            {auditQuery.isFetching ? "Refreshing…" : "Refresh"}
+          </Button>
+          {logs.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleClear}
+              className="text-xs h-8 px-3 text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/20 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Clear
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="relative flex-1">
+          <Input
+            placeholder="Search audit trail by action or details…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="text-xs h-9 pl-3"
+          />
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {["all", "property", "unit", "tenant", "payment", "settings", "auth"].map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setFilterType(cat)}
+              className={`px-2.5 py-1 text-xs rounded-md capitalize transition cursor-pointer font-medium ${
+                filterType === cat
+                  ? "bg-[#0b1065] text-white"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border rounded-xl overflow-hidden shadow-sm bg-white dark:bg-slate-900">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 dark:bg-slate-800/80 border-b">
+            <tr>
+              <th className="py-2.5 px-4 text-left font-semibold">Timestamp</th>
+              <th className="py-2.5 px-4 text-left font-semibold">User</th>
+              <th className="py-2.5 px-4 text-left font-semibold">Action</th>
+              <th className="py-2.5 px-4 text-left font-semibold">Category</th>
+              <th className="py-2.5 px-4 text-left font-semibold">Details / DB Change</th>
+              <th className="py-2.5 px-4 text-center font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {auditQuery.isLoading ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center text-slate-400">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-slate-300" />
+                  Loading your account audit trail…
+                </td>
+              </tr>
+            ) : filteredLogs.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-12 text-center">
+                  <Activity className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                  <p className="text-slate-600 dark:text-slate-300 font-medium text-xs">No audit logs found for your account.</p>
+                  <p className="text-slate-400 text-[11px] mt-0.5">
+                    {searchTerm || filterType !== "all"
+                      ? "No records match the current search or category filter."
+                      : "Actions like updating properties, units, recording payments, or changing settings will appear here."}
+                  </p>
+                </td>
+              </tr>
+            ) : (
+              filteredLogs.map((log, idx) => (
+                <tr key={log._id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                  <td className="py-3 px-4 text-muted-foreground whitespace-nowrap font-mono text-[11px]">
+                    {fmtTime(log.timestamp)}
+                  </td>
+                  <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                    {log.user || user?.name || "Davis"}
+                  </td>
+                  <td className="py-3 px-4 font-medium text-[#0b1065] dark:text-blue-400 whitespace-nowrap">
+                    {log.action}
+                  </td>
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    <span className="capitalize px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                      {log.type || "general"}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-slate-600 dark:text-slate-300 max-w-md">
+                    {log.description || "—"}
+                  </td>
+                  <td className="py-3 px-4 text-center whitespace-nowrap">
+                    <Badge className={`text-[10px] ${statusColor(log.status)}`}>
+                      {log.status || "success"}
+                    </Badge>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, updateProfile } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
   const { currency, changeCurrency, timezone, changeTimezone } = usePreferences();
 
-  // Active tab state matching Bomahut inner settings navigation
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("tab") || "general";
-    }
-    return "general";
-  });
+  // Active tab — driven by Wouter's reactive search string so sidebar
+  // link clicks (which use Wouter history) are instantly reflected.
+  const searchString = useSearch();
+  const activeTab = React.useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get("tab") || "general";
+  }, [searchString]);
+
   const [isSaving, setIsSaving] = useState(false);
 
-  // Sync tab with URL and custom event
-  useEffect(() => {
-    const handleSyncTab = () => {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get("tab");
-      if (tab) {
-        setActiveTab(tab);
-      }
-    };
-
-    handleSyncTab();
-    window.addEventListener("popstate", handleSyncTab);
-    const handleCustomTab = (e) => {
-      if (e.detail?.tab) {
-        setActiveTab(e.detail.tab);
-      }
-    };
-    window.addEventListener("dwello_tab_change", handleCustomTab);
-
-    return () => {
-      window.removeEventListener("popstate", handleSyncTab);
-      window.removeEventListener("dwello_tab_change", handleCustomTab);
-    };
-  }, []);
-
   const handleSelectTab = (tabId) => {
-    setActiveTab(tabId);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tabId);
     window.history.pushState({}, "", url.toString());
-    // Also notify sidebar
-    window.dispatchEvent(new CustomEvent("dwello_tab_change", { detail: { tab: tabId } }));
+    // Dispatch a popstate so Wouter's useSearch re-reads the URL
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
   };
 
   // General Settings State matching Bomahut General tab
@@ -173,11 +386,15 @@ export default function SettingsPage() {
   });
   const [teamFinancialTotals, setTeamFinancialTotals] = useState(true);
 
-  const [teamMembers, setTeamMembers] = useState([
-    { id: "1", name: "David M.", email: "david@dwello.co.ke", role: "Administrator", status: "Active" },
-    { id: "2", name: "Joseph K.", email: "joseph@dwello.co.ke", role: "Caretaker", status: "Active" },
-    { id: "3", name: "Sarah W.", email: "sarah@dwello.co.ke", role: "Accountant", status: "Active" }
-  ]);
+  const [teamMembers, setTeamMembers] = useState(() => {
+    try {
+      const saved = localStorage.getItem("dwello_team_members");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  });
   const [newTeamEmail, setNewTeamEmail] = useState("");
   const [newTeamRole, setNewTeamRole] = useState("Caretaker");
 
@@ -225,15 +442,54 @@ export default function SettingsPage() {
     { id: "backup", label: "Backup" }
   ];
 
-  const handleSaveGeneral = () => {
+  // Fetch live settings from database
+  const { data: serverSettings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings
+  });
+
+  useEffect(() => {
+    if (serverSettings && Object.keys(serverSettings).length > 0) {
+      setGeneralSettings((prev) => ({
+        ...prev,
+        companyName: serverSettings.orgName || prev.companyName,
+        companyAddress: serverSettings.orgAddress || prev.companyAddress,
+        currency: serverSettings.currency || prev.currency,
+        timezone: serverSettings.timezone || prev.timezone,
+        paybillNumber: serverSettings.integrations?.mpesa?.shortcode || prev.paybillNumber
+      }));
+    }
+  }, [serverSettings]);
+
+  const handleSaveGeneral = async () => {
     setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
+    try {
+      await api.updateSettings({
+        orgName: generalSettings.companyName,
+        orgAddress: generalSettings.companyAddress,
+        currency: generalSettings.currency,
+        timezone: generalSettings.timezone,
+        integrations: {
+          mpesa: {
+            shortcode: generalSettings.paybillNumber
+          }
+        }
+      });
+      if (generalSettings.currency) changeCurrency(generalSettings.currency);
+      if (generalSettings.timezone) changeTimezone(generalSettings.timezone);
       toast({
         title: "Settings Saved",
-        description: "General organization parameters have been updated successfully."
+        description: "General organization parameters have been saved to the database."
       });
-    }, 400);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: err.message || "Could not save settings."
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExportBackup = (format = "json") => {
@@ -761,9 +1017,9 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setTeamView("list")}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
                   >
-                    &larr; Back
+                    ← Back
                   </button>
                 </div>
 
@@ -1039,9 +1295,9 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setTeamView("list")}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-[#0b1065] border border-[#0b1065] rounded-md hover:bg-[#161c8a] transition cursor-pointer shadow-sm"
                   >
-                    &larr; Back
+                    ← Back
                   </button>
                 </div>
               </div>
@@ -1071,22 +1327,34 @@ export default function SettingsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {teamMembers.map((member) => (
-                        <tr key={member.id} className="hover:bg-slate-50/50">
-                          <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">{member.name}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{member.email}</td>
-                          <td className="py-3 px-4"><Badge variant="outline" className="text-[10px]">{member.role}</Badge></td>
-                          <td className="py-3 px-4 text-emerald-600 font-medium">{member.status}</td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              onClick={() => setTeamMembers(teamMembers.filter((m) => m.id !== member.id))}
-                              className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                      {teamMembers.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-400 text-xs">
+                            No team members added yet. Click &quot;Add Team Member&quot; to invite caretakers, managers, or accountants.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        teamMembers.map((member) => (
+                          <tr key={member.id} className="hover:bg-slate-50/50">
+                            <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">{member.name}</td>
+                            <td className="py-3 px-4 text-muted-foreground">{member.email}</td>
+                            <td className="py-3 px-4"><Badge variant="outline" className="text-[10px]">{member.role}</Badge></td>
+                            <td className="py-3 px-4 text-emerald-600 font-medium">{member.status || "Active"}</td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                onClick={() => {
+                                  const next = teamMembers.filter((m) => m.id !== member.id);
+                                  setTeamMembers(next);
+                                  localStorage.setItem("dwello_team_members", JSON.stringify(next));
+                                }}
+                                className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1168,18 +1436,22 @@ export default function SettingsPage() {
                   MPESA Transactions Status
                 </h2>
                 <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
-                  Daraja Connected
+                  Daraja Ready
                 </Badge>
               </div>
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border space-y-2 text-xs">
                 <p className="font-semibold text-slate-800 dark:text-slate-200">Live Callbacks:</p>
-                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded border">
-                  <span className="font-mono text-[11px] text-muted-foreground">https://api.dwello.co.ke/api/mpesa/c2b-validation</span>
-                  <span className="text-[10px] text-blue-600 font-medium">Validation URL</span>
+                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2.5 rounded border">
+                  <span className="font-mono text-[11px] text-muted-foreground break-all">
+                    {typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-validation
+                  </span>
+                  <span className="text-[10px] text-blue-600 font-medium shrink-0 ml-2">Validation URL</span>
                 </div>
-                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded border">
-                  <span className="font-mono text-[11px] text-muted-foreground">https://api.dwello.co.ke/api/mpesa/c2b-confirmation</span>
-                  <span className="text-[10px] text-emerald-600 font-medium">Confirmation URL</span>
+                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2.5 rounded border">
+                  <span className="font-mono text-[11px] text-muted-foreground break-all">
+                    {typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-confirmation
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-medium shrink-0 ml-2">Confirmation URL</span>
                 </div>
               </div>
             </div>
@@ -1682,46 +1954,8 @@ export default function SettingsPage() {
           )}
 
           {/* ────────────────── 10. AUDIT TRAIL ────────────────── */}
-          {activeTab === "audit" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                  Audit Trail
-                </h2>
-                <Button variant="outline" size="sm" onClick={() => toast({ title: "Refreshed" })} className="text-xs">
-                  <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
-                </Button>
-              </div>
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/80 border-b">
-                    <tr>
-                      <th className="py-2.5 px-4 text-left font-semibold">Timestamp</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">User</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">Action</th>
-                      <th className="py-2.5 px-4 text-left font-semibold">Details</th>
-                      <th className="py-2.5 px-4 text-center font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {[
-                      { time: "17 Oct 2026, 11:42 AM", user: "Admin Manager", action: "Record Payment", details: "Recorded KES 25,000 for Unit G1 via M-Pesa", status: "Success" },
-                      { time: "17 Oct 2026, 10:15 AM", user: "System Job", action: "Batch Reminders", details: "Dispatched 13 SMS reminders to arrears list", status: "Success" },
-                      { time: "16 Oct 2026, 03:22 PM", user: "Sarah W. (Accountant)", action: "Generate Invoices", details: "Created monthly rent invoices for portfolio", status: "Success" }
-                    ].map((log, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50">
-                        <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">{log.time}</td>
-                        <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-100">{log.user}</td>
-                        <td className="py-3 px-4 font-medium">{log.action}</td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-300">{log.details}</td>
-                        <td className="py-3 px-4 text-center"><Badge className="bg-emerald-500/10 text-emerald-600 text-[10px]">{log.status}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          {activeTab === "audit" && <AuditTrailTab />}
+
 
           {/* ────────────────── 11. BACKUP ────────────────── */}
           {activeTab === "backup" && (

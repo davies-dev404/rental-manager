@@ -378,8 +378,14 @@ export const api = {
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(paymentData)
     });
-    if (!response.ok) throw new Error("Failed to record payment");
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to record payment");
+    }
     return await response.json();
+  },
+  addPayment: async (paymentData) => {
+    return await api.recordPayment(paymentData);
   },
   
   emailReceipt: async (paymentId) => {
@@ -557,6 +563,27 @@ export const api = {
       });
       if (!response.ok) throw new Error("Failed to submit return");
       return await response.json();
+  },
+  getActivityLogs: async () => {
+    try {
+      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  },
+  clearActivityLogs: async () => {
+    try {
+      const response = await fetch(`${API_URL}/activity-logs/clear`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   },
   resetData: async () => { localStorage.clear(); window.location.reload(); }
 };

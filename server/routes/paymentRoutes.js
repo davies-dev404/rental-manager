@@ -91,9 +91,25 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/', protect, async (req, res) => {
   try {
-    const { rentAmount, depositAmount, utilityAmount, utilities, nextPaymentDate, tenantId, date, method, status, monthCovered } = req.body;
+    const { 
+      amount,
+      rentAmount, 
+      depositAmount, 
+      utilityAmount, 
+      utilities, 
+      nextPaymentDate, 
+      tenantId, 
+      unitId: reqUnitId,
+      unit: unitNumber,
+      tenant: tenantName,
+      date, 
+      method, 
+      status, 
+      monthCovered,
+      reference 
+    } = req.body;
     
-    const rAmt = Number(rentAmount || 0);
+    let rAmt = Number(rentAmount || 0);
     const dAmt = Number(depositAmount || 0);
     
     // Calculate total utility amount from utilities breakdown if provided
@@ -103,7 +119,12 @@ router.post('/', protect, async (req, res) => {
         uAmt = uList.reduce((acc, u) => acc + Number(u.amount || 0), 0);
     }
 
-    const totalAmount = rAmt + dAmt + uAmt;
+    // If generic amount is provided and rentAmount wasn't specified, allocate remainder to rentAmount
+    if (amount !== undefined && amount !== null && Number(amount) > 0 && rAmt === 0 && dAmt === 0 && uAmt === 0) {
+        rAmt = Number(amount);
+    }
+
+    const totalAmount = (amount && Number(amount) > 0) ? Number(amount) : (rAmt + dAmt + uAmt);
 
     const normalizedStatus = (status || 'paid').toLowerCase();
     const isUnpaid = ['pending', 'unpaid', 'overdue'].includes(normalizedStatus);
@@ -112,7 +133,7 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ message: "No payment amount provided" });
     }
 
-    let paymentType = 'Rent';
+    let paymentType = req.body.type || 'Rent';
     const components = [];
     if (rAmt > 0) components.push('Rent');
     if (dAmt > 0) components.push('Deposit');
@@ -121,25 +142,51 @@ router.post('/', protect, async (req, res) => {
     else if (components.length === 1) paymentType = components[0];
 
     const Tenant = require('../models/Tenant');
-    const tenant = await Tenant.findById(tenantId);
+    const Unit = require('../models/Unit');
+    let tenant = null;
+
+    if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+        tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id });
+    }
     
-    if (!tenant) {
-        return res.status(404).json({ message: "Tenant not found" });
+    if (!tenant && tenantName) {
+        tenant = await Tenant.findOne({ name: new RegExp('^' + tenantName + '$', 'i'), user: req.user.id });
     }
 
+    if (!tenant && unitNumber) {
+        const matchingUnit = await Unit.findOne({ unitNumber: new RegExp('^' + unitNumber + '$', 'i'), user: req.user.id });
+        if (matchingUnit) {
+            tenant = await Tenant.findOne({ unitId: matchingUnit._id, user: req.user.id });
+        }
+    }
+
+    // Fallback: pick any tenant if none specified or find the first active tenant
+    if (!tenant && !tenantId) {
+        tenant = await Tenant.findOne({ user: req.user.id, status: 'active' });
+    }
+    
+    if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found for this payment" });
+    }
+
+    const finalUnitId = tenant.unitId || reqUnitId;
+    const paymentDate = date ? new Date(date) : new Date();
+    const defaultMonth = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
+
     const payment = await Payment.create({
-        tenantId,
-        unitId: tenant.unitId,
+        tenantId: tenant._id,
+        unitId: finalUnitId,
         amount: totalAmount,
-        rentAmount: rAmt,
+        rentAmount: rAmt > 0 ? rAmt : totalAmount,
         depositAmount: dAmt,
         utilityAmount: uAmt,
         utilities: uList,
-        date: date || new Date(),
+        date: paymentDate,
         method: method || 'cash',
         status: status || 'paid',
-        monthCovered: rAmt > 0 || uAmt > 0 ? monthCovered : 'Deposit',
+        monthCovered: monthCovered || defaultMonth,
         type: paymentType,
+        reference: reference || req.body.transactionId || undefined,
         user: req.user.id
     });
 

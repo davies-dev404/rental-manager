@@ -3,6 +3,9 @@ const router = express.Router();
 const Settings = require('../models/Settings');
 const nodemailer = require('nodemailer');
 
+const { protect } = require('../middleware/authMiddleware');
+const logActivity = require('../utils/logActivity');
+
 // @desc    Get all settings
 // @route   GET /api/settings
 // @access  Private (Admin)
@@ -22,7 +25,7 @@ router.get('/', async (req, res) => {
 // @desc    Update settings
 // @route   PUT /api/settings
 // @access  Private (Admin)
-router.put('/', async (req, res) => {
+router.put('/', protect, async (req, res) => {
   try {
     let settings = await Settings.findOne();
     if (!settings) {
@@ -51,6 +54,9 @@ router.put('/', async (req, res) => {
     }
     
     await settings.save();
+    if (req.user) {
+      await logActivity(req.user, 'Settings Updated', 'General configurations and preferences updated', 'settings', 'success');
+    }
     res.json(settings);
   } catch (error) {
     res.status(500).json({ message: error.message });

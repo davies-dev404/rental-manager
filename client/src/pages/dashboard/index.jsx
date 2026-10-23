@@ -36,11 +36,36 @@ export default function Dashboard() {
   // Show all arrears toggle
   const [showAllArrears, setShowAllArrears] = useState(false);
 
+  // Banner visibility states (persisted in localStorage)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return localStorage.getItem("dwello_dismiss_onboarding") !== "true";
+  });
+  const [showAiBanner, setShowAiBanner] = useState(() => {
+    return localStorage.getItem("dwello_dismiss_aibot") !== "true";
+  });
+
+  const handleDismissOnboarding = () => {
+    setShowOnboarding(false);
+    localStorage.setItem("dwello_dismiss_onboarding", "true");
+  };
+
+  const handleDismissAiBanner = () => {
+    setShowAiBanner(false);
+    localStorage.setItem("dwello_dismiss_aibot", "true");
+  };
+
   // Live queries from backend
   const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ["stats"],
     queryFn: api.getStats
   });
+
+  const { data: properties = [] } = useQuery({
+    queryKey: ["properties"],
+    queryFn: api.getProperties
+  });
+
+  const [selectedPropertyId, setSelectedPropertyId] = useState("all");
 
   const { data: debtors = [], isLoading: isDebtorsLoading } = useQuery({
     queryKey: ["debtors"],
@@ -66,18 +91,36 @@ export default function Dashboard() {
       ? Math.min(100, Math.round((totalPaid / totalBilled) * 100))
       : 0;
 
-  // Format real debtors list
+  // Format real debtors list with robust property resolution
   const arrearsList = Array.isArray(debtors)
-    ? debtors.map((d, index) => ({
-        id: d._id || String(index),
-        unit: d.unitId?.unitNumber || d.unitNumber || "N/A",
-        name: d.name || "Tenant",
-        amount: Number(d.balance || d.rentAmount || 0),
-        phone: d.phone || ""
-      }))
+    ? debtors.map((d, index) => {
+        const tObj = d.tenant || d;
+        const tenantName = tObj.name || d.name || "Tenant";
+        const unitNumber = tObj.unitId?.unitNumber || tObj.unitNumber || d.unitNumber || (typeof d.unitId === "string" ? d.unitId : d.unitId?.unitNumber) || d.unit || "N/A";
+        const dueAmount = Number(d.totalDue ?? d.balance ?? d.rentDue ?? tObj.rentAmount ?? d.amount ?? 0);
+        const phone = tObj.phone || d.phone || "";
+        const id = tObj._id || d._id || String(index);
+
+        return {
+          id,
+          unit: unitNumber,
+          name: tenantName,
+          amount: dueAmount,
+          phone
+        };
+      })
     : [];
 
   const displayedArrears = showAllArrears ? arrearsList : arrearsList.slice(0, 5);
+
+  // Compute actual onboarding progress
+  const hasProperties = (properties?.length || 0) > 0;
+  const hasUnits = totalUnits > 0;
+  const hasTenants = (stats?.totalTenants || 0) > 0;
+  const hasPayments = totalPaid > 0;
+
+  const onboardingStepsCompleted = [hasProperties, hasUnits, hasTenants, hasPayments].filter(Boolean).length;
+  const onboardingPercent = onboardingStepsCompleted * 25;
 
   // Monthly Chart Data from backend 6-month trend or current month
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -101,6 +144,39 @@ export default function Dashboard() {
         ];
 
   const openModal = (type, data = {}) => {
+    // Route directly to the real pages & dedicated forms
+    if (type === "add_property") {
+      setLocation("/properties?action=add");
+      return;
+    }
+    if (type === "record_payment") {
+      setLocation("/financials/payments?action=record");
+      return;
+    }
+    if (type === "add_tenant") {
+      setLocation("/tenants?action=add");
+      return;
+    }
+    if (type === "add_unit") {
+      setLocation("/units?action=add");
+      return;
+    }
+    if (type === "upload_bank_statement") {
+      setLocation("/financials/payments?action=upload_statement");
+      return;
+    }
+    if (type === "maintenance") {
+      setLocation("/maintenance");
+      return;
+    }
+    if (type === "settings") {
+      setLocation("/settings");
+      return;
+    }
+    if (type === "send_reminders") {
+      setLocation("/reminders");
+      return;
+    }
     setModalData(data);
     setActiveModal(type);
   };
@@ -128,56 +204,119 @@ export default function Dashboard() {
     <div className="space-y-4 max-w-7xl mx-auto pb-16">
       {/* Property Selector Bar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 shadow-2xs">
-        <span className="font-medium">No properties yet — add one from the Properties page</span>
-        <ChevronRight className="w-4 h-4 text-slate-400 rotate-90" />
-      </div>
-
-      {/* Stuck on something? Banner */}
-      <div className="bg-white dark:bg-slate-900 border-l-4 border-l-teal-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-xs text-slate-900 dark:text-white">Stuck on something? Ask MakaaziBot</span>
-            <button
-              onClick={() => {
-                const el = document.getElementById("open-ai-chat-btn");
-                if (el) el.click();
-              }}
-              className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
-            >
-              Ask MakaaziBot
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-500 italic mt-0.5">
-            Try "How do I add a payment?" or "How do I remove a tenant who has left?"
-          </p>
-        </div>
-        <button className="text-slate-400 hover:text-slate-600 text-sm leading-none">&times;</button>
-      </div>
-
-      {/* Onboarding Progress Banner */}
-      <div className="bg-white dark:bg-slate-900 border-l-4 border-l-rose-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-xs text-slate-900 dark:text-white">
-              You have completed <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded text-[10px]">0%</span> onboarding
-            </span>
+        {properties.length === 0 ? (
+          <button 
+            onClick={() => openModal("add_property")}
+            className="flex items-center justify-between w-full text-left font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
+          >
+            <span>No properties yet — click here to add your first property</span>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+        ) : (
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">Active Property:</span>
+              <select
+                value={selectedPropertyId}
+                onChange={(e) => setSelectedPropertyId(e.target.value)}
+                className="bg-transparent font-medium border-0 focus:ring-0 text-slate-900 dark:text-white cursor-pointer"
+              >
+                <option value="all">All Properties ({properties.length} Total)</option>
+                {properties.map((p) => (
+                  <option key={p._id || p.id} value={p._id || p.id}>
+                    {p.name} ({p.location || "Kenya"})
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               onClick={() => openModal("add_property")}
               className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
             >
-              View onboarding progress
+              + Add Property
             </button>
           </div>
-          <button className="text-slate-400 hover:text-slate-600 text-sm leading-none">&times;</button>
-        </div>
-        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-2.5 overflow-hidden">
-          <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: "0%" }} />
-        </div>
-        <div className="flex items-center justify-between mt-1.5 text-[11px] text-slate-400">
-          <span>0% completed</span>
-          <span className="italic">Please complete these tasks to get started with the app.</span>
-        </div>
+        )}
       </div>
+
+      {/* Stuck on something? Banner */}
+      {showAiBanner && (
+        <div className="bg-white dark:bg-slate-900 border-l-4 border-l-teal-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-xs text-slate-900 dark:text-white">Stuck on something? Ask MakaaziBot</span>
+              <button
+                onClick={() => {
+                  const el = document.getElementById("open-ai-chat-btn");
+                  if (el) el.click();
+                }}
+                className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
+              >
+                Ask MakaaziBot
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 italic mt-0.5">
+              Try "How do I add a payment?" or "How do I remove a tenant who has left?"
+            </p>
+          </div>
+          <button 
+            onClick={handleDismissAiBanner}
+            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none cursor-pointer p-1"
+            title="Dismiss banner"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Onboarding Progress Banner */}
+      {showOnboarding && (
+        <div className="bg-white dark:bg-slate-900 border-l-4 border-l-blue-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-xs text-slate-900 dark:text-white">
+                You have completed <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded text-[10px]">{onboardingPercent}%</span> onboarding
+              </span>
+              {onboardingPercent < 100 && (
+                <button
+                  onClick={() => {
+                    if (!hasProperties) openModal("add_property");
+                    else if (!hasUnits) openModal("add_unit");
+                    else if (!hasTenants) openModal("add_tenant");
+                    else openModal("record_payment");
+                  }}
+                  className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
+                >
+                  {!hasProperties ? "Next: Add Property" : !hasUnits ? "Next: Add Unit" : !hasTenants ? "Next: Add Tenant" : "Next: Record Payment"}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+                {onboardingStepsCompleted} of 4 setup milestones
+              </span>
+              <button 
+                onClick={handleDismissOnboarding}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none cursor-pointer p-1"
+                title="Dismiss onboarding banner"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+          <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-2.5 overflow-hidden">
+            <div className="bg-blue-600 h-2 rounded-full transition-all duration-500" style={{ width: `${onboardingPercent}%` }} />
+          </div>
+          <div className="flex items-center justify-between mt-1.5 text-[11px] text-slate-400">
+            <span>{onboardingPercent}% completed</span>
+            <span className="italic">
+              {onboardingPercent === 100 
+                ? "All core setup milestones reached!" 
+                : "Complete properties, units, tenants, and initial payments to finalize onboarding."}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ────────────────── ROW 1: Arrears & Advance Payments ────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -22,7 +22,25 @@ import {
   Power,
   Zap,
   Wrench,
-  FileText
+  FileText,
+  Receipt,
+  CreditCard,
+  TrendingDown,
+  Building2,
+  Layers,
+  FolderTree,
+  FileSpreadsheet,
+  Sparkles,
+  Sliders,
+  Database,
+  Bell,
+  UserCheck,
+  Files,
+  MessageSquare,
+  Users,
+  FormInput,
+  Smartphone,
+  History
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
@@ -104,9 +122,9 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Financials",
       hasSubmenu: true,
       subItems: [
-        { label: "Invoices", href: "/financials/invoices" },
-        { label: "Payments", href: "/financials/payments" },
-        { label: "Expenses", href: "/financials/expenses" }
+        { label: "Invoices", href: "/financials/invoices", icon: Receipt },
+        { label: "Payments", href: "/financials/payments", icon: CreditCard },
+        { label: "Expenses", href: "/financials/expenses", icon: TrendingDown }
       ]
     },
     {
@@ -121,11 +139,11 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Property/Unit",
       hasSubmenu: true,
       subItems: [
-        { label: "Properties", href: "/properties" },
-        { label: "Units", href: "/units" },
-        { label: "Utilities", href: "/utilities" },
-        { label: "Maintenance", href: "/maintenance" },
-        { label: "Property Grouping", href: "/property-grouping" }
+        { label: "Properties", href: "/properties", icon: Building2 },
+        { label: "Units", href: "/units", icon: Layers },
+        { label: "Utilities", href: "/utilities", icon: Zap },
+        { label: "Maintenance", href: "/maintenance", icon: Wrench },
+        { label: "Property Grouping", href: "/property-grouping", icon: FolderTree }
       ]
     },
     {
@@ -134,8 +152,8 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Reports",
       hasSubmenu: true,
       subItems: [
-        { label: "Statements", href: "/reports/statements" },
-        { label: "Insights (beta)", href: "/reports/insights" }
+        { label: "Statements", href: "/reports/statements", icon: FileSpreadsheet },
+        { label: "Insights (beta)", href: "/reports/insights", icon: Sparkles }
       ]
     },
     {
@@ -150,17 +168,17 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Settings",
       hasSubmenu: true,
       subItems: [
-        { label: "General", href: "/settings?tab=general", tabId: "general" },
-        { label: "Backup", href: "/settings?tab=backup", tabId: "backup" },
-        { label: "Alerts", href: "/settings?tab=alerts", tabId: "alerts" },
-        { label: "Account Info", href: "/settings?tab=account", tabId: "account" },
-        { label: "Documents (beta)", href: "/settings?tab=documents", tabId: "documents" },
-        { label: "Custom Message Template", href: "/settings?tab=templates", tabId: "templates" },
-        { label: "Team", href: "/settings?tab=team", tabId: "team" },
-        { label: "Custom Fields", href: "/settings?tab=custom_fields", tabId: "custom_fields" },
-        { label: "Billing", href: "/settings?tab=billing", tabId: "billing" },
-        { label: "MPESA Transactions", href: "/settings?tab=mpesa", tabId: "mpesa" },
-        { label: "Audit Trail", href: "/settings?tab=audit", tabId: "audit" }
+        { label: "General", href: "/settings?tab=general", tabId: "general", icon: Sliders },
+        { label: "Backup", href: "/settings?tab=backup", tabId: "backup", icon: Database },
+        { label: "Alerts", href: "/settings?tab=alerts", tabId: "alerts", icon: Bell },
+        { label: "Account Info", href: "/settings?tab=account", tabId: "account", icon: UserCheck },
+        { label: "Documents (beta)", href: "/settings?tab=documents", tabId: "documents", icon: Files },
+        { label: "Custom Message Template", href: "/settings?tab=templates", tabId: "templates", icon: MessageSquare },
+        { label: "Team", href: "/settings?tab=team", tabId: "team", icon: Users },
+        { label: "Custom Fields", href: "/settings?tab=custom_fields", tabId: "custom_fields", icon: FormInput },
+        { label: "Billing", href: "/settings?tab=billing", tabId: "billing", icon: CreditCard },
+        { label: "MPESA Transactions", href: "/settings?tab=mpesa", tabId: "mpesa", icon: Smartphone },
+        { label: "Audit Trail", href: "/settings?tab=audit", tabId: "audit", icon: History }
       ]
     }
   ];
@@ -277,6 +295,8 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                 {isExpanded && (
                   <div className="space-y-0.5 py-0.5 animate-in fade-in duration-200">
                     {item.subItems.map((sub, sIdx) => {
+                      const SubIcon = sub.icon;
+
                       if (sub.action) {
                         return (
                           <button
@@ -286,9 +306,12 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                               if (onOpenModal) onOpenModal(sub.action);
                               if (onClose) onClose();
                             }}
-                            className="w-full text-left pl-12 pr-4 py-2 text-[13px] text-[#7fa8c0] hover:text-white hover:bg-[#132d4a]/40 transition-colors block cursor-pointer"
+                            className="w-full flex items-center gap-2.5 pl-10 pr-4 py-2 text-[13px] text-[#7fa8c0] hover:text-white hover:bg-[#132d4a]/40 transition-colors cursor-pointer text-left"
                           >
-                            {sub.label}
+                            {SubIcon && (
+                              <SubIcon className="w-3.5 h-3.5 shrink-0 text-[#7fa8c0]" />
+                            )}
+                            <span>{sub.label}</span>
                           </button>
                         );
                       }
@@ -311,7 +334,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                           href={sub.href}
                           onClick={() => handleTabClick(sub.href)}
                           className={cn(
-                            "relative pl-12 pr-4 py-2 text-[13px] transition-colors block cursor-pointer",
+                            "relative flex items-center gap-2.5 pl-10 pr-4 py-2 text-[13px] transition-colors cursor-pointer",
                             isSubActive
                               ? "text-white font-semibold bg-[#132d4a]/80"
                               : "text-[#7fa8c0] hover:text-white hover:bg-[#132d4a]/40"
@@ -319,6 +342,14 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
                         >
                           {isSubActive && (
                             <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#00a99d] rounded-r-lg" />
+                          )}
+                          {SubIcon && (
+                            <SubIcon
+                              className={cn(
+                                "w-3.5 h-3.5 shrink-0 transition-colors",
+                                isSubActive ? "text-[#00a99d]" : "text-[#7fa8c0]"
+                              )}
+                            />
                           )}
                           <span>{sub.label}</span>
                         </Link>
