@@ -8,6 +8,9 @@ const sendEmail = require('../utils/sendEmail');
 const startRentReminders = () => {
   cron.schedule('* * * * *', async () => {
     try {
+      if (require('mongoose').connection.readyState !== 1) {
+        return;
+      }
       const now = new Date();
       
       // Find pending reminders due now or in the past

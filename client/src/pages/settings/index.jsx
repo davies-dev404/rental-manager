@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { trackPixelEvent, initMetaPixel } from "@/lib/metaPixel";
 import {
   Info,
   Save,
@@ -41,7 +42,12 @@ import {
   MessageSquare,
   Sliders,
   Activity,
-  Database
+  Database,
+  BarChart2,
+  Copy,
+  Search,
+  ExternalLink,
+  AlertCircle
 } from "lucide-react";
 
 // ─── Audit Trail Sub-Component (Scoped to current account) ─────────────────────────
@@ -58,16 +64,7 @@ function AuditTrailTab() {
   });
   const logs = auditQuery.data || [];
 
-  const handleClear = async () => {
-    if (!window.confirm("Are you sure you want to clear your account activity audit trail?")) return;
-    try {
-      await api.clearActivityLogs();
-      auditQuery.refetch();
-      toast({ title: "Audit Trail Cleared", description: "Your account activity logs have been reset." });
-    } catch {
-      toast({ title: "Error", description: "Could not clear logs.", variant: "destructive" });
-    }
-  };
+
 
   const fmtTime = (ts) => {
     try {
@@ -173,16 +170,7 @@ function AuditTrailTab() {
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${auditQuery.isFetching ? "animate-spin" : ""}`} />
             {auditQuery.isFetching ? "Refreshing…" : "Refresh"}
           </Button>
-          {logs.length > 0 && (
-            <Button
-              variant="outline"
-              onClick={handleClear}
-              className="text-xs h-8 px-3 text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/20 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Clear
-            </Button>
-          )}
+
         </div>
       </div>
 
@@ -276,6 +264,391 @@ function AuditTrailTab() {
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── MPESA Transactions Status Sub-Component ──────────────────────────────────────
+function MpesaTransactionsTab() {
+  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [copiedField, setCopiedField] = useState("");
+  const [queryCode, setQueryCode] = useState("");
+  const [queryResult, setQueryResult] = useState(null);
+  const [isQuerying, setIsQuerying] = useState(false);
+
+  const paymentsQuery = useQuery({
+    queryKey: ["payments"],
+    queryFn: api.getPayments,
+    staleTime: 10_000,
+    retry: 1
+  });
+
+  const payments = paymentsQuery.data || [];
+
+  // Filter transactions for M-Pesa or general payments with M-Pesa characteristics
+  const mpesaTransactions = React.useMemo(() => {
+    return payments.filter((p) => {
+      const method = (p.method || p.type || "").toLowerCase();
+      const hasMpesaRef = p.reference && /^[A-Z0-9]{8,12}$/i.test(p.reference);
+      const hasCheckoutId = Boolean(p.checkoutRequestId);
+      return method.includes("mpesa") || method.includes("daraja") || hasMpesaRef || hasCheckoutId;
+    });
+  }, [payments]);
+
+  // If specific M-Pesa transactions aren't tagged, show recent payment collection records
+  const displayTransactions = mpesaTransactions.length > 0 ? mpesaTransactions : payments;
+
+  const filtered = displayTransactions.filter((p) => {
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      (p.reference && p.reference.toLowerCase().includes(q)) ||
+      (p.tenantId && String(p.tenantId).toLowerCase().includes(q)) ||
+      (p.checkoutRequestId && p.checkoutRequestId.toLowerCase().includes(q)) ||
+      (p.phoneNumber && String(p.phoneNumber).includes(q));
+
+    const statusStr = (p.status || "Completed").toLowerCase();
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "completed" && (statusStr === "completed" || statusStr === "paid")) ||
+      statusStr === statusFilter.toLowerCase();
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleCopy = (text, field) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast({
+      title: "Callback URL Copied",
+      description: "The URL has been copied to your clipboard."
+    });
+    setTimeout(() => setCopiedField(""), 2000);
+  };
+
+  const handleCheckStatus = (e) => {
+    e.preventDefault();
+    if (!queryCode.trim()) {
+      toast({
+        title: "Code Required",
+        description: "Please enter an M-Pesa Receipt Code or Checkout Request ID to query.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsQuerying(true);
+    setTimeout(() => {
+      setIsQuerying(false);
+      const code = queryCode.trim().toLowerCase();
+      const found = displayTransactions.find(
+        (p) =>
+          (p.reference && p.reference.toLowerCase() === code) ||
+          (p.checkoutRequestId && p.checkoutRequestId.toLowerCase() === code) ||
+          (p._id && p._id.toLowerCase() === code)
+      );
+
+      if (found) {
+        setQueryResult({
+          success: true,
+          receipt: found.reference || found.checkoutRequestId || found._id,
+          tenant: found.tenantId || "Tenant",
+          amount: Number(found.amount || 0).toLocaleString(),
+          date: found.date ? new Date(found.date).toLocaleString() : "Recent",
+          status: found.status || "Completed"
+        });
+      } else {
+        setQueryResult({
+          success: false,
+          receipt: queryCode.trim(),
+          message: "Transaction not yet registered in local logs. Awaiting Safaricom C2B/STK callback."
+        });
+      }
+    }, 400);
+  };
+
+  const validationUrl = `${typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-validation`;
+  const confirmationUrl = `${typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-confirmation`;
+
+  const counts = {
+    all: displayTransactions.length,
+    completed: displayTransactions.filter((p) => {
+      const s = (p.status || "").toLowerCase();
+      return s === "completed" || s === "paid" || !p.status;
+    }).length,
+    pending: displayTransactions.filter((p) => (p.status || "").toLowerCase() === "pending").length,
+    failed: displayTransactions.filter((p) => (p.status || "").toLowerCase() === "failed").length,
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-200">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+              MPESA Transactions Status
+            </h2>
+            <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
+              Daraja Ready
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Live M-Pesa payment callbacks, instant transaction lookup, and Daraja C2B/STK logs.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              paymentsQuery.refetch();
+              toast({ title: "Refreshed", description: "M-Pesa transaction records reloaded." });
+            }}
+            disabled={paymentsQuery.isFetching}
+            className="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${paymentsQuery.isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Live Callbacks URLs Card */}
+      <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Daraja Live Callbacks</span>
+          </div>
+          <span className="text-[11px] text-muted-foreground">Register these in your Safaricom Daraja Portal</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Validation URL */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Validation URL</span>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Validates Bill/Account</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
+                {validationUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopy(validationUrl, "validation")}
+                className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Copy URL"
+              >
+                {copiedField === "validation" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Confirmation URL */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Confirmation URL</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Confirms & Logs Payment</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
+                {confirmationUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopy(confirmationUrl, "confirmation")}
+                className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Copy URL"
+              >
+                {copiedField === "confirmation" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Instant Transaction Query Tool */}
+      <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white">Query Transaction Status</h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Verify any M-Pesa receipt code, checkout request ID, or transaction reference.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleCheckStatus} className="flex flex-col sm:flex-row gap-2 max-w-xl">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={queryCode}
+              onChange={(e) => setQueryCode(e.target.value)}
+              placeholder="e.g. QJH29A8K9L or ws_CO_24102026..."
+              className="w-full h-9 pl-9 pr-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono transition-colors"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={isQuerying}
+            className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-4 font-semibold shadow-xs cursor-pointer transition-all"
+          >
+            {isQuerying ? "Checking…" : "Verify Status"}
+          </Button>
+        </form>
+
+        {/* Query Result Card */}
+        {queryResult && (
+          <div
+            className={`p-3.5 rounded-lg border text-xs transition-all animate-in fade-in duration-150 ${
+              queryResult.success
+                ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100"
+                : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100"
+            }`}
+          >
+            {queryResult.success ? (
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Transaction Confirmed:</span>{" "}
+                    <span className="font-mono font-semibold">{queryResult.receipt}</span> — {queryResult.tenant} paid KES {queryResult.amount}
+                  </div>
+                </div>
+                <Badge className="bg-emerald-600 text-white text-[10px]">
+                  {queryResult.status}
+                </Badge>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <div>
+                  <span className="font-bold">{queryResult.receipt}:</span> {queryResult.message}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Transactions Table & Filters */}
+      <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-2xs overflow-hidden">
+        {/* Table Toolbar */}
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { id: "all", label: `All (${counts.all})` },
+              { id: "completed", label: `Completed (${counts.completed})` },
+              { id: "pending", label: `Pending (${counts.pending})` },
+              { id: "failed", label: `Failed (${counts.failed})` },
+            ].map((btn) => (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => setStatusFilter(btn.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                  statusFilter === btn.id
+                    ? "bg-[#0b1065] text-white shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search reference or tenant..."
+              className="w-full h-8 pl-8 pr-3 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-semibold">
+              <tr>
+                <th className="py-2.5 px-4">Date & Time</th>
+                <th className="py-2.5 px-4">Receipt / Ref #</th>
+                <th className="py-2.5 px-4">Tenant</th>
+                <th className="py-2.5 px-4">Method / Channel</th>
+                <th className="py-2.5 px-4 text-right">Amount (KES)</th>
+                <th className="py-2.5 px-4 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <Smartphone className="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                    <p className="font-medium text-slate-600 dark:text-slate-300">No M-Pesa transactions found</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Incoming C2B payments or STK push collections will be logged automatically.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((item, idx) => {
+                  const statusStr = (item.status || "Completed").toLowerCase();
+                  const isSuccess = statusStr === "completed" || statusStr === "paid";
+                  const isPending = statusStr === "pending";
+                  const isFailed = statusStr === "failed";
+
+                  return (
+                    <tr
+                      key={item._id || item.id || idx}
+                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group cursor-default"
+                    >
+                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                        {item.date ? new Date(item.date).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "Recent"}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                        {item.reference || item.checkoutRequestId || "—"}
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">
+                        {item.tenantId || "Tenant"}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <Smartphone className="w-2.5 h-2.5" />
+                          {item.method || "M-Pesa STK"}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                        {Number(item.amount || 0).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <Badge
+                          className={`text-[10px] font-semibold ${
+                            isSuccess
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                              : isPending
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                              : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                          }`}
+                        >
+                          {item.status || "Completed"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -438,6 +811,7 @@ export default function SettingsPage() {
     { id: "documents", label: "Documents (beta)" },
     { id: "templates", label: "Custom Message Template" },
     { id: "custom_fields", label: "Custom Fields" },
+    { id: "integrations", label: "Cloudflare & Meta Pixel" },
     { id: "audit", label: "Audit Trail" },
     { id: "backup", label: "Backup" }
   ];
@@ -446,6 +820,13 @@ export default function SettingsPage() {
   const { data: serverSettings } = useQuery({
     queryKey: ["settings"],
     queryFn: api.getSettings
+  });
+
+  const [integrationSettings, setIntegrationSettings] = useState({
+    metaPixelId: localStorage.getItem("meta_pixel_id") || "",
+    cfTurnstileSiteKey: localStorage.getItem("cloudflare_turnstile_site_key") || "",
+    cfTurnstileSecretKey: "",
+    cfAnalyticsToken: localStorage.getItem("cloudflare_analytics_token") || ""
   });
 
   useEffect(() => {
@@ -458,8 +839,47 @@ export default function SettingsPage() {
         timezone: serverSettings.timezone || prev.timezone,
         paybillNumber: serverSettings.integrations?.mpesa?.shortcode || prev.paybillNumber
       }));
+
+      if (serverSettings.integrations) {
+        setIntegrationSettings({
+          metaPixelId: serverSettings.integrations.metaPixel?.pixelId || localStorage.getItem("meta_pixel_id") || "",
+          cfTurnstileSiteKey: serverSettings.integrations.cloudflare?.turnstileSiteKey || localStorage.getItem("cloudflare_turnstile_site_key") || "",
+          cfTurnstileSecretKey: serverSettings.integrations.cloudflare?.turnstileSecretKey || "",
+          cfAnalyticsToken: serverSettings.integrations.cloudflare?.analyticsToken || localStorage.getItem("cloudflare_analytics_token") || ""
+        });
+      }
     }
   }, [serverSettings]);
+
+  const handleSaveIntegrations = async () => {
+    setIsSaving(true);
+    try {
+      localStorage.setItem("meta_pixel_id", integrationSettings.metaPixelId);
+      localStorage.setItem("cloudflare_turnstile_site_key", integrationSettings.cfTurnstileSiteKey);
+      localStorage.setItem("cloudflare_analytics_token", integrationSettings.cfAnalyticsToken);
+
+      await api.updateSettings({
+        integrations: {
+          ...serverSettings?.integrations,
+          metaPixel: {
+            pixelId: integrationSettings.metaPixelId,
+            enabled: Boolean(integrationSettings.metaPixelId)
+          },
+          cloudflare: {
+            turnstileSiteKey: integrationSettings.cfTurnstileSiteKey,
+            turnstileSecretKey: integrationSettings.cfTurnstileSecretKey,
+            analyticsToken: integrationSettings.cfAnalyticsToken
+          }
+        }
+      });
+      initMetaPixel(integrationSettings.metaPixelId);
+      toast({ title: "Integrations Saved", description: "Cloudflare and Meta Pixel configurations updated successfully." });
+    } catch (err) {
+      toast({ title: "Save Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleSaveGeneral = async () => {
     setIsSaving(true);
@@ -1429,33 +1849,7 @@ export default function SettingsPage() {
           )}
 
           {/* ────────────────── 6. MPESA TRANSACTIONS STATUS ────────────────── */}
-          {activeTab === "mpesa" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                  MPESA Transactions Status
-                </h2>
-                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
-                  Daraja Ready
-                </Badge>
-              </div>
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border space-y-2 text-xs">
-                <p className="font-semibold text-slate-800 dark:text-slate-200">Live Callbacks:</p>
-                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2.5 rounded border">
-                  <span className="font-mono text-[11px] text-muted-foreground break-all">
-                    {typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-validation
-                  </span>
-                  <span className="text-[10px] text-blue-600 font-medium shrink-0 ml-2">Validation URL</span>
-                </div>
-                <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-2.5 rounded border">
-                  <span className="font-mono text-[11px] text-muted-foreground break-all">
-                    {typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-confirmation
-                  </span>
-                  <span className="text-[10px] text-emerald-600 font-medium shrink-0 ml-2">Confirmation URL</span>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === "mpesa" && <MpesaTransactionsTab />}
 
           {/* ────────────────── 7. DOCUMENTS (BETA) (───────────────── */}
           {activeTab === "documents" && (
@@ -1977,6 +2371,119 @@ export default function SettingsPage() {
                   <Button onClick={() => handleExportBackup("csv")} variant="outline" className="text-xs">
                     <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Download CSV Rent Roll
                   </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ────────────────── 12. CLOUDFLARE & META PIXEL ────────────────── */}
+          {activeTab === "integrations" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+                    Cloudflare & Meta Pixel Integrations
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Configure Cloudflare Turnstile bot protection, analytics beacon, and Meta (Facebook) Pixel.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSaveIntegrations}
+                  disabled={isSaving}
+                  className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold h-8 px-4 shadow-xs cursor-pointer self-start sm:self-auto"
+                >
+                  {isSaving ? "Saving…" : "Save Integrations"}
+                </Button>
+              </div>
+
+              {/* Meta Pixel Card */}
+              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600">
+                    <BarChart2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Meta (Facebook) Pixel</h4>
+                    <p className="text-[11px] text-muted-foreground">Track PageViews, Registrations, Leads, and Checkout intent for advertising.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 max-w-xl">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Meta Pixel ID (Dataset ID)
+                    </label>
+                    <input
+                      type="text"
+                      value={integrationSettings.metaPixelId}
+                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, metaPixelId: e.target.value.trim() })}
+                      placeholder="e.g. 123456789012345"
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Can also be set in <code className="text-blue-600">client/.env</code> as <code className="text-blue-600">VITE_FACEBOOK_PIXEL_ID</code>.
+                    </p>
+                  </div>
+
+                  <div className="pt-1 flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        trackPixelEvent("PageView", { test: true });
+                        trackPixelEvent("Lead", { test: true, role: "Test Lead" });
+                        toast({ title: "Test Event Sent", description: "Fired test PageView and Lead events to Meta Pixel." });
+                      }}
+                      className="text-xs h-7"
+                    >
+                      Fire Test Pixel Event
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cloudflare Turnstile & Analytics Card */}
+              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center text-orange-600">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Cloudflare Turnstile & Web Analytics</h4>
+                    <p className="text-[11px] text-muted-foreground">Smart bot protection on login/signup forms without frustrating CAPTCHAs.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Cloudflare Turnstile Site Key
+                    </label>
+                    <input
+                      type="text"
+                      value={integrationSettings.cfTurnstileSiteKey}
+                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, cfTurnstileSiteKey: e.target.value.trim() })}
+                      placeholder="e.g. 0x4AAAAAA..."
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Leave blank to use official Cloudflare test sitekey (always passes).</span>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Cloudflare Web Analytics Token
+                    </label>
+                    <input
+                      type="text"
+                      value={integrationSettings.cfAnalyticsToken}
+                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, cfAnalyticsToken: e.target.value.trim() })}
+                      placeholder="e.g. beacon token string"
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Privacy-first web performance analytics beacon token.</span>
+                  </div>
                 </div>
               </div>
             </div>

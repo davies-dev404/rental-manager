@@ -1,4 +1,5 @@
-import { Switch, Route, Redirect } from "wouter";
+import { useEffect } from "react";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,6 +8,8 @@ import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import LoginPage from "@/pages/auth/Login";
 import AppLayout from "@/components/layout/AppLayout";
+import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
+import { initMetaPixel, trackPageView } from "@/lib/metaPixel";
 import Dashboard from "@/pages/dashboard";
 import PropertiesPage from "@/pages/properties";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -30,6 +33,7 @@ import MaintenancePage from "@/pages/properties/MaintenancePage";
 import UnitsPage from "@/pages/properties/UnitsPage";
 import StatementsPage from "@/pages/reports/StatementsPage";
 import InsightsPage from "@/pages/reports/InsightsPage";
+
 function PrivateRoute({ component: Component, ...rest }) {
     const { user, isLoading } = useAuth();
 
@@ -39,12 +43,29 @@ function PrivateRoute({ component: Component, ...rest }) {
     if (!user) {
         return <Redirect to="/login" />;
     }
+
+    // Block full user interface until onboarding questions are answered
+    if (user.hasCompletedOnboarding === false) {
+      return (
+        <OnboardingWizard
+          onComplete={() => {
+            queryClient.invalidateQueries();
+          }}
+        />
+      );
+    }
     
     return (<AppLayout>
       <Component />
     </AppLayout>);
 }
 function Router() {
+    const [location] = useLocation();
+
+    useEffect(() => {
+      trackPageView(location);
+    }, [location]);
+
     return (<Switch>
       <Route path="/login" component={LoginPage}/>
       
@@ -122,6 +143,10 @@ function Router() {
     </Switch>);
 }
 function App() {
+    useEffect(() => {
+      initMetaPixel();
+    }, []);
+
     return (<QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>

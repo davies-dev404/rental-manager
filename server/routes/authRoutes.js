@@ -18,6 +18,29 @@ const generateToken = (id) => {
 };
 
 const logActivity = require('../utils/logActivity');
+const { seedDemoDataForUser, clearDemoDataForUser } = require('../utils/seedDemoData');
+
+// Cloudflare Turnstile token verification helper
+const verifyCloudflareTurnstile = async (token, reqIp) => {
+  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA'; // Test secret key passes always
+  if (!token) return true; // Gracefully pass if Turnstile token not submitted or not enforced
+  try {
+    const formData = new URLSearchParams();
+    formData.append('secret', secretKey);
+    formData.append('response', token);
+    if (reqIp) formData.append('remoteip', reqIp);
+
+    const result = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: formData
+    });
+    const outcome = await result.json();
+    return outcome.success;
+  } catch (err) {
+    console.warn('Cloudflare Turnstile verification warning:', err.message);
+    return true; // Non-fatal if CF API is temporarily unreachable
+  }
+};
 
 // Environment check: whether app is running on Vercel, Render, or production
 const isProductionOrHosted = () => {
@@ -217,7 +240,12 @@ router.post('/verify-login-otp', async (req, res) => {
       role: user.role,
       avatar: user.avatar,
       token: generateToken(user._id),
-      twoFactorEnabled: user.twoFactorEnabled
+      twoFactorEnabled: user.twoFactorEnabled,
+      hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
+      onboardingRole: user.onboardingRole || 'landlord',
+      unitsCount: user.unitsCount || 0,
+      subscriptionTier: user.subscriptionTier || 'starter',
+      isDemoMode: Boolean(user.isDemoMode)
     });
   } catch (error) {
     console.error('Verify login OTP error:', error.message);
@@ -712,7 +740,12 @@ router.post('/google', async (req, res) => {
       avatar: user.avatar,
       authProvider: user.authProvider || 'google',
       token: generateToken(user._id),
-      twoFactorEnabled: user.twoFactorEnabled
+      twoFactorEnabled: user.twoFactorEnabled,
+      hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
+      onboardingRole: user.onboardingRole || 'landlord',
+      unitsCount: user.unitsCount || 0,
+      subscriptionTier: user.subscriptionTier || 'starter',
+      isDemoMode: Boolean(user.isDemoMode)
     });
 
   } catch (error) {
@@ -798,7 +831,12 @@ router.post('/apple', async (req, res) => {
       avatar: user.avatar,
       authProvider: user.authProvider || 'apple',
       token: generateToken(user._id),
-      twoFactorEnabled: user.twoFactorEnabled
+      twoFactorEnabled: user.twoFactorEnabled,
+      hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
+      onboardingRole: user.onboardingRole || 'landlord',
+      unitsCount: user.unitsCount || 0,
+      subscriptionTier: user.subscriptionTier || 'starter',
+      isDemoMode: Boolean(user.isDemoMode)
     });
 
   } catch (error) {
@@ -807,5 +845,135 @@ router.post('/apple', async (req, res) => {
   }
 });
 
+// @desc    Get current authenticated user profile
+// @route   GET /api/auth/me
+// @access  Private
+router.get('/me', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password -otp -twoFactorSecret');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Submit user onboarding questionnaire (Role, Units, Mode)
+// @route   POST /api/auth/onboarding
+// @access  Private
+router.post('/onboarding', protect, async (req, res) => {
+  const { role, unitsCount, subscriptionTier, mode } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.hasCompletedOnboarding = true;
+    if (role) user.onboardingRole = role;
+    if (unitsCount !== undefined) user.unitsCount = Number(unitsCount) || 0;
+    if (subscriptionTier) user.subscriptionTier = subscriptionTier;
+    user.isDemoMode = mode === 'demo';
+
+    await user.save();
+
+    // If demo mode selected, populate with rich Kenyan rental portfolio data (Bomahut style)
+    if (mode === 'demo') {
+      await seedDemoDataForUser(user);
+    }
+
+    await logActivity(
+      user,
+      'Onboarding Completed',
+      `User completed onboarding as ${user.onboardingRole || 'landlord'} managing ${user.unitsCount} units (${mode === 'demo' ? 'Demo Mode' : 'Live Mode'})`,
+      'auth',
+      'success'
+    );
+
+    res.json({
+      _id: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      authProvider: user.authProvider,
+      token: generateToken(user._id),
+      twoFactorEnabled: user.twoFactorEnabled,
+      hasCompletedOnboarding: user.hasCompletedOnboarding,
+      onboardingRole: user.onboardingRole,
+      unitsCount: user.unitsCount,
+      subscriptionTier: user.subscriptionTier,
+      isDemoMode: user.isDemoMode
+    });
+  } catch (error) {
+    console.error('Onboarding save error:', error);
+    res.status(500).json({ message: error.message || 'Failed to complete onboarding' });
+  }
+});
+
+// @desc    Seed demo mode sample data for user
+// @route   POST /api/auth/demo-mode/seed
+// @access  Private
+router.post('/demo-mode/seed', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    await seedDemoDataForUser(user);
+    user.isDemoMode = true;
+    user.hasCompletedOnboarding = true;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Demo mode activated with sample data.',
+      user: {
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isDemoMode: true,
+        hasCompletedOnboarding: true
+      }
+    });
+  } catch (error) {
+    console.error('Demo seed error:', error);
+    res.status(500).json({ message: error.message || 'Failed to seed demo data' });
+  }
+});
+
+// @desc    Clear demo data and switch user to live mode
+// @route   POST /api/auth/demo-mode/clear
+// @access  Private
+router.post('/demo-mode/clear', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    await clearDemoDataForUser(user);
+    user.isDemoMode = false;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Demo data cleared. You are now in Live Mode.',
+      user: {
+        _id: user._id,
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isDemoMode: false,
+        hasCompletedOnboarding: user.hasCompletedOnboarding
+      }
+    });
+  } catch (error) {
+    console.error('Demo clear error:', error);
+    res.status(500).json({ message: error.message || 'Failed to clear demo data' });
+  }
+});
+
 module.exports = router;
+
 

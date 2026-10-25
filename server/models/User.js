@@ -23,7 +23,12 @@ const userSchema = new mongoose.Schema({
   twoFactorSecret: { type: String },
   twoFactorEnabled: { type: Boolean, default: false },
   resetPasswordToken: { type: String },
-  resetPasswordExpires: { type: Date }
+  resetPasswordExpires: { type: Date },
+  hasCompletedOnboarding: { type: Boolean, default: false },
+  onboardingRole: { type: String, enum: ['landlord', 'manager', 'caretaker', 'tenant'], default: 'landlord' },
+  unitsCount: { type: Number, default: 0 },
+  subscriptionTier: { type: String, default: 'starter' },
+  isDemoMode: { type: Boolean, default: false }
 });
 
 // Hash password before saving

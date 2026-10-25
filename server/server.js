@@ -79,10 +79,11 @@ const connectDB = async () => {
     }
 
     const opts = {
-        serverSelectionTimeoutMS: 5000,
-        connectTimeoutMS: 5000,
-        socketTimeoutMS: 30000,
+        serverSelectionTimeoutMS: 30000,
+        connectTimeoutMS: 30000,
+        socketTimeoutMS: 60000,
         maxPoolSize: 10,
+        heartbeatFrequencyMS: 10000,
     };
 
     cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
@@ -103,20 +104,22 @@ const connectDB = async () => {
     return await cached.promise;
 };
 
-// Initiate connection on boot (non-serverless environments)
-if (!process.env.VERCEL) {
-    connectDB().catch(err => console.error('Initial DB connect error:', err.message));
-}
+// Initiate connection on boot — await it so routes only register after DB is ready
+let dbReady = false;
+const dbBootPromise = connectDB()
+    .then(() => { dbReady = true; })
+    .catch(err => console.error('Initial DB connect error:', err.message));
 
-// Middleware to ensure DB is connected before processing API requests (essential for Vercel Serverless)
+// Middleware to ensure DB is connected before processing API requests
 app.use(async (req, res, next) => {
     if (req.path === '/' || req.path === '/api/health') return next();
     try {
+        if (!dbReady) await dbBootPromise; // wait for boot connection if still pending
         await connectDB();
         next();
     } catch (err) {
         return res.status(500).json({ 
-            message: 'Database connection failed. Please ensure MONGODB_URI is configured and IP 0.0.0.0/0 is whitelisted in MongoDB Atlas.',
+            message: 'Database connection failed. Please ensure MONGODB_URI is configured and your IP is whitelisted in MongoDB Atlas.',
             error: err.message 
         });
     }

@@ -72,6 +72,15 @@ const settingsSchema = new mongoose.Schema({
           consumerKey: { type: String, default: '' },
           consumerSecret: { type: String, default: '' },
           passkey: { type: String, default: '' }
+      },
+      cloudflare: {
+          turnstileSiteKey: { type: String, default: '' },
+          turnstileSecretKey: { type: String, default: '' },
+          analyticsToken: { type: String, default: '' }
+      },
+      metaPixel: {
+          pixelId: { type: String, default: '' },
+          enabled: { type: Boolean, default: true }
       }
   },
 

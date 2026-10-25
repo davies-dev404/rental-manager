@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import DwelloLogo from "@/components/DwelloLogo";
@@ -40,11 +40,14 @@ import {
   Users,
   FormInput,
   Smartphone,
-  History
+  History,
+  RefreshCw
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { ActionModals } from "@/components/dashboard/Modals";
+import { api } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 
 function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
   const [location] = useLocation();
@@ -52,19 +55,52 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
   const { toast } = useToast();
 
   const [isDemoMode, setIsDemoMode] = useState(() => {
-    return localStorage.getItem("dwello_demo_mode") === "true";
+    return user?.isDemoMode === true || localStorage.getItem("dwello_demo_mode") === "true";
   });
+  const [isProcessingDemo, setIsProcessingDemo] = useState(false);
 
-  const handleToggleDemoMode = () => {
+  useEffect(() => {
+    if (user?.isDemoMode !== undefined) {
+      setIsDemoMode(Boolean(user.isDemoMode));
+    }
+  }, [user?.isDemoMode]);
+
+  const handleToggleDemoMode = async () => {
     const next = !isDemoMode;
-    setIsDemoMode(next);
-    localStorage.setItem("dwello_demo_mode", String(next));
-    toast({
-      title: next ? "Demo Mode Activated" : "Live Mode Active",
-      description: next
-        ? "Sample data mode active."
-        : "Connected directly to live database."
-    });
+    setIsProcessingDemo(true);
+    try {
+      if (next) {
+        await api.seedDemoMode();
+        toast({
+          title: "Demo Mode Activated 🚀",
+          description: "Sample Kenyan properties and tenants loaded (Bomahut style)."
+        });
+      } else {
+        await api.clearDemoMode();
+        toast({
+          title: "Live Mode Active 🎉",
+          description: "Sample data cleared. Ready for your real properties."
+        });
+      }
+      setIsDemoMode(next);
+      localStorage.setItem("dwello_demo_mode", String(next));
+      const stored = localStorage.getItem("rental_user");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        parsed.isDemoMode = next;
+        localStorage.setItem("rental_user", JSON.stringify(parsed));
+      }
+      queryClient.invalidateQueries();
+      window.location.reload();
+    } catch (err) {
+      toast({
+        title: "Action Failed",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsProcessingDemo(false);
+    }
   };
 
   // Expand Financials, Property/Unit, Reports, and Settings by default to match Bomahut screenshot
@@ -436,7 +472,8 @@ export default function AppLayout({ children }) {
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [location] = useLocation();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const searchString = useSearch();
 
   // Determine page title and icon for top bar
   const getHeaderInfo = () => {
@@ -453,7 +490,7 @@ export default function AppLayout({ children }) {
       return { title: "Expenses", Icon: DollarSign };
     }
     if (location.startsWith("/settings")) {
-      const tab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : "";
+      const tab = new URLSearchParams(searchString).get("tab") || "";
       const tabNames = {
         general: "General",
         account: "Account Info",
@@ -464,11 +501,18 @@ export default function AppLayout({ children }) {
         documents: "Documents (beta)",
         templates: "Custom Message Template",
         custom_fields: "Custom Fields",
+        integrations: "Cloudflare & Meta Pixel",
         audit: "Audit Trail",
         backup: "Backup"
       };
       if (tab === "documents") {
         return { title: "Documents (beta)", Icon: FileText };
+      }
+      if (tab === "mpesa") {
+        return { title: "MPESA Transactions Status", Icon: CreditCard };
+      }
+      if (tab === "integrations") {
+        return { title: "Cloudflare & Meta Pixel", Icon: BarChart2 };
       }
       return { title: tabNames[tab] || "General", Icon: Settings };
     }
@@ -583,6 +627,46 @@ export default function AppLayout({ children }) {
             </button>
           </div>
         </header>
+
+        {/* Demo Mode Top Banner (Bomahut style) */}
+        {(user?.isDemoMode || localStorage.getItem("dwello_demo_mode") === "true") && (
+          <div className="bg-linear-to-r from-teal-700 via-teal-600 to-emerald-700 text-white text-xs px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-xs shrink-0 z-10 border-b border-teal-500/30 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <span className="bg-white/20 text-white px-2 py-0.5 rounded font-extrabold uppercase text-[10px] tracking-wider border border-white/20">
+                Demo Mode Active
+              </span>
+              <span className="text-white/95 text-[11px] sm:text-xs">
+                You are exploring MakaziFlow with sample Kenyan properties, tenants & M-Pesa records (Bomahut style). Test any feature!
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm("Switch to Live Mode? This will clear the sample demo properties and tenants so you can start managing your real properties.")) return;
+                  try {
+                    await api.clearDemoMode();
+                    localStorage.setItem("dwello_demo_mode", "false");
+                    const stored = localStorage.getItem("rental_user");
+                    if (stored) {
+                      const parsed = JSON.parse(stored);
+                      parsed.isDemoMode = false;
+                      localStorage.setItem("rental_user", JSON.stringify(parsed));
+                    }
+                    queryClient.invalidateQueries();
+                    window.location.reload();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+                className="bg-white text-teal-800 hover:bg-slate-100 font-bold px-3 py-1 rounded text-[11px] shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3 h-3 text-teal-600" />
+                <span>Switch to Live Mode (Clear Data)</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Page Body */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#f4f6fa] dark:bg-slate-950 flex flex-col justify-between">

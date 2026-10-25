@@ -3,9 +3,16 @@ import { toast } from "sonner"; // Assuming sonner is used, or replace with cons
 
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_DIR;
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
-    if (!envUrl || envUrl.startsWith('http://localhost') || envUrl.startsWith('http://127.0.0.1')) {
-      return '/api';
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      if (!envUrl || envUrl.includes('onrender.com') || envUrl === '/api') {
+        return '/api';
+      }
+    }
+    if (window.location.protocol === 'https:') {
+      if (!envUrl || envUrl.startsWith('http://localhost') || envUrl.startsWith('http://127.0.0.1')) {
+        return '/api';
+      }
     }
   }
   if (import.meta.env.PROD) {
@@ -191,6 +198,38 @@ export const api = {
     // Placeholder - Logic needs backend route
     return updates; 
   },
+
+  getMe: async () => {
+    const response = await fetch(`${API_URL}/auth/me`, {
+      headers: getAuthHeaders()
+    });
+    return await parseApiResponse(response, 'Failed to fetch user profile');
+  },
+
+  submitOnboarding: async (data) => {
+    const response = await fetch(`${API_URL}/auth/onboarding`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data)
+    });
+    return await parseApiResponse(response, 'Failed to save onboarding settings');
+  },
+
+  seedDemoMode: async () => {
+    const response = await fetch(`${API_URL}/auth/demo-mode/seed`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    return await parseApiResponse(response, 'Failed to activate demo mode');
+  },
+
+  clearDemoMode: async () => {
+    const response = await fetch(`${API_URL}/auth/demo-mode/clear`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    return await parseApiResponse(response, 'Failed to clear demo mode');
+  },
   
   changePassword: async (oldPassword, newPassword) => {
     const response = await fetch(`${API_URL}/auth/change-password`, {
@@ -236,9 +275,13 @@ export const api = {
   
   // Properties
   getProperties: async () => {
-    const response = await fetch(`${API_URL}/properties`, { headers: getAuthHeaders() });
-    if (!response.ok) throw new Error("Failed to fetch properties");
-    return await response.json();
+    try {
+      const response = await fetch(`${API_URL}/properties`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+    } catch {
+      return [];
+    }
   },
   addProperty: async (prop) => {
     const response = await fetch(`${API_URL}/properties`, {
@@ -268,17 +311,21 @@ export const api = {
   
   // Units (Real)
   getUnits: async (propertyId) => {
-    let url = `${API_URL}/units`;
-    let id = propertyId;
-    if (id && typeof id === 'object') {
-      id = id._id || id.id || null;
+    try {
+      let url = `${API_URL}/units`;
+      let id = propertyId;
+      if (id && typeof id === 'object') {
+        id = id._id || id.id || null;
+      }
+      if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
+        url += `?propertyId=${encodeURIComponent(id)}`;
+      }
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+    } catch {
+      return [];
     }
-    if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
-      url += `?propertyId=${encodeURIComponent(id)}`;
-    }
-    const response = await fetch(url, { headers: getAuthHeaders() });
-    if (!response.ok) return []; // Fallback empty
-    return await response.json();
   },
   addUnit: async (unit) => {
     const response = await fetch(`${API_URL}/units`, {
@@ -324,9 +371,13 @@ export const api = {
 
   // Tenants - REAL
   getTenants: async () => {
-    const response = await fetch(`${API_URL}/tenants`, { headers: getAuthHeaders() });
-    if (!response.ok) throw new Error("Failed to fetch tenants");
-    return await response.json();
+    try {
+      const response = await fetch(`${API_URL}/tenants`, { headers: getAuthHeaders() });
+      if (!response.ok) return [];
+      return await response.json();
+    } catch {
+      return [];
+    }
   },
   addTenant: async (tenant) => {
     const response = await fetch(`${API_URL}/tenants`, {

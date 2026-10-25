@@ -139,17 +139,19 @@ export default function FloatingAIAssistant() {
         }}
       >
         {!isOpen && showTip && (
-          <div className="mb-1.5 px-3 py-1 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-md border border-slate-700 pointer-events-none animate-in fade-in flex items-center gap-1.5">
+          <div className="mb-1.5 px-3 py-1 bg-slate-900/95 text-white text-[11px] font-medium rounded-md shadow-md border border-slate-700 animate-in fade-in flex items-center gap-1.5">
             <span>Tip: press and hold to move me anywhere</span>
-            <span 
+            <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 dismissTip();
               }}
-              className="text-slate-400 hover:text-white cursor-pointer ml-1 text-xs"
+              className="text-slate-400 hover:text-white cursor-pointer ml-1 text-xs leading-none"
+              aria-label="Dismiss tip"
             >
-              &times;
-            </span>
+              ✕
+            </button>
           </div>
         )}
 

@@ -13,6 +13,8 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
+import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
+import { trackRegistration } from "@/lib/metaPixel";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -30,6 +32,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   // OTP Verification state
   const [isOtpStep, setIsOtpStep] = useState(false);
@@ -269,27 +272,25 @@ export default function LoginPage() {
         setOtpCountdown(600);
         setOtpCode("");
         toast({
-          title: "Account Created! ",
+          title: "Account Created!",
           description: "Please enter the verification code sent to your email to verify your account."
         });
         return;
       }
 
-      const newUser = {
-        id: "USR-" + Date.now().toString().slice(-4),
-        name: signupUsername,
-        email: signupEmail,
-        phone: fullPhone,
-        role: "admin",
-        token: "auth-token-" + Date.now()
-      };
-      localStorage.setItem("rental_user", JSON.stringify(newUser));
+      // Track registration in Meta Pixel
+      trackRegistration("email");
+
+      // Return newly created user to login screen so they can authenticate and enter onboarding
+      setIsSignup(false);
+      setIsOtpStep(false);
+      setUsernameOrEmail(signupEmail);
+      setPassword("");
 
       toast({
-        title: "Account Created! 🎉",
-        description: "Welcome to MakaziFlow."
+        title: "Account Created Successfully! 🎉",
+        description: "Please sign in with your credentials to set up your workspace and choose your subscription or demo mode."
       });
-      setLocation("/");
     } catch (err) {
       toast({
         variant: "destructive",
@@ -625,6 +626,9 @@ export default function LoginPage() {
               </button>
             </div>
 
+            {/* Cloudflare Turnstile Bot Protection */}
+            <CloudflareTurnstile onVerify={(token) => setTurnstileToken(token)} />
+
             {/* Sign In Button */}
             <div className="pt-1">
               <Button
@@ -773,6 +777,9 @@ export default function LoginPage() {
                 of MakaziFlow
               </label>
             </div>
+
+            {/* Cloudflare Turnstile Bot Protection */}
+            <CloudflareTurnstile onVerify={(token) => setTurnstileToken(token)} />
 
             {/* Submit Button */}
             <div className="pt-2">

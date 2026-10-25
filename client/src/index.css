@@ -168,56 +168,75 @@
 ═══════════════════════════════════════════════════════════ */
 
 /* ------ Primary action buttons: old navy → new navy ------ */
-/* bg-[#06083b], bg-[#0b1065], bg-[#161c8a] → #0d2240 */
-[class*="bg-[#06083b]"],
-[class*="bg-[#0b1065]"],
-[class*="bg-[#161c8a]"] {
+/* Match ONLY standalone background utility classes, NOT hover or opacity variants */
+[class~="bg-[#06083b]"],
+[class~="bg-[#0b1065]"],
+[class~="bg-[#161c8a]"],
+.bg-\[\#06083b\],
+.bg-\[\#0b1065\],
+.bg-\[\#161c8a\] {
   background-color: #0d2240 !important;
 }
-[class*="hover\:bg-[#0b1065]"]:hover,
-[class*="hover\:bg-[#161c8a]"]:hover,
-[class*="hover\:bg-[#0b1065]"]:hover {
+[class~="hover:bg-[#0b1065]"]:hover,
+[class~="hover:bg-[#161c8a]"]:hover,
+[class~="hover:bg-[#06083b]"]:hover,
+.hover\:bg-\[\#0b1065\]:hover,
+.hover\:bg-\[\#161c8a\]:hover,
+.hover\:bg-\[\#06083b\]:hover {
   background-color: #1a3a5c !important;
 }
 
 /* ------ Accent / teal buttons: old indigo → new teal ------ */
 /* bg-[#4f46e5], bg-[#4338ca], bg-[#3b49df] → #00a99d */
-[class*="bg-[#4f46e5]"],
-[class*="bg-[#3b49df]"] {
+[class~="bg-[#4f46e5]"],
+[class~="bg-[#3b49df]"],
+.bg-\[\#4f46e5\],
+.bg-\[\#3b49df\] {
   background-color: #00a99d !important;
 }
-[class*="hover\:bg-[#4338ca]"]:hover,
-[class*="hover\:bg-[#4f46e5]"]:hover {
+[class~="hover:bg-[#4338ca]"]:hover,
+[class~="hover:bg-[#4f46e5]"]:hover,
+.hover\:bg-\[\#4338ca\]:hover,
+.hover\:bg-\[\#4f46e5\]:hover {
   background-color: #008f85 !important;
 }
 
-/* ------ Text colors ------ */
-[class*="text-[#0b1065]"],
-[class*="text-[#06083b]"] {
+/* ------ Text colors (light mode only, allowing hover & dark overrides) ------ */
+html:not(.dark) [class~="text-[#0b1065]"]:not(:hover),
+html:not(.dark) [class~="text-[#06083b]"]:not(:hover),
+html:not(.dark) .text-\[\#0b1065\]:not(:hover),
+html:not(.dark) .text-\[\#06083b\]:not(:hover) {
   color: #0d2240 !important;
 }
 
-/* ------ Border colors ------ */
-[class*="border-[#0b1065]"],
-[class*="border-[#06083b]"] {
+/* ------ Border colors (light mode only, allowing hover & dark overrides) ------ */
+html:not(.dark) [class~="border-[#0b1065]"]:not(:hover),
+html:not(.dark) [class~="border-[#06083b]"]:not(:hover),
+html:not(.dark) .border-\[\#0b1065\]:not(:hover),
+html:not(.dark) .border-\[\#06083b\]:not(:hover) {
   border-color: #0d2240 !important;
 }
 
 /* ------ Focus rings ------ */
-[class*="focus\:ring-[#0b1065]"]:focus,
-[class*="focus\:border-[#0b1065]"]:focus {
+[class*="focus:ring-[#0b1065]"]:focus,
+[class*="focus:border-[#0b1065]"]:focus,
+.focus\:ring-\[\#0b1065\]:focus,
+.focus\:border-\[\#0b1065\]:focus {
   --tw-ring-color: #00a99d !important;
   border-color: #00a99d !important;
 }
 
 /* ------ Hover bg tints ------ */
-[class*="hover\:bg-[#0b1065]\/5"]:hover {
+[class*="hover:bg-[#0b1065]/5"]:hover,
+[class*="hover\:bg-[#0b1065]\/5"]:hover,
+.hover\:bg-\[\#0b1065\]\/5:hover {
   background-color: rgba(0, 169, 157, 0.08) !important;
 }
 
 /* ------ Login page sign-in buttons (inline styles override) ------ */
 /* Catch the old blue ring from Login.jsx */
-[class*="focus\:border-blue-500"]:focus {
+[class*="focus:border-blue-500"]:focus,
+.focus\:border-blue-500:focus {
   border-color: #00a99d !important;
 }
 
