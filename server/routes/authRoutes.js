@@ -95,10 +95,7 @@ router.post('/login', async (req, res) => {
           subject: 'MakaziFlow — Your Login Verification Code',
           message: `
             <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-              <div style="text-align:center;margin-bottom:20px;">
-                <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
-                <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
-              </div>
+              ${getEmailHeader()}
               <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
               <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
                 Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
@@ -168,28 +165,18 @@ router.post('/resend-login-otp', async (req, res) => {
         email: user.email,
         subject: 'MakaziFlow — Your Login Verification Code',
         message: `
-          <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:520px;margin:auto;padding:0;border-radius:14px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
-            <div style="background:linear-gradient(135deg,#0d2240 0%,#1a3a5c 100%);padding:28px 24px 20px;text-align:center;">
-              <img src="https://raw.githubusercontent.com/davies-dev404/Rental-Manager/main/client/src/assets/logo.png" alt="MakaziFlow" style="height:52px;width:auto;object-fit:contain;display:inline-block;margin-bottom:10px;" onerror="this.style.display='none'" />
-              <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00e5d4;">Flow</span></h1>
-              <p style="color:#94d8f5;font-size:11px;margin:4px 0 0 0;letter-spacing:0.5px;">MANAGE RENTALS. EFFORTLESSLY.</p>
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+            ${getEmailHeader()}
+            <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
+            <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
+            </p>
+            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+              ${loginOtp}
             </div>
-            <div style="background:#ffffff;padding:32px 28px;">
-              <h2 style="color:#1e293b;font-size:20px;margin:0 0 12px;text-align:center;">Two-Factor Verification</h2>
-              <p style="color:#475569;font-size:14px;line-height:1.6;text-align:center;margin-bottom:28px;">
-                Use the code below to complete your sign-in to your MakaziFlow account.<br/>
-                This code expires in <strong style="color:#0d2240;">3 minutes</strong>.
-              </p>
-              <div style="font-size:38px;font-weight:900;letter-spacing:10px;color:#0d2240;text-align:center;padding:20px 0;background:linear-gradient(135deg,#f0fafa,#e8f8f7);border:2px dashed #5eead4;border-radius:10px;margin-bottom:24px;font-family:monospace;">
-                ${loginOtp}
-              </div>
-              <p style="color:#64748b;font-size:12px;line-height:1.5;text-align:center;margin:0;">
-                If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
-              </p>
-            </div>
-            <div style="background:#f8fafc;padding:16px 24px;text-align:center;border-top:1px solid #e2e8f0;">
-              <p style="color:#94a3b8;font-size:11px;margin:0;">© ${new Date().getFullYear()} MakaziFlow. All rights reserved.</p>
-            </div>
+            <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+              If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
+            </p>
           </div>`
       });
       emailSent = true;
@@ -295,7 +282,7 @@ router.post('/register', async (req, res) => {
 
       // 2. Generate OTP
       const otp = generateOtpCode();
-      const otpExpires = new Date(Date.now() + 3* 60 * 1000); // 10 mins
+      const otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 mins
       console.log(`🔑 [OTP] Registration verification code for ${email}: ${otp}`);
 
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
@@ -317,31 +304,18 @@ router.post('/register', async (req, res) => {
               email: user.email,
               subject: 'MakaziFlow — Your Email Verification Code',
               message: `
-                <div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:520px;margin:auto;padding:0;border-radius:14px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);">
-                  <!-- Header -->
-                  <div style="background:linear-gradient(135deg,#0d2240 0%,#1a3a5c 100%);padding:28px 24px 20px;text-align:center;">
-                    <img src="https://raw.githubusercontent.com/davies-dev404/Rental-Manager/main/client/src/assets/logo.png" alt="MakaziFlow" style="height:52px;width:auto;object-fit:contain;display:inline-block;margin-bottom:10px;" onerror="this.style.display='none'" />
-                    <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00e5d4;">Flow</span></h1>
-                    <p style="color:#94d8f5;font-size:11px;margin:4px 0 0 0;letter-spacing:0.5px;">MANAGE RENTALS. EFFORTLESSLY.</p>
+                <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+                  ${getEmailHeader()}
+                  <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Verify Your Email</h2>
+                  <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+                    Welcome to MakaziFlow! Use the code below to verify your email address. This code expires in <strong>3 minutes</strong>.
+                  </p>
+                  <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+                    ${otp}
                   </div>
-                  <!-- Body -->
-                  <div style="background:#ffffff;padding:32px 28px;">
-                    <h2 style="color:#1e293b;font-size:20px;margin:0 0 12px;text-align:center;">Verify Your Email Address</h2>
-                    <p style="color:#475569;font-size:14px;line-height:1.6;text-align:center;margin-bottom:28px;">
-                      Welcome to MakaziFlow! Use the code below to verify your email address.<br/>
-                      This code expires in <strong style="color:#0d2240;">10 minutes</strong>.
-                    </p>
-                    <div style="font-size:38px;font-weight:900;letter-spacing:10px;color:#0d2240;text-align:center;padding:20px 0;background:linear-gradient(135deg,#f0fafa,#e8f8f7);border:2px dashed #5eead4;border-radius:10px;margin-bottom:24px;font-family:monospace;">
-                      ${otp}
-                    </div>
-                    <p style="color:#64748b;font-size:12px;line-height:1.5;text-align:center;margin:0;">
-                      If you did not create a MakaziFlow account, you can safely ignore this email.
-                    </p>
-                  </div>
-                  <!-- Footer -->
-                  <div style="background:#f8fafc;padding:16px 24px;text-align:center;border-top:1px solid #e2e8f0;">
-                    <p style="color:#94a3b8;font-size:11px;margin:0;">© ${new Date().getFullYear()} MakaziFlow. All rights reserved.</p>
-                  </div>
+                  <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+                    If you did not create a MakaziFlow account, please ignore this email.
+                  </p>
                 </div>`
             });
         } catch (emailError) {
@@ -403,13 +377,13 @@ router.post('/verify-email', async (req, res) => {
         user.otpExpires = undefined;
         await user.save();
 
-        await logActivity(user, 'Email Verified', `${user.name} verified their email`, 'auth', 'success');
-
-        // ✅ Do NOT return a token — user must now log in normally
         res.json({
-            success: true,
-            verified: true,
-            message: 'Email verified successfully! Please sign in with your credentials.'
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            token: generateToken(user._id),
+            message: 'Email verified successfully'
         });
 
     } catch (error) {
@@ -518,10 +492,7 @@ router.post('/forgot-password', async (req, res) => {
                 subject: 'MakaziFlow — Your Password Reset Code',
                 message: `
                   <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-                    <div style="text-align:center;margin-bottom:20px;">
-                      <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
-                      <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
-                    </div>
+                    ${getEmailHeader()}
                     <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Password Reset Request</h2>
                     <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
                       You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code expires in <strong>15 minutes</strong>.

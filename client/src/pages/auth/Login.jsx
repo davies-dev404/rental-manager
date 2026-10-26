@@ -36,7 +36,6 @@ export default function LoginPage() {
 
   // OTP Verification state
   const [isOtpStep, setIsOtpStep] = useState(false);
-  const [isRegistrationOtp, setIsRegistrationOtp] = useState(false); // true = registration OTP, false = login OTP
   const [otpCode, setOtpCode] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpName, setOtpName] = useState("");
@@ -153,6 +152,8 @@ export default function LoginPage() {
     }
   };
 
+  const [isRegistrationOtp, setIsRegistrationOtp] = useState(false);
+
   // Handle OTP Verification Submit
   const handleVerifyOtp = async (e) => {
     if (e) e.preventDefault();
@@ -170,21 +171,26 @@ export default function LoginPage() {
     setIsOtpVerifying(true);
     try {
       if (isRegistrationOtp) {
-        // Registration OTP — call /verify-email, then redirect to login
-        await api.verifyEmailOtp(otpEmail, cleanOtp);
-        toast({
-          title: "Email Verified! 🎉",
-          description: "Your account is active. Please sign in with your credentials."
-        });
-        // Redirect to login — pre-fill email for convenience
+        // Registration verification: verify email code
+        await api.verifyEmail(otpEmail, cleanOtp);
+
+        // Clear session auth state so user starts fresh on login screen
+        localStorage.removeItem("rental_user");
+
+        // Reset to Login View
         setIsOtpStep(false);
-        setIsRegistrationOtp(false);
         setIsSignup(false);
+        setIsRegistrationOtp(false);
         setUsernameOrEmail(otpEmail);
         setPassword("");
         setOtpCode("");
+
+        toast({
+          title: "Account Verified Successfully!",
+          description: "Your email has been verified. Please sign in with your password to continue to your workspace."
+        });
       } else {
-        // Login OTP — call /verify-login-otp, then enter dashboard
+        // Standard login 2FA verification
         const res = await verifyLoginOtp(otpEmail, cleanOtp);
         toast({
           title: "Welcome Back! 👋",
@@ -286,13 +292,13 @@ export default function LoginPage() {
         setOtpEmail(signupEmail);
         setOtpName(signupUsername);
         setIsSignup(false);
+        setIsRegistrationOtp(true);
         setIsOtpStep(true);
-        setIsRegistrationOtp(true); // ← Mark as registration OTP
         setOtpCountdown(600);
         setOtpCode("");
         toast({
-          title: "Account Created! 🎉",
-          description: "Please enter the verification code sent to your email to activate your account."
+          title: "Account Created!",
+          description: "Please enter the verification code sent to your email to verify your account."
         });
         return;
       }
@@ -488,14 +494,12 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-base font-semibold text-slate-900 mb-1">
-            {isRegistrationOtp ? "Verify Your Email" : "Two-Factor Verification"}
+            Two-Factor Verification
           </h2>
           <p className="text-xs text-slate-500 text-center mb-6 max-w-xs leading-relaxed">
-            We sent a 6-digit {isRegistrationOtp ? "activation" : "verification"} code to{" "}
+            We sent a 6-digit verification code to{" "}
             <span className="font-semibold text-slate-800 break-all">{otpEmail}</span>.
-            {isRegistrationOtp
-              ? " Enter it below to activate your account."
-              : " Please enter it below to sign in."}
+            Please enter it below to sign in.
           </p>
 
           {/* OTP Form */}
@@ -554,12 +558,12 @@ export default function LoginPage() {
                 {isOtpVerifying ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    Verifying...
+                    Verifying Code...
                   </>
                 ) : (
                   <>
                     <KeyRound className="w-3.5 h-3.5 mr-1.5" />
-                    {isRegistrationOtp ? "Verify Email" : "Verify & Sign In"}
+                    Verify & Sign In
                   </>
                 )}
               </Button>

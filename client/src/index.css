@@ -307,7 +307,7 @@ html:not(.dark) .border-\[\#06083b\]:not(:hover) {
     background: #ffffff !important;
     color: #000000 !important;
     height: auto !important;
-    min-height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
     width: 100% !important;
     margin: 0 !important;

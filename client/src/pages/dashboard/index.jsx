@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
-import { Info, ChevronRight, CheckCircle2 } from "lucide-react";
+import { Info, ChevronRight, CheckCircle2, Search, X } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -35,6 +35,7 @@ export default function Dashboard() {
 
   // Show all arrears toggle
   const [showAllArrears, setShowAllArrears] = useState(false);
+  const [arrearsSearch, setArrearsSearch] = useState("");
 
   // Banner visibility states (persisted in localStorage)
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -111,7 +112,17 @@ export default function Dashboard() {
       })
     : [];
 
-  const displayedArrears = showAllArrears ? arrearsList : arrearsList.slice(0, 5);
+  const filteredArrears = arrearsList.filter((item) => {
+    if (!arrearsSearch.trim()) return true;
+    const term = arrearsSearch.toLowerCase();
+    return (
+      (item.name || "").toLowerCase().includes(term) ||
+      String(item.unit || "").toLowerCase().includes(term) ||
+      (item.phone || "").toLowerCase().includes(term)
+    );
+  });
+
+  const displayedArrears = showAllArrears ? filteredArrears : filteredArrears.slice(0, 5);
 
   // Compute actual onboarding progress
   const hasProperties = (properties?.length || 0) > 0;
@@ -635,8 +646,32 @@ export default function Dashboard() {
                 Arrears Overview
               </h4>
               <p className="text-xs text-slate-500 mt-1">
-                Showing {displayedArrears.length} of {arrearsList.length} tenants with arrears
+                Showing {displayedArrears.length} of {filteredArrears.length} tenants with arrears
               </p>
+
+              {/* Arrears Quick Search Bar */}
+              {arrearsList.length > 0 && (
+                <div className="relative mt-3 max-w-xs mx-auto">
+                  <input
+                    type="text"
+                    value={arrearsSearch}
+                    onChange={(e) => setArrearsSearch(e.target.value)}
+                    placeholder="Search debtor tenant or unit..."
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-7 py-1.5 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2 pointer-events-none" />
+                  {arrearsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setArrearsSearch("")}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {arrearsList.length === 0 ? (
@@ -648,6 +683,19 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
                   All active tenant rent accounts are up to date! As soon as an invoice becomes overdue, it will appear here.
                 </p>
+              </div>
+            ) : filteredArrears.length === 0 ? (
+              <div className="py-10 px-4 text-center">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  No debtors matching "{arrearsSearch}"
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setArrearsSearch("")}
+                  className="mt-2 text-xs text-blue-600 hover:underline cursor-pointer"
+                >
+                  Clear search filter
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">

@@ -46,6 +46,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { ActionModals } from "@/components/dashboard/Modals";
+import { GlobalSearchBar } from "./GlobalSearchBar";
 import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 
@@ -606,14 +607,9 @@ export default function AppLayout({ children }) {
             </div>
           </div>
 
-          {/* Center Search Input */}
-          <div className="relative w-64 md:w-80 lg:w-96 hidden sm:block">
-            <input
-              type="text"
-              placeholder="Search... Pages, Actions, Tutorials"
-              className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-3 pr-8 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
-            />
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
+          {/* Center Search Input (Responsive Global Search Bar) */}
+          <div className="flex items-center">
+            <GlobalSearchBar onOpenModal={(modal) => setActiveModal(modal)} />
           </div>
 
           {/* Right Logout */}
