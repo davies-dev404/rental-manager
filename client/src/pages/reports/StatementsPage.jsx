@@ -49,6 +49,16 @@ export default function StatementsPage() {
     queryFn: api.getTenants
   });
 
+  const { data: payments = [] } = useQuery({
+    queryKey: ["payments"],
+    queryFn: api.getPayments
+  });
+
+  const { data: expenses = [] } = useQuery({
+    queryKey: ["expenses"],
+    queryFn: api.getExpenses
+  });
+
   const reportItems = [
     { id: "tenant_statement", label: "Tenant Statement" },
     { id: "property_statements", label: "Property Statements", badge: "Multi / single" },
@@ -64,20 +74,128 @@ export default function StatementsPage() {
 
   const currentReportObj = reportItems.find((r) => r.id === activeReport) || reportItems[0];
 
+  const [hasGenerated, setHasGenerated] = useState(false);
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    setHasGenerated(true);
     toast({
-      title: "Generating Statement",
-      description: `Loading statement data for ${currentReportObj.label}...`
+      title: "Statement Generated",
+      description: `Loaded data for ${currentReportObj.label}.`
     });
+  };
+
+  const getFilteredStatementData = () => {
+    let title = currentReportObj.label;
+    let subtitle = "MakaziFlow Rental Management Statement";
+    let records = [];
+    let columns = [];
+    let summary = {};
+
+    const dateRangeStr = startDate && endDate ? `${startDate} to ${endDate}` : startDate ? `From ${startDate}` : "All Records";
+
+    if (activeReport === "expenses_report") {
+      title = "Expenses Statement Report";
+      subtitle = "Property Operating and Maintenance Expenses";
+      columns = [
+        { key: "index", label: "#" },
+        { key: "date", label: "Date" },
+        { key: "title", label: "Expense Description" },
+        { key: "category", label: "Category" },
+        { key: "property", label: "Property" },
+        { key: "amount", label: "Amount", align: "right" }
+      ];
+      const filtered = expenses.filter(e => {
+        if (startDate && new Date(e.date || e.createdAt) < new Date(startDate)) return false;
+        if (endDate && new Date(e.date || e.createdAt) > new Date(endDate)) return false;
+        return true;
+      });
+      const totalExp = filtered.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      summary = {
+        "Total Expenses": `KES ${totalExp.toLocaleString()}`,
+        "Transactions": filtered.length,
+        "Period": dateRangeStr
+      };
+      records = filtered.map((e, idx) => ({
+        index: idx + 1,
+        date: e.date ? new Date(e.date).toLocaleDateString() : new Date().toLocaleDateString(),
+        title: e.title || e.description || "General Expense",
+        category: e.category || "General",
+        property: e.property?.name || e.propertyName || "All Properties",
+        amount: `KES ${(Number(e.amount) || 0).toLocaleString()}`
+      }));
+    } else if (activeReport === "arrears_report") {
+      title = "Tenant Rent Arrears Report";
+      subtitle = "Outstanding and Overdue Balances Summary";
+      columns = [
+        { key: "index", label: "#" },
+        { key: "tenant", label: "Tenant Name" },
+        { key: "unit", label: "Unit" },
+        { key: "property", label: "Property" },
+        { key: "phone", label: "Phone" },
+        { key: "amount", label: "Arrears Due", align: "right" }
+      ];
+      const debtors = tenants.filter(t => (Number(t.balance || t.rentDue || t.rentAmount) || 0) > 0);
+      const totalArrears = debtors.reduce((s, t) => s + (Number(t.balance || t.rentDue || t.rentAmount) || 0), 0);
+      summary = {
+        "Total Arrears": `KES ${totalArrears.toLocaleString()}`,
+        "Tenants In Arrears": debtors.length,
+        "Generated Date": new Date().toLocaleDateString()
+      };
+      records = debtors.map((t, idx) => ({
+        index: idx + 1,
+        tenant: t.name,
+        unit: t.unitNumber || t.unit?.unitNumber || "N/A",
+        property: t.property?.name || t.propertyName || "Kilimani Heights",
+        phone: t.phone || "—",
+        amount: `KES ${(Number(t.balance || t.rentDue || t.rentAmount) || 0).toLocaleString()}`
+      }));
+    } else {
+      // Default: Payments / Property / Tenant Statements
+      title = currentReportObj.label;
+      columns = [
+        { key: "index", label: "#" },
+        { key: "date", label: "Date" },
+        { key: "tenant", label: "Tenant" },
+        { key: "unit", label: "Unit" },
+        { key: "method", label: "Payment Channel" },
+        { key: "reference", label: "Reference / Ref" },
+        { key: "amount", label: "Amount", align: "right" },
+        { key: "status", label: "Status" }
+      ];
+      const filtered = payments.filter(p => {
+        if (startDate && new Date(p.date || p.createdAt) < new Date(startDate)) return false;
+        if (endDate && new Date(p.date || p.createdAt) > new Date(endDate)) return false;
+        return true;
+      });
+      const totalAmount = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      summary = {
+        "Total Collected": `KES ${totalAmount.toLocaleString()}`,
+        "Transactions": filtered.length,
+        "Period": dateRangeStr
+      };
+      records = filtered.map((p, idx) => ({
+        index: idx + 1,
+        date: p.date ? new Date(p.date).toLocaleDateString() : (p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"),
+        tenant: typeof p.tenantId === 'object' ? p.tenantId?.name : (p.tenantName || p.tenantId || "Tenant"),
+        unit: p.unitId?.unitNumber || p.unit || "—",
+        method: (p.method || p.paymentMethod || "M-Pesa").toUpperCase(),
+        reference: p.transactionId || p.reference || `MKZ-${p._id ? p._id.slice(-6).toUpperCase() : '8921'}`,
+        amount: `KES ${(Number(p.amount) || 0).toLocaleString()}`,
+        status: p.status || "Completed"
+      }));
+    }
+
+    return { title, subtitle, dateRange: dateRangeStr, records, columns, summary };
   };
 
   const handleDownloadPDF = () => {
     toast({
       title: "Downloading PDF",
-      description: `Exporting ${currentReportObj.label} to PDF.`
+      description: `Exporting ${currentReportObj.label} to clean PDF statement.`
     });
-    exportToPDF();
+    const reportData = getFilteredStatementData();
+    exportToPDF(reportData);
   };
 
   const handleDownloadExcel = () => {
@@ -85,7 +203,8 @@ export default function StatementsPage() {
       title: "Downloading Excel",
       description: `Exporting ${currentReportObj.label} to CSV.`
     });
-    generateCSVReport("payments");
+    const type = activeReport === "expenses_report" ? "expenses" : "payments";
+    generateCSVReport(type);
   };
 
   return (
@@ -751,8 +870,56 @@ export default function StatementsPage() {
             </div>
 
             {!collapseReport && (
-              <div className="py-16 text-center text-xs text-slate-400">
-                There are no records to display
+              <div className="p-4 overflow-x-auto">
+                {(() => {
+                  const data = getFilteredStatementData();
+                  if (!data.records || data.records.length === 0) {
+                    return (
+                      <div className="py-16 text-center text-xs text-slate-400">
+                        There are no records to display
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="space-y-4">
+                      {/* Summary Badges */}
+                      {data.summary && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {Object.entries(data.summary).map(([key, val]) => (
+                            <div key={key} className="bg-slate-50 dark:bg-slate-800 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                              <div className="text-[10px] text-slate-500 uppercase tracking-wider">{key}</div>
+                              <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{val}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Records Table */}
+                      <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
+                        <thead className="text-[10px] uppercase bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-y border-slate-200 dark:border-slate-700">
+                          <tr>
+                            {data.columns.map((col) => (
+                              <th key={col.key} className={`py-2 px-3 ${col.align === "right" ? "text-right" : ""}`}>
+                                {col.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {data.records.map((r, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                              {data.columns.map((col) => (
+                                <td key={col.key} className={`py-2.5 px-3 ${col.align === "right" ? "text-right font-semibold" : ""}`}>
+                                  {r[col.key]}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

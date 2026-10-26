@@ -107,6 +107,15 @@ export const api = {
     return await parseApiResponse(response, 'Registration failed');
   },
 
+  verifyEmailOtp: async (email, otp) => {
+    const response = await fetch(`${API_URL}/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp })
+    });
+    return await parseApiResponse(response, 'Email verification failed');
+  },
+
   googleAuth: async (payload) => {
     try {
       const response = await fetch(`${API_URL}/auth/google`, {

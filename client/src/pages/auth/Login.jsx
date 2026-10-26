@@ -36,6 +36,7 @@ export default function LoginPage() {
 
   // OTP Verification state
   const [isOtpStep, setIsOtpStep] = useState(false);
+  const [isRegistrationOtp, setIsRegistrationOtp] = useState(false); // true = registration OTP, false = login OTP
   const [otpCode, setOtpCode] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpName, setOtpName] = useState("");
@@ -168,12 +169,29 @@ export default function LoginPage() {
 
     setIsOtpVerifying(true);
     try {
-      const res = await verifyLoginOtp(otpEmail, cleanOtp);
-      toast({
-        title: "Welcome Back! 👋",
-        description: `Logged in as ${res?.name || "User"}`
-      });
-      setLocation("/");
+      if (isRegistrationOtp) {
+        // Registration OTP — call /verify-email, then redirect to login
+        await api.verifyEmailOtp(otpEmail, cleanOtp);
+        toast({
+          title: "Email Verified! 🎉",
+          description: "Your account is active. Please sign in with your credentials."
+        });
+        // Redirect to login — pre-fill email for convenience
+        setIsOtpStep(false);
+        setIsRegistrationOtp(false);
+        setIsSignup(false);
+        setUsernameOrEmail(otpEmail);
+        setPassword("");
+        setOtpCode("");
+      } else {
+        // Login OTP — call /verify-login-otp, then enter dashboard
+        const res = await verifyLoginOtp(otpEmail, cleanOtp);
+        toast({
+          title: "Welcome Back! 👋",
+          description: `Logged in as ${res?.name || "User"}`
+        });
+        setLocation("/");
+      }
     } catch (err) {
       toast({
         variant: "destructive",
@@ -269,11 +287,12 @@ export default function LoginPage() {
         setOtpName(signupUsername);
         setIsSignup(false);
         setIsOtpStep(true);
+        setIsRegistrationOtp(true); // ← Mark as registration OTP
         setOtpCountdown(600);
         setOtpCode("");
         toast({
-          title: "Account Created!",
-          description: "Please enter the verification code sent to your email to verify your account."
+          title: "Account Created! 🎉",
+          description: "Please enter the verification code sent to your email to activate your account."
         });
         return;
       }
@@ -469,12 +488,14 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-base font-semibold text-slate-900 mb-1">
-            Two-Factor Verification
+            {isRegistrationOtp ? "Verify Your Email" : "Two-Factor Verification"}
           </h2>
           <p className="text-xs text-slate-500 text-center mb-6 max-w-xs leading-relaxed">
-            We sent a 6-digit verification code to{" "}
+            We sent a 6-digit {isRegistrationOtp ? "activation" : "verification"} code to{" "}
             <span className="font-semibold text-slate-800 break-all">{otpEmail}</span>.
-            Please enter it below to sign in.
+            {isRegistrationOtp
+              ? " Enter it below to activate your account."
+              : " Please enter it below to sign in."}
           </p>
 
           {/* OTP Form */}
@@ -533,12 +554,12 @@ export default function LoginPage() {
                 {isOtpVerifying ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                    Verifying Code...
+                    Verifying...
                   </>
                 ) : (
                   <>
                     <KeyRound className="w-3.5 h-3.5 mr-1.5" />
-                    Verify & Sign In
+                    {isRegistrationOtp ? "Verify Email" : "Verify & Sign In"}
                   </>
                 )}
               </Button>

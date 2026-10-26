@@ -283,3 +283,42 @@ html:not(.dark) .border-\[\#06083b\]:not(:hover) {
 .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: #00a99d;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   PRINT STYLES: Hide UI navigation, sidebar, headers, modals
+   ═══════════════════════════════════════════════════════════ */
+@media print {
+  /* Hide application shell UI */
+  aside,
+  header,
+  footer,
+  nav,
+  button,
+  .no-print,
+  [data-sidebar],
+  [role="dialog"],
+  .fixed,
+  .sticky {
+    display: none !important;
+  }
+
+  /* Reset layout constraints for printing */
+  html, body, #root, main {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Expand printed statement content cleanly */
+  .printable-statement-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+  }
+}

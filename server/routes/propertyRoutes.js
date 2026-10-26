@@ -8,8 +8,25 @@ const { protect, admin } = require('../middleware/authMiddleware');
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const properties = await Property.find({ user: req.user.id }).populate('caretakerId', 'name email');
-    res.json(properties);
+    const Unit = require('../models/Unit');
+    const properties = await Property.find({ user: req.user.id }).populate('caretakerId', 'name email').lean();
+    
+    // Attach all units to their respective properties
+    const propertyIds = properties.map(p => p._id);
+    const allUnits = await Unit.find({ propertyId: { $in: propertyIds } }).lean();
+
+    const propertiesWithUnits = properties.map(prop => {
+      const propUnits = allUnits.filter(u => String(u.propertyId) === String(prop._id));
+      const vacancies = propUnits.filter(u => u.status === 'vacant').length;
+      return {
+        ...prop,
+        units: propUnits,
+        totalUnits: propUnits.length,
+        vacancies
+      };
+    });
+
+    res.json(propertiesWithUnits);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

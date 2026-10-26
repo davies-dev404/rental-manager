@@ -397,17 +397,34 @@ export default function UnitsPage() {
   const [bulkAddOpen, setBulkAddOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadPropId, setDownloadPropId] = useState('all');
-  const { data: properties = [], isLoading } = useQuery({ queryKey: ['properties'], queryFn: api.getProperties });
-  const allUnits = properties.flatMap(prop => (prop.units || []).map((u, idx) => ({
-    id: u._id || u.id || (prop._id || prop.id) + '-' + idx,
-    propertyName: prop.name || 'Unknown',
-    propertyId: prop._id || prop.id,
-    unitName: u.unitNumber || u.name || 'Unit ' + (idx + 1),
-    type: u.type || 'Apartment',
-    status: u.status || 'vacant',
-    occupied: u.status === 'occupied',
-    rent: u.rentAmount || u.rent || 0,
-  })));
+  const { data: properties = [], isLoading: isPropsLoading } = useQuery({ queryKey: ['properties'], queryFn: api.getProperties });
+  const { data: rawUnits = [], isLoading: isUnitsLoading } = useQuery({ queryKey: ['units'], queryFn: () => api.getUnits() });
+  const isLoading = isPropsLoading || isUnitsLoading;
+
+  const allUnits = rawUnits.length > 0
+    ? rawUnits.map((u, idx) => {
+        const propObj = typeof u.propertyId === 'object' ? u.propertyId : properties.find(p => String(p._id || p.id) === String(u.propertyId));
+        return {
+          id: u._id || u.id || 'unit-' + idx,
+          propertyName: propObj?.name || 'Unknown Property',
+          propertyId: propObj?._id || propObj?.id || u.propertyId,
+          unitName: u.unitNumber || u.name || 'Unit ' + (idx + 1),
+          type: u.type || 'Apartment',
+          status: u.status || 'vacant',
+          occupied: u.status === 'occupied',
+          rent: u.rentAmount || u.rent || 0,
+        };
+      })
+    : properties.flatMap(prop => (prop.units || []).map((u, idx) => ({
+        id: u._id || u.id || (prop._id || prop.id) + '-' + idx,
+        propertyName: prop.name || 'Unknown',
+        propertyId: prop._id || prop.id,
+        unitName: u.unitNumber || u.name || 'Unit ' + (idx + 1),
+        type: u.type || 'Apartment',
+        status: u.status || 'vacant',
+        occupied: u.status === 'occupied',
+        rent: u.rentAmount || u.rent || 0,
+      })));
   const totalUnits = allUnits.length;
   const totalVacancies = allUnits.filter(u => !u.occupied).length;
   const totalOccupied = totalUnits - totalVacancies;

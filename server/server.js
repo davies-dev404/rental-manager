@@ -148,6 +148,8 @@ app.use('/api/reminders', require('./routes/reminderRoutes'));
 app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
 app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+
 app.get('/', (req, res) => {
     res.send('Rental Manager API is running...');
 });
