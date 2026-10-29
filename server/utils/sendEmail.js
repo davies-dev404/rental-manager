@@ -5,11 +5,66 @@ const Settings = require('../models/Settings');
 
 /**
  * Robust Email Dispatcher with Multi-Provider Fallback:
- * 1. Resend API (HTTP REST — fast, resilient, bypasses SMTP port blocking)
- * 2. SendGrid (HTTP REST)
- * 3. DB SMTP (configured in Settings)
- * 4. Env SMTP (Gmail with Port 465 SSL + automatic Port 587 STARTTLS fallback)
+ * 1. Brevo REST API (HTTP REST — verified deliverability, no domain locks, bypasses SMTP port blocking)
+ * 2. Resend API (HTTP REST)
+ * 3. SendGrid (HTTP REST)
+ * 4. DB SMTP (configured in Settings)
+ * 5. Brevo SMTP Relay
+ * 6. Env SMTP (Gmail with Port 465 SSL + automatic Port 587 STARTTLS fallback)
  */
+
+// Helper to send via Brevo (Sendinblue) HTTPS REST API
+async function sendViaBrevo(apiKey, options, fromName, fromEmail) {
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.FROM_EMAIL || 'daviesquan8@gmail.com';
+  const senderName = options.fromName || fromName || process.env.FROM_NAME || 'MakaziFlow';
+  const replyToEmail = process.env.FROM_EMAIL || process.env.SMTP_USER || 'daviesquan8@gmail.com';
+
+  const payload = {
+    sender: {
+      name: senderName,
+      email: senderEmail.trim()
+    },
+    to: [
+      {
+        email: options.email.trim(),
+        name: options.toName || options.email.split('@')[0]
+      }
+    ],
+    subject: options.subject,
+    htmlContent: options.message || options.html,
+    replyTo: {
+      name: senderName,
+      email: replyToEmail.trim()
+    }
+  };
+
+  if (options.attachments && Array.isArray(options.attachments)) {
+    payload.attachment = options.attachments.map(att => {
+      let contentBase64 = undefined;
+      if (att.content) {
+        contentBase64 = Buffer.isBuffer(att.content)
+          ? att.content.toString('base64')
+          : Buffer.from(att.content).toString('base64');
+      }
+      return {
+        name: att.filename,
+        content: contentBase64,
+        url: att.path
+      };
+    }).filter(att => att.content || att.url);
+  }
+
+  const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
+    headers: {
+      'api-key': apiKey.trim(),
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    timeout: 12000
+  });
+
+  return response.data;
+}
 
 // Helper to send via Resend HTTPS API
 async function sendViaResend(apiKey, options, fromName) {
@@ -115,7 +170,24 @@ const sendEmail = async (options) => {
   const errors = [];
 
   // ==========================================
-  // STRATEGY 1: Resend API (HTTP REST)
+  // STRATEGY 1: Brevo REST API (HTTPS — verified deliverability, no domain restrictions)
+  // ==========================================
+  const brevoApiKey = process.env.BREVO_API_KEY || settings?.integrations?.email?.brevo?.apiKey;
+  if (brevoApiKey) {
+    try {
+      console.log(`Attempting Brevo REST API for ${options.email}...`);
+      const brevoResult = await sendViaBrevo(brevoApiKey, options, orgName, orgEmail);
+      console.log(`📧 Email sent successfully (via Brevo API) to ${options.email} [ID: ${brevoResult?.messageId}]`);
+      return;
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message;
+      console.warn(`⚠️ Brevo API Failed (${errMsg}), falling back to next provider...`);
+      errors.push(`Brevo: ${errMsg}`);
+    }
+  }
+
+  // ==========================================
+  // STRATEGY 2: Resend API (HTTP REST)
   // ==========================================
   const resendApiKey = process.env.RESEND_API_KEY || settings?.integrations?.email?.resend?.apiKey;
   if (resendApiKey) {
@@ -132,7 +204,7 @@ const sendEmail = async (options) => {
   }
 
   // ==========================================
-  // STRATEGY 2: SendGrid API (HTTP REST)
+  // STRATEGY 3: SendGrid API (HTTP REST)
   // ==========================================
   const sendgridApiKey = settings?.integrations?.email?.sendgrid?.apiKey || process.env.SENDGRID_API_KEY;
   if (sendgridApiKey && settings?.integrations?.email?.provider === 'sendgrid') {
@@ -149,7 +221,7 @@ const sendEmail = async (options) => {
   }
 
   // ==========================================
-  // STRATEGY 3: DB Configured SMTP (if fully configured)
+  // STRATEGY 4: DB Configured SMTP (if fully configured)
   // ==========================================
   const smtpSettings = settings?.integrations?.email?.smtp;
   const isPlaceholder = (h) => !h || h.trim() === '' || h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io';
@@ -170,7 +242,24 @@ const sendEmail = async (options) => {
   }
 
   // ==========================================
-  // STRATEGY 4: Environment SMTP (Gmail Fallback with Port 465 & 587 Auto-Retry)
+  // STRATEGY 5: Brevo SMTP Relay (if configured)
+  // ==========================================
+  const brevoSmtpUser = process.env.BREVO_SMTP_USER || settings?.integrations?.email?.brevo?.smtpUser;
+  const brevoSmtpKey = process.env.BREVO_SMTP_KEY || settings?.integrations?.email?.brevo?.smtpKey;
+  if (brevoSmtpUser && brevoSmtpKey) {
+    try {
+      console.log(`Attempting Brevo SMTP for ${options.email}...`);
+      await sendViaNodemailer('smtp-relay.brevo.com', 587, false, brevoSmtpUser, brevoSmtpKey, getMailOptions(orgName, orgEmail), 'Brevo SMTP');
+      console.log(`📧 Email sent successfully (via Brevo SMTP) to ${options.email}`);
+      return;
+    } catch (err) {
+      console.warn(`⚠️ Brevo SMTP Failed (${err.message}), trying next...`);
+      errors.push(`Brevo SMTP: ${err.message}`);
+    }
+  }
+
+  // ==========================================
+  // STRATEGY 6: Environment SMTP (Gmail Fallback with Port 465 & 587 Auto-Retry)
   // ==========================================
   const envHost = process.env.SMTP_HOST || 'smtp.gmail.com';
   const envUser = process.env.SMTP_USER || 'daviesquan8@gmail.com';

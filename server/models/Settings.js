@@ -32,6 +32,10 @@ const settingsSchema = new mongoose.Schema({
               pass: { type: String, default: '' },
               fromEmail: { type: String, default: '' }
           },
+          brevo: {
+              apiKey: { type: String, default: '' },
+              smtpKey: { type: String, default: '' }
+          },
           sendgrid: {
               apiKey: { type: String, default: '' }
           },
@@ -49,6 +53,8 @@ const settingsSchema = new mongoose.Schema({
           twilio: {
               accountSid: { type: String, default: '' },
               authToken: { type: String, default: '' },
+              apiKeySid: { type: String, default: '' },
+              apiSecret: { type: String, default: '' },
               phoneNumber: { type: String, default: '' }
           },
           africastalking: {
@@ -62,6 +68,8 @@ const settingsSchema = new mongoose.Schema({
           twilio: {
               accountSid: { type: String, default: '' },
               authToken: { type: String, default: '' },
+              apiKeySid: { type: String, default: '' },
+              apiSecret: { type: String, default: '' },
               fromNumber: { type: String, default: '' } 
           }
       },

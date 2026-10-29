@@ -121,6 +121,7 @@ export default function LoginPage() {
 
         if (res.fallbackOtp) {
           setFallbackOtp(res.fallbackOtp);
+          setOtpCode(res.fallbackOtp);
         } else {
           setFallbackOtp("");
         }
@@ -130,8 +131,8 @@ export default function LoginPage() {
             variant: "destructive",
             title: "Email Dispatch Issue ⚠️",
             description: res.fallbackOtp
-              ? `Email could not be delivered to ${res.email} (Resend test mode limit). Code is: ${res.fallbackOtp}`
-              : `Login code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
+              ? `Email delivery delayed. Your code is: ${res.fallbackOtp}`
+              : `Login code generated, but email sending failed: ${res.emailError || "Please check email configuration"}`
           });
         } else {
           toast({
@@ -227,14 +228,15 @@ export default function LoginPage() {
       setOtpCountdown(180);
       if (res && res.fallbackOtp) {
         setFallbackOtp(res.fallbackOtp);
+        setOtpCode(res.fallbackOtp);
       }
       if (res && res.emailSent === false) {
         toast({
           variant: "destructive",
           title: "Resend Notice ⚠️",
           description: res.fallbackOtp
-            ? `Email sending restricted by Resend sandbox. Code is: ${res.fallbackOtp}`
-            : `Email sending failed: ${res.emailError || "Check SMTP setup"}`
+            ? `Email delivery delayed. Your code is: ${res.fallbackOtp}`
+            : `Email sending failed: ${res.emailError || "Check email configuration"}`
         });
       } else {
         toast({
@@ -536,7 +538,7 @@ export default function LoginPage() {
                   </button>
                 </div>
                 <p className="text-[10px] text-amber-700 dark:text-amber-300/80 leading-tight">
-                  Resend sandbox only delivers to account owner. Code provided here so you can sign in directly.
+                  Backup verification code provided in case email delivery is delayed.
                 </p>
               </div>
             )}
