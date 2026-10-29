@@ -70,9 +70,14 @@ export default function CloudflareTurnstile({
     if (widgetIdRef.current) {
       try {
         window.turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
       } catch {
         // ignore
       }
+    }
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = "";
     }
 
     try {

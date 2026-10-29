@@ -42,6 +42,7 @@ export default function LoginPage() {
   const [isOtpVerifying, setIsOtpVerifying] = useState(false);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(180);
+  const [fallbackOtp, setFallbackOtp] = useState("");
   const otpInputRef = useRef(null);
 
   // Sign up state
@@ -118,11 +119,19 @@ export default function LoginPage() {
         setOtpCountdown(180);
         setOtpCode("");
 
+        if (res.fallbackOtp) {
+          setFallbackOtp(res.fallbackOtp);
+        } else {
+          setFallbackOtp("");
+        }
+
         if (res.emailSent === false) {
           toast({
             variant: "destructive",
             title: "Email Dispatch Issue ⚠️",
-            description: `Login code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
+            description: res.fallbackOtp
+              ? `Email could not be delivered to ${res.email} (Resend test mode limit). Code is: ${res.fallbackOtp}`
+              : `Login code generated, but email sending failed: ${res.emailError || "Please check server SMTP setup"}`
           });
         } else {
           toast({
@@ -216,11 +225,16 @@ export default function LoginPage() {
     try {
       const res = await resendLoginOtp(otpEmail);
       setOtpCountdown(180);
+      if (res && res.fallbackOtp) {
+        setFallbackOtp(res.fallbackOtp);
+      }
       if (res && res.emailSent === false) {
         toast({
           variant: "destructive",
-          title: "Resend Warning ⚠️",
-          description: `Email sending failed: ${res.emailError || "Check SMTP setup"}`
+          title: "Resend Notice ⚠️",
+          description: res.fallbackOtp
+            ? `Email sending restricted by Resend sandbox. Code is: ${res.fallbackOtp}`
+            : `Email sending failed: ${res.emailError || "Check SMTP setup"}`
         });
       } else {
         toast({
@@ -504,6 +518,28 @@ export default function LoginPage() {
 
           {/* OTP Form */}
           <form onSubmit={handleVerifyOtp} className="w-full space-y-4">
+            {fallbackOtp && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg text-amber-900 dark:text-amber-200 text-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-semibold text-[11px] uppercase tracking-wide text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                    <span>🔑 Verification Code:</span>
+                    <span className="font-mono text-sm tracking-widest font-bold bg-amber-200/80 dark:bg-amber-800/80 px-2 py-0.5 rounded text-amber-950 dark:text-amber-100">
+                      {fallbackOtp}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOtpCode(fallbackOtp)}
+                    className="text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    Auto-Fill
+                  </button>
+                </div>
+                <p className="text-[10px] text-amber-700 dark:text-amber-300/80 leading-tight">
+                  Resend sandbox only delivers to account owner. Code provided here so you can sign in directly.
+                </p>
+              </div>
+            )}
             <div>
               <label className="text-[11px] font-medium text-slate-600 block mb-1.5 text-center">
                 Enter 6-Digit Code

@@ -20,14 +20,35 @@ const generateToken = (id) => {
 const logActivity = require('../utils/logActivity');
 const { seedDemoDataForUser, clearDemoDataForUser } = require('../utils/seedDemoData');
 
-// Branded email header with official MakaziFlow logo
+// Branded email header — corporate banner, centered layout
 const getEmailHeader = () => {
   const logoUrl = 'https://raw.githubusercontent.com/davies-dev404/Rental-Manager/main/client/src/assets/logo.png';
   return `
-    <div style="text-align:center;margin-bottom:24px;">
-      <img src="${logoUrl}" alt="MakaziFlow Logo" style="height:48px;width:auto;margin-bottom:8px;object-fit:contain;display:inline-block;" onerror="this.style.display='none'" />
-      <h1 style="color:#0d2240;margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">Makazi<span style="color:#00a99d;">Flow</span></h1>
-      <p style="color:#64748b;font-size:12px;margin:4px 0 0 0;">Manage Rentals. Effortlessly.</p>
+    <div style="margin-bottom:28px;border-radius:14px;overflow:hidden;box-shadow:0 2px 16px rgba(13,34,64,0.12);">
+      <!-- Dark navy brand banner -->
+      <div style="background:linear-gradient(135deg,#0d2240 0%,#163354 60%,#1a4068 100%);padding:32px 32px 24px 32px;text-align:center;">
+        <!-- Circular avatar with teal ring, centered -->
+        <div style="display:inline-block;padding:3px;border-radius:50%;background:linear-gradient(135deg,#00a99d,#00c9b8);box-shadow:0 0 0 4px rgba(0,169,157,0.20);margin-bottom:16px;">
+          <img
+            src="${logoUrl}"
+            alt="MakaziFlow"
+            width="72"
+            height="72"
+            style="display:block;width:72px;height:72px;border-radius:50%;object-fit:cover;background:#fff;border:3px solid #fff;"
+            onerror="this.style.display='none'"
+          />
+        </div>
+        <!-- Brand name, centered -->
+        <div style="font-size:28px;font-weight:900;letter-spacing:-0.5px;line-height:1;color:#ffffff;margin-bottom:7px;font-family:Georgia,serif;">
+          Makazi<span style="color:#00d4c8;">Flow</span>
+        </div>
+        <!-- Tagline, centered -->
+        <div style="font-size:11px;color:#94b8d4;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;font-family:Arial,sans-serif;">
+          Manage Properties &nbsp;·&nbsp; Effortlessly
+        </div>
+      </div>
+      <!-- Teal accent stripe -->
+      <div style="height:4px;background:linear-gradient(90deg,#00a99d 0%,#00d4c8 50%,#00a99d 100%);"></div>
     </div>
   `;
 };
@@ -122,7 +143,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         name: user.name,
         emailSent,
-        emailError: emailSent ? undefined : emailError
+        emailError: emailSent ? undefined : emailError,
+        fallbackOtp: emailSent ? undefined : loginOtp
       });
     } else {
       await logActivity('System', 'Login Failed', `Failed login attempt for ${email}`, 'auth', 'warning');
@@ -190,9 +212,12 @@ router.post('/resend-login-otp', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'A new verification code has been sent to your email.',
+      message: emailSent
+        ? 'A new verification code has been sent to your email.'
+        : 'Email sending failed due to unverified test sender. Your verification code is provided below.',
       emailSent,
-      emailError: emailSent ? undefined : emailError
+      emailError: emailSent ? undefined : emailError,
+      fallbackOtp: emailSent ? undefined : loginOtp
     });
   } catch (error) {
     console.error('Resend login OTP error:', error.message);
@@ -298,7 +323,7 @@ router.post('/register', async (req, res) => {
       });
 
       if (user) {
-        // 4. Attempt to send OTP via email (non-blocking failure)
+        let emailSent = false;
         try {
             await sendEmail({
               email: user.email,
@@ -318,6 +343,7 @@ router.post('/register', async (req, res) => {
                   </p>
                 </div>`
             });
+            emailSent = true;
         } catch (emailError) {
             console.error('Email send failed (non-fatal):', emailError.message);
         }
@@ -337,7 +363,9 @@ router.post('/register', async (req, res) => {
         res.status(201).json({ 
           message: 'Registration successful. Please verify your email.',
           requiresVerification: true,
-          email: user.email
+          email: user.email,
+          emailSent,
+          fallbackOtp: emailSent ? undefined : otp
         });
       } else {
         res.status(400).json({ message: 'Could not create account. Please try again.' });
@@ -518,7 +546,8 @@ router.post('/forgot-password', async (req, res) => {
             message: 'Password reset code has been sent to your email.',
             email: user.email,
             emailSent,
-            emailError: emailSent ? undefined : emailError
+            emailError: emailSent ? undefined : emailError,
+            fallbackOtp: emailSent ? undefined : resetCode
         });
     } catch (error) {
         console.error('Forgot password error:', error.message);

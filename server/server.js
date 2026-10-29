@@ -79,10 +79,10 @@ const connectDB = async () => {
     }
 
     const opts = {
-        serverSelectionTimeoutMS: 30000,
-        connectTimeoutMS: 30000,
-        socketTimeoutMS: 60000,
-        maxPoolSize: 10,
+        serverSelectionTimeoutMS: isServerless ? 8000 : 30000,
+        connectTimeoutMS: isServerless ? 8000 : 30000,
+        socketTimeoutMS: 45000,
+        maxPoolSize: isServerless ? 5 : 10,
         heartbeatFrequencyMS: 10000,
     };
 
@@ -119,7 +119,7 @@ app.use(async (req, res, next) => {
         next();
     } catch (err) {
         return res.status(500).json({ 
-            message: 'Database connection failed. Please ensure MONGODB_URI is configured and your IP is whitelisted in MongoDB Atlas.',
+            message: 'Database connection failed. In MongoDB Atlas Network Access, ensure 0.0.0.0/0 (Allow Access from Anywhere) is whitelisted, as Vercel serverless functions use dynamic IP addresses.',
             error: err.message 
         });
     }
@@ -154,16 +154,25 @@ app.get('/', (req, res) => {
     res.send('Rental Manager API is running...');
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+    let connectionError = null;
+    if (req.query.connect === 'true') {
+        try {
+            await connectDB();
+        } catch (err) {
+            connectionError = err.message;
+        }
+    }
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     const dbState = states[mongoose.connection.readyState] || 'unknown';
     res.json({
-        status: 'ok',
+        status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),
         database: {
             status: dbState,
             readyState: mongoose.connection.readyState,
-            host: mongoose.connection.host || null
+            host: mongoose.connection.host || null,
+            error: connectionError
         },
         env: process.env.NODE_ENV || 'development'
     });
