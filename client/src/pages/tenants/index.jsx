@@ -261,7 +261,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
     );
 }
 
-// ─── Sub-View: Tenant Form (Bomahut Format matching User Screenshots 3 & 4) ───
+// ─── Sub-View: Tenant Form (MakaziFlow Layout) ───
 function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2379,7 +2379,7 @@ export default function TenantsPage() {
     const queryClient = useQueryClient();
     const { toast } = useToast();
 
-    // View state matching Bomahut sub-pages: 'list' | 'add_tenant' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
+    // View state sub-pages: 'list' | 'add_tenant' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
     const [view, setView] = useState(() => {
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
@@ -2646,7 +2646,7 @@ export default function TenantsPage() {
 
     return (
       <div className="space-y-4 max-w-7xl mx-auto">
-        {/* Top Actions — matching Bomahut Screenshot 2 */}
+        {/* Top Actions */}
         <div className="flex items-center justify-end gap-2">
           <Button
             onClick={() => setView("add_tenant")}
@@ -2656,7 +2656,7 @@ export default function TenantsPage() {
             Add Tenant
           </Button>
 
-          {/* Send Reminders button matching Bomahut Screenshot 4 */}
+          {/* Send Reminders button */}
           <Button
             variant="outline"
             className="text-xs h-9 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
@@ -2666,7 +2666,7 @@ export default function TenantsPage() {
             Send Reminders
           </Button>
 
-          {/* More Options Dropdown — matching Bomahut Screenshot 2 */}
+          {/* More Options Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -3149,7 +3149,7 @@ export default function TenantsPage() {
           </div>
         </div>
 
-        {/* Send Balance Reminders Modal (matching Bomahut Screenshot 4) */}
+        {/* Send Balance Reminders Modal */}
         <Dialog open={sendRemindersOpen} onOpenChange={setSendRemindersOpen}>
           <DialogContent className="max-w-lg p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl">
             <DialogHeader className="space-y-1">

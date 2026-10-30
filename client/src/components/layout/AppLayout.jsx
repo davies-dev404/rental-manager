@@ -74,7 +74,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
         await api.seedDemoMode();
         toast({
           title: "Demo Mode Activated 🚀",
-          description: "Sample Kenyan properties and tenants loaded (Bomahut style)."
+          description: "Sample Kenyan properties and tenants loaded into your workspace."
         });
       } else {
         await api.clearDemoMode();
@@ -104,7 +104,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
     }
   };
 
-  // Expand Financials, Property/Unit, Reports, and Settings by default to match Bomahut screenshot
+  // Expand Financials, Property/Unit, Reports, and Settings by default
   const [expandedMenus, setExpandedMenus] = useState({
     financials: true,
     property: true,
@@ -582,7 +582,7 @@ export default function AppLayout({ children }) {
         </div>
       </aside>
 
-      {/* Main Content Area with Bomahut Top Header Bar */}
+      {/* Main Content Area with Top Header Bar */}
       <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden transition-all duration-300">
         {/* Top Header Bar */}
         <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
@@ -624,7 +624,7 @@ export default function AppLayout({ children }) {
           </div>
         </header>
 
-        {/* Demo Mode Top Banner (Bomahut style) */}
+        {/* Demo Mode Top Banner (MakaziFlow sample mode) */}
         {(user?.isDemoMode || localStorage.getItem("dwello_demo_mode") === "true") && (
           <div className="bg-linear-to-r from-teal-700 via-teal-600 to-emerald-700 text-white text-xs px-4 py-2 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-xs shrink-0 z-10 border-b border-teal-500/30 animate-in fade-in duration-200">
             <div className="flex items-center gap-2">
@@ -632,7 +632,7 @@ export default function AppLayout({ children }) {
                 Demo Mode Active
               </span>
               <span className="text-white/95 text-[11px] sm:text-xs">
-                You are exploring MakaziFlow with sample Kenyan properties, tenants & M-Pesa records (Bomahut style). Test any feature!
+                You are exploring MakaziFlow with sample Kenyan properties, tenants & M-Pesa records. Test any feature!
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">

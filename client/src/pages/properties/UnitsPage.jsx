@@ -21,7 +21,7 @@ const unitSchema = z.object({
   rentAmount: z.string().min(1, 'Rent is required'),
 });
 
-// ─── Unit Form View (Bomahut Layout matching User Screenshot 1) ───────────
+// ─── Unit Form View (MakaziFlow Layout) ───────────────────────────────────────
 function UnitFormView({ properties, onBack, onSuccess }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();

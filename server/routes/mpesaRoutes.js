@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const { initiateSTKPush } = require('../utils/daraja');
+const { sendPaymentReceipt } = require('../utils/sendPaymentReceipt');
 const Payment = require('../models/Payment');
 const logActivity = require('../utils/logActivity');
 
@@ -76,6 +77,9 @@ router.post('/callback', async (req, res) => {
                 payment.amount = amount; // Confirm exact amount
                 await payment.save();
                 console.log(`✅ Payment Updated: ${payment._id} is now PAID`);
+
+                // Automatically trigger PDF email and SMS receipts to tenant
+                sendPaymentReceipt(payment._id).catch(err => console.error("M-Pesa Auto-Receipt Error:", err.message));
             } else {
                  console.log(`⚠️ Payment not found for CheckoutRequestID: ${checkoutRequestId}`);
             }

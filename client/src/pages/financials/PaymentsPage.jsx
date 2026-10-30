@@ -32,7 +32,7 @@ const paymentStatusColors = {
   paid: "bg-emerald-100 text-emerald-700 border-emerald-200"
 };
 
-// ─── Payment Form View (Bomahut Layout matching Screenshot 3) ─────────────────
+// ─── Payment Form View (MakaziFlow Layout) ───────────────────────────────────
 function PaymentFormView({ properties, tenants, onBack, onAdd }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");
@@ -371,7 +371,7 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
   );
 }
 
-// ─── Upload Bank Statement View (Bomahut Layout matching Screenshot 4) ────────
+// ─── Upload Bank Statement View (MakaziFlow Layout) ───────────────────────────
 function UploadBankStatementView({ onBack, onAddPayments }) {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
@@ -580,7 +580,7 @@ function UploadBankStatementView({ onBack, onAddPayments }) {
 }
 
 // ─── Main Payments Page Component ─────────────────────────────────────────────
-export default function PaymentsPageBomahut() {
+export default function PaymentsPage() {
   const { toast } = useToast();
   const { formatCurrency } = usePreferences();
   const queryClient = useQueryClient();

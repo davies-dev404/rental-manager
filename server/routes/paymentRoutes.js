@@ -2,59 +2,17 @@ const express = require('express');
 const router = express.Router();
 const Payment = require('../models/Payment');
 const Settings = require('../models/Settings');
+const Tenant = require('../models/Tenant');
+const Unit = require('../models/Unit');
+const Property = require('../models/Property');
 const { protect } = require('../middleware/authMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
 const sendEmail = require('../utils/sendEmail');
 const logActivity = require('../utils/logActivity');
 const { getReceiptEmailBody } = require('../utils/emailTemplates');
 
-// Helper to send receipt
-const sendReceiptEmail = async (paymentId) => {
-    try {
-        console.log(`Starting receipt email for payment: ${paymentId}`);
-        const payment = await Payment.findOne({ _id: paymentId }) // sendReceiptEmail is internalhelper, but ideally should check user context if possible. But here we might not have req.user easily.
-            // Let's modify sendReceiptEmail to accept user check OR assume calling function did it. 
-            // Better: update sendReceiptEmail to NOT check user on behalf of caller if internal, but the callers should.
-            // However, the helper is used in POST / (creation, so user safe) and POST /:id/email (needs check).
-            .populate('tenantId', 'name email')
-            .populate('unitId', 'unitNumber');
-        
-        if (!payment) {
-            console.error(`Payment not found: ${paymentId}`);
-            return;
-        }
-        if (!payment.tenantId || !payment.tenantId.email) {
-            console.log(`No tenant email found for payment: ${paymentId}`);
-            return;
-        }
-
-        const settings = await Settings.findOne() || {};
-        console.log("Settings found, generating PDF...");
-        
-        // Generate PDF
-        const pdfBuffer = await generateReceiptPDF(payment, settings);
-        console.log("PDF generated, sending email...");
-
-        const emailHtml = getReceiptEmailBody(payment, payment.tenantId.name, settings);
-
-        await sendEmail({
-            email: payment.tenantId.email,
-            subject: `Payment Receipt - ${payment._id.toString().substring(0, 8).toUpperCase()}`,
-            message: emailHtml,
-            attachments: [
-                {
-                    filename: `Receipt-${payment._id.toString().substring(0, 8)}.pdf`,
-                    content: pdfBuffer,
-                    contentType: 'application/pdf'
-                }
-            ]
-        });
-        console.log("Receipt email sent successfully.");
-    } catch (error) {
-        console.error("Critical Error in sendReceiptEmail:", error);
-        throw error; // Re-throw so the route handler catches it
-    }
-};
+const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
+const sendReceiptEmail = sendPaymentReceipt;
 
 // @desc    Get all payments
 // @route   GET /api/payments
@@ -141,8 +99,6 @@ router.post('/', protect, async (req, res) => {
     if (components.length > 1) paymentType = 'Combined';
     else if (components.length === 1) paymentType = components[0];
 
-    const Tenant = require('../models/Tenant');
-    const Unit = require('../models/Unit');
     let tenant = null;
 
     if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
@@ -206,7 +162,6 @@ router.post('/', protect, async (req, res) => {
 
     // Update Tenant nextPaymentDate if provided
     if (nextPaymentDate && tenantId) {
-        const Tenant = require('../models/Tenant');
         await Tenant.findByIdAndUpdate(tenantId, { nextPaymentDate });
     }
 
@@ -262,16 +217,20 @@ router.get('/:id/pdf', protect, async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email')
-            .populate('unitId', 'unitNumber');
+            .populate('unitId', 'unitNumber propertyId');
 
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
         const settings = await Settings.findOne() || {};
-        const pdfBuffer = await generateReceiptPDF(payment, settings);
+        const propertyName = await getPropertyNameForPayment(payment);
+        const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
+
+        const businessName = propertyName || settings?.orgName || 'MakaaziHub';
+        const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${payment._id}.pdf`;
 
         res.set({
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename="Receipt-${payment._id}.pdf"`,
+            'Content-Disposition': `inline; filename="${filename}"`,
             'Content-Length': pdfBuffer.length
         });
         res.send(pdfBuffer);

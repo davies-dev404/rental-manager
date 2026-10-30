@@ -107,7 +107,7 @@ export default function OnboardingWizard({ onComplete }) {
         title: mode === "demo" ? "Demo Mode Activated! 🚀" : "Workspace Activated! 🎉",
         description:
           mode === "demo"
-            ? "Your account is now seeded with sample Kenyan properties, tenants, and M-Pesa payments (Bomahut style)."
+            ? "Your account is now seeded with sample Kenyan properties, tenants, and M-Pesa payments (MakaziFlow Sample Mode)."
             : "Your live rental management workspace is ready."
       });
 
@@ -408,7 +408,7 @@ export default function OnboardingWizard({ onComplete }) {
                   How would you like to get started?
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Choose Demo Mode to explore with pre-filled sample Kenyan properties (Bomahut style), or start Live.
+                  Choose Demo Mode to explore with pre-filled sample Kenyan properties, or start Live.
                 </p>
               </div>
 
@@ -427,7 +427,7 @@ export default function OnboardingWizard({ onComplete }) {
                       Explore in Demo Mode
                     </h4>
                     <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                      Pre-populates your account with realistic sample Kenyan rental data (Kilimani, Westlands & Roysambu), tenant leases, M-Pesa payments, and arrears just like the Bomahut system.
+                      Pre-populates your account with realistic sample Kenyan rental data (Kilimani, Westlands & Roysambu), tenant leases, M-Pesa payments, and arrears.
                     </p>
                     <ul className="text-xs space-y-1.5 text-slate-700 dark:text-slate-300 font-medium pt-2">
                       <li className="flex items-center gap-2">
@@ -456,7 +456,7 @@ export default function OnboardingWizard({ onComplete }) {
                       </span>
                     ) : (
                       <span className="flex items-center justify-center gap-2">
-                        <Sparkles className="w-4 h-4" /> Start in Demo Mode (Bomahut MIS)
+                        <Sparkles className="w-4 h-4" /> Start in Demo Mode (MakaziFlow)
                       </span>
                     )}
                   </Button>

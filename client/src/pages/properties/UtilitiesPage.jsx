@@ -16,7 +16,7 @@ import {
   Loader2
 } from "lucide-react";
 
-// ─── Add Utilities Form View (matching Bomahut Screenshot 3) ──────────────────
+// ─── Add Utilities Form View (MakaziFlow Layout) ──────────────────────────────
 function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
@@ -327,7 +327,7 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
   );
 }
 
-// ─── Reset Utilities Form View (matching Bomahut Screenshot 4) ────────────────
+// ─── Reset Utilities Form View (MakaziFlow Layout) ────────────────────────────
 function ResetUtilitiesFormView({ properties, onBack, onReset }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");

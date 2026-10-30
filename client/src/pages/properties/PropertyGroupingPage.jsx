@@ -13,7 +13,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 
-// ─── Property Grouping Form View (matching Bomahut Screenshot 2) ───────────────
+// ─── Property Grouping Form View (MakaziFlow Layout) ─────────────────────────
 function PropertyGroupingFormView({ properties, onBack, onAdd }) {
   const { toast } = useToast();
   const [name, setName] = useState("");
@@ -83,7 +83,7 @@ function PropertyGroupingFormView({ properties, onBack, onAdd }) {
         <p className="text-xs text-slate-500 mt-0.5">Use this form to add property groupings</p>
       </div>
 
-      {/* Form Card (matching Bomahut Screenshot 2) */}
+      {/* Form Card */}
       <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-5">
         {/* Row 1: Name */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">

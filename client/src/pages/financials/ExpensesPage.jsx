@@ -29,7 +29,7 @@ const categoryColors = {
   other: "bg-slate-100 text-slate-600 border-slate-200"
 };
 
-// ─── Expense Form View (Bomahut Layout matching Screenshot 5) ─────────────────
+// ─── Expense Form View (MakaziFlow Layout) ───────────────────────────────────
 const PAYMENT_METHODS = [
   "mpesa",
   "bank deposit",

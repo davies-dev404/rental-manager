@@ -53,7 +53,7 @@ const statusColors = {
   "credit-note": "bg-purple-100 text-purple-700 border-purple-200"
 };
 
-// ─── Invoice Form View (Bomahut Layout matching Screenshot 2) ─────────────────
+// ─── Invoice Form View (MakaziFlow Layout) ───────────────────────────────────
 function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");
@@ -412,7 +412,7 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
   );
 }
 
-// ─── 1. Generate Bulk Invoices Wizard (Bomahut Screenshot 2) ──────────────────
+// ─── 1. Generate Bulk Invoices Wizard (MakaziFlow Layout) ──────────────────────
 function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [step, setStep] = useState(1); // 1: Setup, 2: Preview & Generate, 3: Send Invoices
@@ -867,7 +867,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
   );
 }
 
-// ─── 2. Bulk Invoicing Form View (Bomahut Screenshot 3) ───────────────────────
+// ─── 2. Bulk Invoicing Form View (MakaziFlow Layout) ──────────────────────────
 function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");
@@ -1127,7 +1127,7 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
   );
 }
 
-// ─── 3. Rent Invoice Form View (Bomahut Screenshot 4) ─────────────────────────
+// ─── 3. Rent Invoice Form View (MakaziFlow Layout) ────────────────────────────
 function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [selectedProps, setSelectedProps] = useState([]);
@@ -1303,7 +1303,7 @@ function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
   );
 }
 
-// ─── 4. Other Recurring Bills Invoice Form View (Bomahut Screenshot 1) ────────
+// ─── 4. Other Recurring Bills Invoice Form View (MakaziFlow Layout) ───────────
 function RecurringBillsInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [selectedProps, setSelectedProps] = useState([]);
@@ -1479,7 +1479,7 @@ function RecurringBillsInvoiceFormView({ properties, tenants, onBack, onAddInvoi
   );
 }
 
-// ─── 5. Rent Penalty Invoice Form View (Bomahut Screenshot 2) ─────────────────
+// ─── 5. Rent Penalty Invoice Form View (MakaziFlow Layout) ────────────────────
 function RentPenaltyInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [selectedProps, setSelectedProps] = useState([]);
@@ -1679,7 +1679,7 @@ function RentPenaltyInvoiceFormView({ properties, tenants, onBack, onAddInvoices
   );
 }
 
-// ─── 6. Generate Custom Penalty Invoices View (Bomahut Screenshot 3) ──────────
+// ─── 6. Generate Custom Penalty Invoices View (MakaziFlow Layout) ─────────────
 function GenerateCustomPenaltyInvoicesView({ properties, tenants, onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
@@ -2034,7 +2034,7 @@ export default function InvoicesPage() {
     }
   };
 
-  // Actions for More Options menu — navigate to Bomahut sub-views
+  // Actions for More Options menu — navigate to invoice sub-views
   const handleMoreOption = (actionType) => {
     switch (actionType) {
       case "bulk_invoices":

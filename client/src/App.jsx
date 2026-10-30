@@ -7,6 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import LoginPage from "@/pages/auth/Login";
+import LandingPage from "@/pages/landing";
+import FeaturesPage from "@/pages/public/FeaturesPage";
+import PricingPage from "@/pages/public/PricingPage";
+import FaqsPage from "@/pages/public/FaqsPage";
+import LandlordPage from "@/pages/public/LandlordPage";
+import PropertyManagersPage from "@/pages/public/PropertyManagersPage";
 import AppLayout from "@/components/layout/AppLayout";
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
 import { initMetaPixel, trackPageView } from "@/lib/metaPixel";
@@ -67,12 +73,19 @@ function Router() {
     }, [location]);
 
     return (<Switch>
+      {/* Public Marketing & Auth Pages */}
+      <Route path="/" component={LandingPage}/>
+      <Route path="/home" component={LandingPage}/>
+      <Route path="/features" component={FeaturesPage}/>
+      <Route path="/pricing" component={PricingPage}/>
+      <Route path="/faqs" component={FaqsPage}/>
+      <Route path="/landlord" component={LandlordPage}/>
+      <Route path="/property-managers" component={PropertyManagersPage}/>
       <Route path="/login" component={LoginPage}/>
+      <Route path="/signup" component={LoginPage}/>
+      <Route path="/register" component={LoginPage}/>
       
       {/* Protected Routes */}
-      <Route path="/">
-        {() => <PrivateRoute component={Dashboard}/>}
-      </Route>
       <Route path="/dashboard">
         {() => <PrivateRoute component={Dashboard}/>}
       </Route>

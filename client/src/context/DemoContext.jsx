@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 
 const DemoContext = createContext(undefined);
 
-export const sampleBomahutData = {
+export const sampleMakaziData = {
   stats: {
     tenantArrears: 539259.0,
     tenantsWithArrearsCount: 13,
@@ -52,14 +52,17 @@ export const sampleBomahutData = {
   ]
 };
 
+// Backward-compatible alias
+export const sampleBomahutData = sampleMakaziData;
+
 export function DemoProvider({ children }) {
   const [isDemoMode, setIsDemoMode] = useState(() => {
-    const saved = localStorage.getItem("bomahut_demo_mode");
+    const saved = localStorage.getItem("makaziflow_demo_mode") || localStorage.getItem("bomahut_demo_mode");
     return saved === null ? true : saved === "true";
   });
 
   useEffect(() => {
-    localStorage.setItem("bomahut_demo_mode", String(isDemoMode));
+    localStorage.setItem("makaziflow_demo_mode", String(isDemoMode));
   }, [isDemoMode]);
 
   const toggleDemoMode = () => {
@@ -67,7 +70,7 @@ export function DemoProvider({ children }) {
   };
 
   return (
-    <DemoContext.Provider value={{ isDemoMode, setIsDemoMode, toggleDemoMode, sampleData: sampleBomahutData }}>
+    <DemoContext.Provider value={{ isDemoMode, setIsDemoMode, toggleDemoMode, sampleData: sampleMakaziData }}>
       {children}
     </DemoContext.Provider>
   );

@@ -17,12 +17,61 @@ import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
 import { trackRegistration } from "@/lib/metaPixel";
 
 export default function LoginPage() {
-  const [, setLocation] = useLocation();
-  const { login, verifyLoginOtp, resendLoginOtp } = useAuth();
+  const [location, setLocation] = useLocation();
+  const { user, login, verifyLoginOtp, resendLoginOtp, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
 
   // Mode: 'login' | 'register'
-  const [isSignup, setIsSignup] = useState(false);
+  const [isSignup, setIsSignup] = useState(() => {
+    if (typeof window !== "undefined") {
+      const search = window.location.search || "";
+      return search.includes("mode=signup") || search.includes("mode=register") || window.location.pathname === "/signup" || window.location.pathname === "/register";
+    }
+    return false;
+  });
+
+  // Selected plan from pricing cards
+  const [selectedPlanInfo, setSelectedPlanInfo] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const plan = params.get("plan");
+      const cycle = params.get("cycle");
+      if (plan) {
+        localStorage.setItem("makaziflow_selected_plan", plan);
+        if (cycle) localStorage.setItem("makaziflow_selected_cycle", cycle);
+        return { plan, cycle: cycle || "monthly" };
+      }
+    }
+    return null;
+  });
+
+  // Listen to route and URL param changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const search = window.location.search || "";
+      const params = new URLSearchParams(search);
+      const plan = params.get("plan");
+      const cycle = params.get("cycle");
+      if (plan) {
+        localStorage.setItem("makaziflow_selected_plan", plan);
+        if (cycle) localStorage.setItem("makaziflow_selected_cycle", cycle);
+        setSelectedPlanInfo({ plan, cycle: cycle || "monthly" });
+      }
+
+      if (search.includes("mode=signup") || search.includes("mode=register") || location === "/signup" || location === "/register") {
+        setIsSignup(true);
+      } else if (search.includes("mode=login")) {
+        setIsSignup(false);
+      }
+    }
+  }, [location]);
+
+  // Redirect to dashboard if user is already authenticated
+  useEffect(() => {
+    if (user && !authLoading) {
+      setLocation("/dashboard");
+    }
+  }, [user, authLoading, setLocation]);
 
   // Role: 'admin' (Landlord / Manager) | 'tenant' (Tenant)
   const [role, setRole] = useState("admin");
@@ -149,7 +198,7 @@ export default function LoginPage() {
           title: "Welcome Back",
           description: `Logged in as ${res.name || usernameOrEmail}`
         });
-        setLocation("/");
+        setLocation("/dashboard");
       }
     } catch (err) {
       toast({
@@ -206,7 +255,7 @@ export default function LoginPage() {
           title: "Welcome Back! 👋",
           description: `Logged in as ${res?.name || "User"}`
         });
-        setLocation("/");
+        setLocation("/dashboard");
       }
     } catch (err) {
       toast({
@@ -736,9 +785,22 @@ export default function LoginPage() {
             <img src="/logo.png" alt="MakaziFlow" className="h-20 w-auto object-contain" />
           </div>
 
-          <h2 className="text-base font-normal text-slate-800 mb-6">
+          <h2 className="text-base font-normal text-slate-800 mb-4">
             Create Account
           </h2>
+
+          {/* Selected Plan Banner if arriving from Pricing */}
+          {selectedPlanInfo && (
+            <div className="w-full mb-4 px-3.5 py-2 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between">
+              <span className="font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Selected Plan: <span className="uppercase font-bold text-blue-700">{selectedPlanInfo.plan}</span> ({selectedPlanInfo.cycle})
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                14-Day Free Trial
+              </span>
+            </div>
+          )}
 
           {/* Registration Form */}
           <form onSubmit={handleSignUp} className="w-full space-y-4">

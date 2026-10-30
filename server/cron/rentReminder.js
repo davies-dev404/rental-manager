@@ -76,10 +76,25 @@ async function sendNotification(tenant, reminder) {
 
         // 1. Email (Default)
         if (notifications.email !== false) { // Default to true if undefined
+             const { getCorporateReminderEmailBody } = require('../utils/emailTemplates');
+             const emailHtml = getCorporateReminderEmailBody({
+                 tenantName: tenant.name,
+                 unitNumber: tenant.unitId?.unitNumber || '',
+                 calculation: {
+                     totalDue: reminder.amountDue || tenant.rentAmount || 0,
+                     rentDue: reminder.breakdown?.rent || reminder.amountDue || tenant.rentAmount || 0,
+                     unpaidUtilities: reminder.breakdown?.utilities || []
+                 },
+                 reminderTitle: reminder.title,
+                 reminderDescription: reminder.description,
+                 settings,
+                 dueDate: reminder.dueDate
+             });
+
              await sendEmail({
                 email: tenant.email,
                 subject: reminder.title,
-                message: `<p>Hello ${tenant.name},</p><p>${reminder.description || reminder.title}</p><p>Thank you,<br>Rental Management</p>`
+                message: emailHtml
             });
         }
 

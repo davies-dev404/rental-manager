@@ -7,6 +7,7 @@ const { protect } = require('../middleware/authMiddleware');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
+const { getCorporateReminderEmailBody } = require('../utils/emailTemplates');
 
 // Get all reminders
 router.get('/', protect, async (req, res) => {
@@ -106,55 +107,19 @@ function generatePersonalizedMessage(tenant, calculation) {
   return lines.join('\n');
 }
 
-// Helper: compose HTML email body
-function generatePersonalizedEmailHtml(tenant, calculation) {
-  const unitNum = tenant.unitId?.unitNumber || 'assigned unit';
-  let utilityRows = '';
-  if (calculation.unpaidUtilities && calculation.unpaidUtilities.length > 0) {
-    utilityRows = calculation.unpaidUtilities.map(u => `
-      <tr>
-        <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; color: #475569;">${u.name}</td>
-        <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: #0f172a;">KES ${Number(u.amount).toLocaleString()}</td>
-      </tr>
-    `).join('');
-  }
-
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-      <h2 style="color: #1e293b; margin-top: 0;">Payment Reminder</h2>
-      <p style="color: #475569; font-size: 15px;">Dear <strong>${tenant.name}</strong>,</p>
-      <p style="color: #475569; font-size: 14px; line-height: 1.5;">
-        This is a personalized reminder regarding your pending balance for <strong>Unit ${unitNum}</strong>.
-      </p>
-      
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
-        <thead>
-          <tr style="background-color: #f8fafc;">
-            <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid #cbd5e1; color: #334155;">Item</th>
-            <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #cbd5e1; color: #334155;">Amount Due</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${calculation.rentDue > 0 ? `
-            <tr>
-              <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; color: #475569;">House Rent</td>
-              <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: #0f172a;">KES ${calculation.rentDue.toLocaleString()}</td>
-            </tr>
-          ` : ''}
-          ${utilityRows}
-          <tr style="background-color: #f1f5f9; font-size: 16px;">
-            <td style="padding: 12px; font-weight: bold; color: #0f172a;">Total Balance Due</td>
-            <td style="padding: 12px; text-align: right; font-weight: bold; color: #dc2626;">KES ${calculation.totalDue.toLocaleString()}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <p style="color: #64748b; font-size: 13px; line-height: 1.4;">
-        Kindly arrange payment through your authorized payment channel. If you have already made this payment, please disregard this reminder.
-      </p>
-    </div>
-  `;
+// Helper: compose HTML email body using Corporate MakaziFlow template
+function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
+  const unitNum = tenant.unitId?.unitNumber || '';
+  return getCorporateReminderEmailBody({
+    tenantName: tenant.name,
+    unitNumber: unitNum,
+    calculation,
+    reminderTitle: options.title || `Payment Reminder - Unit ${unitNum || ''}`,
+    reminderDescription: options.description || null,
+    dueDate: options.dueDate || null
+  });
 }
+
 
 // Add / Send Personalized Reminder
 router.post('/', protect, async (req, res) => {
@@ -317,13 +282,23 @@ router.post('/:id/send', protect, async (req, res) => {
     if (!reminder) return res.status(404).json({ message: 'Reminder not found' });
 
     if (reminder.method === 'email' && reminder.recipientEmail) {
+      const emailHtml = getCorporateReminderEmailBody({
+        tenantName: reminder.recipientName || reminder.tenantId?.name || 'Valued Resident',
+        unitNumber: reminder.tenantId?.unitId?.unitNumber || '',
+        calculation: {
+          totalDue: reminder.amountDue || 0,
+          rentDue: reminder.breakdown?.rent || reminder.amountDue || 0,
+          unpaidUtilities: reminder.breakdown?.utilities || []
+        },
+        reminderTitle: reminder.title,
+        reminderDescription: reminder.description,
+        dueDate: reminder.dueDate
+      });
+
       await sendEmail({
         email: reminder.recipientEmail,
         subject: reminder.title,
-        message: `<div style="font-family:sans-serif;padding:20px;border:1px solid #e2e8f0;border-radius:8px;">
-          <h2>${reminder.title}</h2>
-          <pre style="white-space:pre-wrap;font-family:inherit;color:#334155;">${reminder.description}</pre>
-        </div>`
+        message: emailHtml
       });
     } else if (reminder.method === 'sms' && reminder.recipientPhone) {
       await sendSMS({

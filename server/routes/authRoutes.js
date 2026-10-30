@@ -884,7 +884,7 @@ router.post('/onboarding', protect, async (req, res) => {
 
     await user.save();
 
-    // If demo mode selected, populate with rich Kenyan rental portfolio data (Bomahut style)
+    // If demo mode selected, populate with rich Kenyan rental portfolio data (MakaziFlow sample data)
     if (mode === 'demo') {
       await seedDemoDataForUser(user);
     }
