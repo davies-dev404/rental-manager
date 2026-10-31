@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /dashboard/*
+Disallow: /properties
+Disallow: /properties/*
+Disallow: /tenants
+Disallow: /tenants/*
+Disallow: /financials
+Disallow: /financials/*
+Disallow: /settings
+Disallow: /settings/*
+Disallow: /activity-logs
+Disallow: /activity-logs/*
+Disallow: /documents
+Disallow: /documents/*
+Disallow: /reports
+Disallow: /reports/*
+
+Sitemap: https://makaziflow.afrinextech.co.ke/sitemap.xml

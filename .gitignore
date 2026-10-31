@@ -4,8 +4,10 @@ client/node_modules/
 server/node_modules/
 
 # Build directories
-dist/
-client/dist/
+/dist/
+# client/dist/ is tracked for cPanel Git Deployment
+!client/dist/
+!client/dist/**
 server/dist/
 
 # Environment variables

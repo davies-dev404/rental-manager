@@ -32,8 +32,11 @@ app.use(cors({
             'http://localhost:5173', 
             'https://rental-manager-gold.vercel.app', 
             'https://rental-manager-1-7jmg.onrender.com',
+            'https://afrinextech.co.ke',
+            'https://www.afrinextech.co.ke',
+            'https://makaziflow.afrinextech.co.ke',
         ];
-        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.afrinextech.co.ke')) {
             return callback(null, true);
         }
         return callback(null, true); // Permissive for unified domain routing
