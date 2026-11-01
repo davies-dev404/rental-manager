@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -34,6 +34,18 @@ export default function FloatingAIAssistant() {
     setShowTip(false);
     localStorage.setItem("dwello_hide_ai_drag_tip", "true");
   };
+
+  // Listen to open-makaazibot event from banner or other UI elements
+  useEffect(() => {
+    const handleOpenBot = (e) => {
+      setIsOpen(true);
+      if (e.detail?.prompt) {
+        handleSend(e.detail.prompt);
+      }
+    };
+    window.addEventListener("open-makaazibot", handleOpenBot);
+    return () => window.removeEventListener("open-makaazibot", handleOpenBot);
+  }, [stats, debtors]);
 
   // Dragging state
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -110,6 +122,10 @@ export default function FloatingAIAssistant() {
         reply = `Draft SMS ready:\n"Dear Tenant, this is a friendly reminder that your rent for Unit [Unit] is pending. Please pay via M-Pesa Paybill 247247 A/C [Unit]. Thank you, Management."`;
       } else if (q.includes("bank") || q.includes("statement") || q.includes("upload")) {
         reply = `You can upload your M-Pesa or Bank Statement Excel/CSV in the 'More Actions' card by clicking 'Upload Bank Statement'. MakaziFlow will automatically reconcile tenant payments by matching M-Pesa codes!`;
+      } else if (q.includes("add a payment") || q.includes("record payment") || q.includes("add payment")) {
+        reply = `To record a payment:\n1. Click 'Record Payment' in the Quick Actions bar (or go to Financials > Payments).\n2. Select the Tenant & Unit.\n3. Enter the Amount and choose M-Pesa or Bank.\n4. Click Save, and MakaziFlow will automatically post it and dispatch an SMS/WhatsApp receipt!`;
+      } else if (q.includes("remove a tenant") || q.includes("vacate") || q.includes("tenant who has left")) {
+        reply = `To remove or vacate a tenant who has left:\n1. Navigate to the 'Tenants' page from the sidebar menu.\n2. Click on the tenant's profile.\n3. Click 'Vacate Tenant' or 'End Tenancy'.\n4. Settle any remaining arrears or refund utility deposits, and the unit will be marked as vacant automatically.`;
       } else {
         reply = `I can help you monitor live collections, calculate arrears, reconcile M-Pesa payments, and generate monthly invoices for your properties.`;
       }
@@ -156,6 +172,7 @@ export default function FloatingAIAssistant() {
         )}
 
         <button
+          id="open-ai-chat-btn"
           onMouseDown={handleMouseDown}
           onClick={() => {
             if (!hasMoved.current) {

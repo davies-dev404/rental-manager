@@ -74,7 +74,7 @@ export const api = {
   login: async (email, password) => {
     const response = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ email, password })
     });
     return await parseApiResponse(response, 'Login failed');
@@ -83,7 +83,7 @@ export const api = {
   verifyLoginOtp: async (email, otp) => {
     const response = await fetch(`${API_URL}/auth/verify-login-otp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ email, otp })
     });
     return await parseApiResponse(response, 'OTP verification failed');
@@ -92,7 +92,7 @@ export const api = {
   resendLoginOtp: async (email) => {
     const response = await fetch(`${API_URL}/auth/resend-login-otp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ email })
     });
     return await parseApiResponse(response, 'Failed to resend verification code');
@@ -101,7 +101,7 @@ export const api = {
   registerUser: async (userData) => {
     const response = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify(userData)
     });
     return await parseApiResponse(response, 'Registration failed');
@@ -111,7 +111,7 @@ export const api = {
     try {
       const response = await fetch(`${API_URL}/auth/google`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
@@ -128,7 +128,7 @@ export const api = {
     try {
       const response = await fetch(`${API_URL}/auth/apple`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
@@ -145,7 +145,7 @@ export const api = {
     try {
       const response = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ email })
       });
       if (!response.ok) {
@@ -162,7 +162,7 @@ export const api = {
     try {
       const response = await fetch(`${API_URL}/auth/reset-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ email, code, newPassword })
       });
       if (!response.ok) {
@@ -179,7 +179,7 @@ export const api = {
     try {
         const response = await fetch(`${API_URL}/auth/verify-email`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' }, credentials: 'include',
             body: JSON.stringify({ email, otp })
         });
         
@@ -201,7 +201,7 @@ export const api = {
 
   getMe: async () => {
     const response = await fetch(`${API_URL}/auth/me`, {
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(), credentials: 'include'
     });
     return await parseApiResponse(response, 'Failed to fetch user profile');
   },
@@ -209,7 +209,7 @@ export const api = {
   submitOnboarding: async (data) => {
     const response = await fetch(`${API_URL}/auth/onboarding`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(), credentials: 'include',
       body: JSON.stringify(data)
     });
     return await parseApiResponse(response, 'Failed to save onboarding settings');
@@ -218,7 +218,7 @@ export const api = {
   seedDemoMode: async () => {
     const response = await fetch(`${API_URL}/auth/demo-mode/seed`, {
       method: 'POST',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(), credentials: 'include'
     });
     return await parseApiResponse(response, 'Failed to activate demo mode');
   },
@@ -226,7 +226,7 @@ export const api = {
   clearDemoMode: async () => {
     const response = await fetch(`${API_URL}/auth/demo-mode/clear`, {
       method: 'POST',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(), credentials: 'include'
     });
     return await parseApiResponse(response, 'Failed to clear demo mode');
   },
@@ -234,7 +234,7 @@ export const api = {
   changePassword: async (oldPassword, newPassword) => {
     const response = await fetch(`${API_URL}/auth/change-password`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(), credentials: 'include',
       body: JSON.stringify({ oldPassword, newPassword }),
     });
     if (!response.ok) {
@@ -248,7 +248,7 @@ export const api = {
   enable2FA: async () => {
     const response = await fetch(`${API_URL}/auth/2fa/enable`, { 
         method: 'POST',
-        headers: getAuthHeaders() 
+        headers: getAuthHeaders(), credentials: 'include' 
     });
     if (!response.ok) throw new Error("Could not initiate 2FA setup");
     return await response.json();
@@ -267,7 +267,7 @@ export const api = {
   disable2FA: async () => {
     const response = await fetch(`${API_URL}/auth/2fa/disable`, { 
         method: 'POST',
-        headers: getAuthHeaders() 
+        headers: getAuthHeaders(), credentials: 'include' 
     });
     if (!response.ok) throw new Error("Could not disable 2FA");
     return await response.json();
@@ -276,7 +276,7 @@ export const api = {
   // Properties
   getProperties: async () => {
     try {
-      const response = await fetch(`${API_URL}/properties`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/properties`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
     } catch {
@@ -286,7 +286,7 @@ export const api = {
   addProperty: async (prop) => {
     const response = await fetch(`${API_URL}/properties`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(prop)
     });
     if (!response.ok) throw new Error("Failed to add property");
@@ -295,7 +295,7 @@ export const api = {
   updateProperty: async (updatedProp) => {
     const response = await fetch(`${API_URL}/properties/${updatedProp.id}`, { // Assuming id is reachable
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(updatedProp)
     });
     if (!response.ok) throw new Error("Failed to update property");
@@ -304,7 +304,7 @@ export const api = {
   deleteProperty: async (id) => {
     const response = await fetch(`${API_URL}/properties/${id}`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(), credentials: 'include'
     });
     return response.ok;
   },
@@ -320,7 +320,7 @@ export const api = {
       if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
         url += `?propertyId=${encodeURIComponent(id)}`;
       }
-      const response = await fetch(url, { headers: getAuthHeaders() });
+      const response = await fetch(url, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
     } catch {
@@ -330,7 +330,7 @@ export const api = {
   addUnit: async (unit) => {
     const response = await fetch(`${API_URL}/units`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(unit)
     });
     if (!response.ok) throw new Error("Failed to add unit");
@@ -339,7 +339,7 @@ export const api = {
   updateUnit: async (unit) => {
      const response = await fetch(`${API_URL}/units/${unit.id}`, {
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(unit)
     });
     if (!response.ok) throw new Error("Failed to update unit");
@@ -348,21 +348,21 @@ export const api = {
   deleteUnit: async (id) => {
      const response = await fetch(`${API_URL}/units/${id}`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(), credentials: 'include'
     });
     return response.ok;
   },
 
   // Caretakers
   getCaretakers: async () => {
-    const response = await fetch(`${API_URL}/users?role=caretaker`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_URL}/users?role=caretaker`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return [];
     return await response.json();
   },
   assignCaretaker: async (propertyId, caretakerId) => {
     const response = await fetch(`${API_URL}/properties/${propertyId}`, {
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify({ caretakerId })
     });
     if (!response.ok) throw new Error("Failed to assign caretaker");
@@ -372,7 +372,7 @@ export const api = {
   // Tenants - REAL
   getTenants: async () => {
     try {
-      const response = await fetch(`${API_URL}/tenants`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/tenants`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
     } catch {
@@ -382,7 +382,7 @@ export const api = {
   addTenant: async (tenant) => {
     const response = await fetch(`${API_URL}/tenants`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(tenant)
     });
     if (!response.ok) throw new Error("Failed to add tenant");
@@ -391,7 +391,7 @@ export const api = {
   updateTenant: async (tenant) => {
      const response = await fetch(`${API_URL}/tenants/${tenant._id || tenant.id}`, { // Handle mongo _id
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(tenant)
     });
     if (!response.ok) throw new Error("Failed to update tenant");
@@ -400,14 +400,14 @@ export const api = {
   deleteTenant: async (id) => {
      const response = await fetch(`${API_URL}/tenants/${id}`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(), credentials: 'include'
     });
     return response.ok;
   },
 
   // Payments (Real)
   getPayments: async () => {
-    const response = await fetch(`${API_URL}/payments`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_URL}/payments`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return [];
     const data = await response.json();
     // Transform to match frontend expectation (tenantId as name string for display)
@@ -419,7 +419,7 @@ export const api = {
     }));
   },
   getPayment: async (id) => {
-      const response = await fetch(`${API_URL}/payments/${id}`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/payments/${id}`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) throw new Error("Payment not found");
       return await response.json();
   },
@@ -442,7 +442,7 @@ export const api = {
   emailReceipt: async (paymentId) => {
       const response = await fetch(`${API_URL}/payments/${paymentId}/email`, {
           method: 'POST',
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(), credentials: 'include'
       });
       if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -465,13 +465,13 @@ export const api = {
   },
   getNotifications: async () => [],
   getStats: async () => {
-    const response = await fetch(`${API_URL}/dashboard/stats`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_URL}/dashboard/stats`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return {}; 
     return await response.json();
   },
   getActivityLogs: async () => {
     try {
-      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
     } catch {
@@ -492,12 +492,12 @@ export const api = {
   getDocuments: async () => [],
   addDocument: async () => {},
   getReminders: async () => {
-      const response = await fetch(`${API_URL}/reminders`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/reminders`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
   },
   getDebtors: async () => {
-      const response = await fetch(`${API_URL}/reminders/debtors`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/reminders/debtors`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       return await response.json();
   },
@@ -516,7 +516,7 @@ export const api = {
   sendReminderNow: async (id) => {
       const response = await fetch(`${API_URL}/reminders/${id}/send`, {
           method: 'POST',
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(), credentials: 'include'
       });
       if (!response.ok) {
           const err = await response.json().catch(() => ({}));
@@ -527,11 +527,11 @@ export const api = {
   deleteReminder: async (id) => {
       await fetch(`${API_URL}/reminders/${id}`, {
           method: 'DELETE',
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(), credentials: 'include'
       });
   },
   getExpenses: async () => {
-    const response = await fetch(`${API_URL}/expenses`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_URL}/expenses`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return [];
     return await response.json();
   },
@@ -544,7 +544,7 @@ export const api = {
     };
     const response = await fetch(`${API_URL}/expenses`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(), credentials: 'include',
       body: JSON.stringify(payload)
     });
     if (!response.ok) {
@@ -556,13 +556,13 @@ export const api = {
   deleteExpense: async (id) => {
     const response = await fetch(`${API_URL}/expenses/${id}`, {
       method: 'DELETE',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(), credentials: 'include'
     });
     return response.ok;
   },
   getSettings: async () => {
     try {
-      const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/settings`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return {};
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) return {};
@@ -574,7 +574,7 @@ export const api = {
   updateSettings: async (settings) => {
     const response = await fetch(`${API_URL}/settings`, {
         method: 'PUT',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(settings)
     });
     if (!response.ok) throw new Error("Failed to update settings");
@@ -583,7 +583,7 @@ export const api = {
   testSMTP: async (config) => {
     const response = await fetch(`${API_URL}/settings/test-smtp`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(config)
     });
     if (!response.ok) {
@@ -594,14 +594,14 @@ export const api = {
   },
 
   getReportsData: async () => {
-    const response = await fetch(`${API_URL}/reports`, { headers: getAuthHeaders() });
+    const response = await fetch(`${API_URL}/reports`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return {};
     return await response.json();
   },
   getKraTaxReport: async (month) => {
       let url = `${API_URL}/reports/kra-tax-report`;
       if (month) url += `?month=${month}`;
-      const response = await fetch(url, { headers: getAuthHeaders() });
+      const response = await fetch(url, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) throw new Error("Failed to fetch tax report");
       return await response.json();
   },
@@ -617,7 +617,7 @@ export const api = {
   },
   getActivityLogs: async () => {
     try {
-      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders() });
+      const response = await fetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders(), credentials: 'include' });
       if (!response.ok) return [];
       const data = await response.json();
       return Array.isArray(data) ? data : [];
@@ -629,7 +629,7 @@ export const api = {
     try {
       const response = await fetch(`${API_URL}/activity-logs/clear`, {
         method: 'DELETE',
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(), credentials: 'include'
       });
       return response.ok;
     } catch {

@@ -257,7 +257,9 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <span className="font-bold text-xs text-slate-900 dark:text-white">Stuck on something? Ask MakaaziBot</span>
               <button
+                type="button"
                 onClick={() => {
+                  window.dispatchEvent(new CustomEvent("open-makaazibot"));
                   const el = document.getElementById("open-ai-chat-btn");
                   if (el) el.click();
                 }}
@@ -266,8 +268,23 @@ export default function Dashboard() {
                 Ask MakaaziBot
               </button>
             </div>
-            <p className="text-[11px] text-slate-500 italic mt-0.5">
-              Try "How do I add a payment?" or "How do I remove a tenant who has left?"
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Try{" "}
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("open-makaazibot", { detail: { prompt: "How do I add a payment?" } }))}
+                className="text-blue-600 hover:underline cursor-pointer italic"
+              >
+                "How do I add a payment?"
+              </button>{" "}
+              or{" "}
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("open-makaazibot", { detail: { prompt: "How do I remove a tenant who has left?" } }))}
+                className="text-blue-600 hover:underline cursor-pointer italic"
+              >
+                "How do I remove a tenant who has left?"
+              </button>
             </p>
           </div>
           <button 

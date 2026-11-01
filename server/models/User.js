@@ -28,7 +28,10 @@ const userSchema = new mongoose.Schema({
   onboardingRole: { type: String, enum: ['landlord', 'manager', 'caretaker', 'tenant'], default: 'landlord' },
   unitsCount: { type: Number, default: 0 },
   subscriptionTier: { type: String, default: 'starter' },
-  isDemoMode: { type: Boolean, default: false }
+  isDemoMode: { type: Boolean, default: false },
+  refreshToken: { type: String },
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date }
 });
 
 // Hash password before saving

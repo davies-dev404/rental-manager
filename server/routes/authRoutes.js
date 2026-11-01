@@ -10,11 +10,43 @@ const QRCode = require('qrcode');
 const { protect } = require('../middleware/authMiddleware'); // Import protect!
 const { validatePassword } = require('../utils/passwordPolicy');
 
-// Generate JWT
+// 1. Senior Auth: Short-lived access token (15 mins) + Refresh token (7 days) + httpOnly secure cookies
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d',
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
+    expiresIn: '15m',
   });
+};
+
+const generateRefreshToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
+    expiresIn: '7d',
+  });
+};
+
+const setAuthCookies = (res, token, refreshToken) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (token) {
+    res.cookie('jwt', token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 15 * 60 * 1000 // 15 mins
+    });
+  }
+  if (refreshToken) {
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+  }
+};
+
+const clearAuthCookies = (res) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie('jwt', { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' });
+  res.clearCookie('refreshToken', { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' });
 };
 
 const logActivity = require('../utils/logActivity');
@@ -94,74 +126,151 @@ const generateOtpCode = () => {
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, turnstileToken } = req.body;
+  const reqIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
 
   try {
     const cleanEmail = (email || '').trim();
+    if (!cleanEmail || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
     const user = await User.findOne({ 
-      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
+      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
     });
 
-    if (user && (await user.matchPassword(password))) {
-      // Generate a 6-digit login OTP (valid for 3 minutes)
-      const loginOtp = generateOtpCode();
-      user.otp = loginOtp;
-      user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
-      await user.save();
-      console.log(`🔑 [OTP] Login verification code for ${user.email}: ${loginOtp}`);
+    if (!user) {
+      await logActivity('System', 'Login Failed', `Failed login attempt for nonexistent ${cleanEmail}`, 'auth', 'warning');
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
 
-      // Send OTP via email
-      let emailSent = false;
-      let emailError = null;
-      try {
-        await sendEmail({
-          email: user.email,
-          subject: 'MakaziFlow — Your Login Verification Code',
-          message: `
-            <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-              ${getEmailHeader()}
-              <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
-              <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
-              </p>
-              <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
-                ${loginOtp}
-              </div>
-              <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-                If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
-              </p>
-            </div>`
+    // 4. Brute Force Protection: Check if account is temporarily locked
+    if (user.lockUntil && user.lockUntil > Date.now()) {
+      const remainingMinutes = Math.ceil((user.lockUntil - Date.now()) / (60 * 1000));
+      return res.status(423).json({ 
+        message: `Account temporarily locked due to 5 consecutive failed login attempts. Please try again in ${remainingMinutes} minute(s) or reset your password.`,
+        isLocked: true,
+        remainingMinutes
+      });
+    }
+
+    // CAPTCHA verification after 3 failed attempts
+    if (user.failedLoginAttempts >= 3) {
+      const captchaValid = await verifyCloudflareTurnstile(turnstileToken, reqIp);
+      if (!captchaValid) {
+        return res.status(403).json({
+          message: 'Security verification required. Please complete the CAPTCHA.',
+          requireCaptcha: true
         });
-        emailSent = true;
-        console.log(`📧 Login OTP email dispatched to ${user.email}`);
-      } catch (emailErr) {
-        emailError = emailErr.message;
-        console.error('Login OTP email failed:', emailErr.message);
+      }
+    }
+
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+
+      // Lock account after 5 failed attempts (Senior Standard)
+      if (user.failedLoginAttempts >= 5) {
+        user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 mins lock
+        user.failedLoginAttempts = 0;
+        await user.save();
+
+        // Send Security Alert Email
+        try {
+          await sendEmail({
+            email: user.email,
+            subject: 'Security Alert: MakaziFlow Account Temporarily Locked',
+            message: `
+              <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+                ${getEmailHeader()}
+                <h2 style="color:#e11d48;font-size:18px;margin-bottom:8px;text-align:center;">Security Alert</h2>
+                <p style="color:#475569;font-size:14px;line-height:1.5;">
+                  We detected <strong>5 consecutive failed login attempts</strong> on your MakaziFlow account from IP <code>${reqIp}</code>.
+                </p>
+                <p style="color:#475569;font-size:14px;line-height:1.5;">
+                  For your protection, your account has been <strong>temporarily locked for 15 minutes</strong>. If this was not you, please reset your password immediately.
+                </p>
+              </div>`
+          });
+        } catch (emailErr) {
+          console.error('Security alert email failed:', emailErr.message);
+        }
+
+        await logActivity(user, 'Account Locked', `Account temporarily locked after 5 failed attempts from ${reqIp}`, 'auth', 'warning');
+
+        return res.status(423).json({
+          message: 'Account temporarily locked for 15 minutes due to 5 consecutive failed login attempts. A security alert email was sent to your inbox.',
+          isLocked: true
+        });
       }
 
-      await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
+      await user.save();
+      const remaining = 5 - user.failedLoginAttempts;
+      await logActivity(user, 'Login Failed', `Failed login attempt for ${user.email} (${remaining} tries left)`, 'auth', 'warning');
 
-      return res.json({
-        requiresOTP: true,
-        email: user.email,
-        name: user.name,
-        emailSent,
-        emailError: emailSent ? undefined : emailError,
-        fallbackOtp: emailSent ? undefined : loginOtp
+      return res.status(401).json({
+        message: `Invalid email or password. ${remaining} attempt(s) remaining before temporary account lockout.`,
+        requireCaptcha: user.failedLoginAttempts >= 3,
+        attemptsRemaining: remaining
       });
-    } else {
-      await logActivity('System', 'Login Failed', `Failed login attempt for ${email}`, 'auth', 'warning');
-      res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    // Password matched: reset failed login attempts counter
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
+
+    // Generate a 6-digit login OTP (valid for 3 minutes)
+    const loginOtp = generateOtpCode();
+    user.otp = loginOtp;
+    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    await user.save();
+    console.log(`🔑 [OTP] Login verification code for ${user.email}: ${loginOtp}`);
+
+    // Send OTP via email
+    let emailSent = false;
+    let emailError = null;
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'MakaziFlow — Your Login Verification Code',
+        message: `
+          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+            ${getEmailHeader()}
+            <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
+            <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
+              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
+            </p>
+            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
+              ${loginOtp}
+            </div>
+            <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
+              If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
+            </p>
+          </div>`
+      });
+      emailSent = true;
+      console.log(`📧 Login OTP email dispatched to ${user.email}`);
+    } catch (emailErr) {
+      emailError = emailErr.message;
+      console.error('Login OTP email failed:', emailErr.message);
+    }
+
+    await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
+
+    return res.json({
+      requiresOTP: true,
+      email: user.email,
+      name: user.name,
+      emailSent,
+      emailError: emailSent ? undefined : emailError,
+      fallbackOtp: emailSent ? undefined : loginOtp
+    });
   } catch (error) {
     console.error('Login error:', error.message);
     res.status(500).json({ message: error.message });
   }
 });
 
-// @desc    Resend login OTP
-// @route   POST /api/auth/resend-login-otp
-// @access  Public
 router.post('/resend-login-otp', async (req, res) => {
   const { email } = req.body;
 
@@ -242,9 +351,12 @@ router.post('/verify-login-otp', async (req, res) => {
       return res.status(400).json({ message: 'Email and OTP are required' });
     }
 
+    const cleanEmail = (email || '').trim();
+    const cleanOtp = (otp || '').trim();
+
     const user = await User.findOne({
-      email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') },
-      otp,
+      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      otp: cleanOtp,
       otpExpires: { $gt: Date.now() }
     });
 
@@ -256,7 +368,15 @@ router.post('/verify-login-otp', async (req, res) => {
     user.otp = undefined;
     user.otpExpires = undefined;
     if (!user.isVerified) user.isVerified = true;
+
+    // 1. Senior Standard: Short-lived access token + Refresh token rotation
+    const accessToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
     await user.save();
+
+    // Set httpOnly secure cookies
+    setAuthCookies(res, accessToken, refreshToken);
 
     await logActivity(user, 'User Logged In', `User ${user.name} completed OTP login`, 'auth', 'success');
 
@@ -267,7 +387,8 @@ router.post('/verify-login-otp', async (req, res) => {
       email: user.email,
       role: user.role,
       avatar: user.avatar,
-      token: generateToken(user._id),
+      token: accessToken,
+      refreshToken: refreshToken,
       twoFactorEnabled: user.twoFactorEnabled,
       hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
       onboardingRole: user.onboardingRole || 'landlord',
@@ -281,9 +402,74 @@ router.post('/verify-login-otp', async (req, res) => {
   }
 });
 
-// @desc    Register a new user (admin/caretaker)
-// @route   POST /api/auth/register
+// @desc    Refresh access token (Token Rotation - Senior Standard)
+// @route   POST /api/auth/refresh
 // @access  Public
+router.post('/refresh', async (req, res) => {
+  const incomingToken = req.cookies.refreshToken || req.body.refreshToken;
+  if (!incomingToken) {
+    return res.status(401).json({ message: 'Refresh token required' });
+  }
+
+  try {
+    const decoded = jwt.verify(incomingToken, process.env.JWT_SECRET || 'makaziflow_secret');
+    const user = await User.findById(decoded.id);
+
+    if (!user || !user.refreshToken) {
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'Session expired or revoked' });
+    }
+
+    // Verify token hash
+    const incomingHashed = crypto.createHash('sha256').update(incomingToken).digest('hex');
+    if (user.refreshToken !== incomingHashed && user.refreshToken !== incomingToken) {
+      // Refresh token reuse detected! Invalidate all sessions immediately
+      user.refreshToken = undefined;
+      await user.save();
+      clearAuthCookies(res);
+      return res.status(403).json({ message: 'Token reuse detected. Please sign in again.' });
+    }
+
+    // Rotate: Issue new access token + new refresh token
+    const newAccessToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+    user.refreshToken = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+    await user.save();
+
+    setAuthCookies(res, newAccessToken, newRefreshToken);
+
+    return res.json({
+      token: newAccessToken,
+      refreshToken: newRefreshToken
+    });
+  } catch (err) {
+    clearAuthCookies(res);
+    return res.status(401).json({ message: 'Refresh token expired or invalid' });
+  }
+});
+
+// @desc    Logout & revoke session (Senior Standard)
+// @route   POST /api/auth/logout
+// @access  Public
+router.post('/logout', async (req, res) => {
+  try {
+    const incomingToken = req.cookies.refreshToken || req.body.refreshToken;
+    if (incomingToken) {
+      const incomingHashed = crypto.createHash('sha256').update(incomingToken).digest('hex');
+      const user = await User.findOne({
+        $or: [{ refreshToken: incomingHashed }, { refreshToken: incomingToken }]
+      });
+      if (user) {
+        user.refreshToken = undefined;
+        await user.save();
+      }
+    }
+  } catch (e) {}
+
+  clearAuthCookies(res);
+  res.json({ message: 'Logged out successfully, cookies cleared.' });
+});
+
 router.post('/register', async (req, res) => {
   const { name, email, phone, password, confirmPassword, role } = req.body;
 
@@ -506,21 +692,22 @@ router.post('/forgot-password', async (req, res) => {
         }
 
         const cleanEmail = (email || '').trim();
-    const user = await User.findOne({ 
-      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
-    });
+        const user = await User.findOne({ 
+          email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
+        });
         if (!user) {
             return res.status(404).json({ message: 'No account found with this email' });
         }
 
-        // Generate 6-digit OTP code
+        // 2. Senior Standard: Generate random code, store hashed with SHA-256 in DB, strictly 15 mins expiry
         const resetCode = generateOtpCode();
-        user.resetPasswordToken = resetCode;
-        user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+        const hashedCode = crypto.createHash('sha256').update(resetCode).digest('hex');
+        user.resetPasswordToken = hashedCode;
+        user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins strictly
         await user.save();
         console.log(`🔑 [OTP] Password reset verification code for ${user.email}: ${resetCode}`);
 
-        // Send reset code email
+        // Send reset code email (NEVER send plain passwords)
         let emailSent = false;
         let emailError = null;
         try {
@@ -532,13 +719,13 @@ router.post('/forgot-password', async (req, res) => {
                     ${getEmailHeader()}
                     <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Password Reset Request</h2>
                     <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                      You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code expires in <strong>15 minutes</strong>.
+                      You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code is valid for <strong>one-time use</strong> and expires in <strong>15 minutes</strong>.
                     </p>
                     <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
                       ${resetCode}
                     </div>
                     <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-                      If you did not request a password reset, please ignore this email or contact support if you suspect unauthorized access.
+                      If you did not request a password reset, please ignore this email or contact support.
                     </p>
                   </div>`
             });
@@ -552,7 +739,7 @@ router.post('/forgot-password', async (req, res) => {
         await logActivity(user, 'Password Reset Requested', `Password reset code sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
 
         res.json({
-            message: 'Password reset code has been sent to your email.',
+            message: 'A 15-minute one-time password reset code has been sent to your email.',
             email: user.email,
             emailSent,
             emailError: emailSent ? undefined : emailError,
@@ -564,9 +751,6 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
-// @desc    Reset Password with code
-// @route   POST /api/auth/reset-password
-// @access  Public
 router.post('/reset-password', async (req, res) => {
     const { email, code, newPassword } = req.body;
     try {
@@ -583,20 +767,32 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
+        const cleanEmail = (email || '').trim();
+        const cleanCode = (code || '').trim();
+        const hashedInput = crypto.createHash('sha256').update(cleanCode).digest('hex');
+
+        // Match against hashed token in DB (with fallback to unhashed for backwards compatibility)
         const user = await User.findOne({
-          email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') },
-          resetPasswordToken: code,
+          email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          $or: [
+            { resetPasswordToken: hashedInput },
+            { resetPasswordToken: cleanCode }
+          ],
           resetPasswordExpires: { $gt: Date.now() }
         });
 
         if (!user) {
-          return res.status(400).json({ message: 'Invalid or expired reset code' });
+          return res.status(400).json({ message: 'Invalid or expired reset code (codes expire in 15 minutes)' });
         }
 
+        // Update password, clear token (one-time use) & invalidate existing sessions
         user.password = newPassword;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
+        user.refreshToken = undefined; // Revoke old sessions (Senior Standard)
         await user.save();
+
+        clearAuthCookies(res);
 
         await logActivity(user, 'Password Reset Successful', `Password changed successfully for ${user.email}`, 'auth', 'success');
 
@@ -607,9 +803,6 @@ router.post('/reset-password', async (req, res) => {
     }
 });
 
-// @desc    Change password (Authenticated user)
-// @route   POST /api/auth/change-password
-// @access  Private
 router.post('/change-password', protect, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
     try {

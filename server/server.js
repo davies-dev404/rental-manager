@@ -44,6 +44,23 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json());
+
+// Lightweight Cookie Parser Middleware (Senior Standard for httpOnly JWT Cookies)
+app.use((req, res, next) => {
+  req.cookies = {};
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    cookieHeader.split(';').forEach(cookie => {
+      const parts = cookie.split('=');
+      if (parts.length >= 2) {
+        const name = parts[0].trim();
+        const value = decodeURIComponent(parts.slice(1).join('='));
+        req.cookies[name] = value;
+      }
+    });
+  }
+  next();
+});
 app.use(morgan('dev'));
 
 // Global bufferCommands setting: fail fast if disconnected instead of buffering and timing out after 10s
