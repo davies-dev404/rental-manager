@@ -29,14 +29,13 @@ export default function PublicNavbar() {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#1f1f22] text-white backdrop-blur">
       <div className="mx-auto flex min-h-18 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:min-h-20 sm:px-6 lg:px-8">
         
-        {/* Brand Logo with Savannah Sparkle Accent */}
-        <Link href="/" className="flex items-center gap-2 cursor-pointer group">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2546e8] text-white shadow-xs group-hover:scale-105 transition-transform">
-            <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-[#ff5722]" aria-hidden="true">
-              <path d="M12 2C12.4 7.2 16.8 11.6 22 12C16.8 12.4 12.4 16.8 12 22C11.6 16.8 7.2 12.4 2 12C7.2 11.6 11.6 7.2 12 2Z" fill="currentColor"/>
-              <path d="M19.5 3.5C19.7 5 21 6.3 22.5 6.5C21 6.7 19.7 8 19.5 9.5C19.3 8 18 6.7 16.5 6.5C18 6.3 19.3 5 19.5 3.5Z" fill="currentColor"/>
-            </svg>
-          </span>
+        {/* Brand Logo with User Official Logo */}
+        <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+          <img
+            src="/logo.png"
+            alt="MakaziFlow"
+            className="h-10 sm:h-11 w-auto object-contain transition-transform group-hover:scale-105"
+          />
           <span className="text-2xl font-black tracking-tight select-none">
             <span className="text-white">Makazi</span><span className="text-[#00d084]">Flow</span>
           </span>
