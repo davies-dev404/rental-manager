@@ -703,7 +703,7 @@ router.post('/forgot-password', async (req, res) => {
         const resetCode = generateOtpCode();
         const hashedCode = crypto.createHash('sha256').update(resetCode).digest('hex');
         user.resetPasswordToken = hashedCode;
-        user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins strictly
+        user.resetPasswordExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes strictly
         await user.save();
         console.log(`🔑 [OTP] Password reset verification code for ${user.email}: ${resetCode}`);
 
@@ -719,7 +719,7 @@ router.post('/forgot-password', async (req, res) => {
                     ${getEmailHeader()}
                     <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Password Reset Request</h2>
                     <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                      You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code is valid for <strong>one-time use</strong> and expires in <strong>15 minutes</strong>.
+                      You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code is valid for <strong>one-time use</strong> and expires in <strong>3 minutes</strong>.
                     </p>
                     <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
                       ${resetCode}
@@ -739,7 +739,7 @@ router.post('/forgot-password', async (req, res) => {
         await logActivity(user, 'Password Reset Requested', `Password reset code sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
 
         res.json({
-            message: 'A 15-minute one-time password reset code has been sent to your email.',
+            message: 'A 3-minute one-time password reset code has been sent to your email.',
             email: user.email,
             emailSent,
             emailError: emailSent ? undefined : emailError,
@@ -782,7 +782,7 @@ router.post('/reset-password', async (req, res) => {
         });
 
         if (!user) {
-          return res.status(400).json({ message: 'Invalid or expired reset code (codes expire in 15 minutes)' });
+          return res.status(400).json({ message: 'Invalid or expired reset code (codes expire in 3 minutes)' });
         }
 
         // Update password, clear token (one-time use) & invalidate existing sessions

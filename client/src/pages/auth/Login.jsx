@@ -360,7 +360,7 @@ export default function LoginPage() {
         setIsSignup(false);
         setIsRegistrationOtp(true);
         setIsOtpStep(true);
-        setOtpCountdown(600);
+        setOtpCountdown(180);
         setOtpCode("");
         toast({
           title: "Account Created!",
@@ -1019,7 +1019,7 @@ export default function LoginPage() {
                   Verify Code & Set Password
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  We sent a 6-digit verification code to <span className="font-semibold text-slate-800">{forgotEmail}</span>. Enter the code and choose your new password.
+                  We sent a 6-digit verification code to <span className="font-semibold text-slate-800">{forgotEmail}</span>. The code expires in 3 minutes. Enter the code and choose your new password.
                 </DialogDescription>
               </DialogHeader>
 
