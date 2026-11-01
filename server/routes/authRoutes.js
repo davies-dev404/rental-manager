@@ -97,7 +97,10 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email });
+    const cleanEmail = (email || '').trim();
+    const user = await User.findOne({ 
+      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
+    });
 
     if (user && (await user.matchPassword(password))) {
       // Generate a 6-digit login OTP (valid for 3 minutes)
@@ -167,7 +170,10 @@ router.post('/resend-login-otp', async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    const user = await User.findOne({ email });
+    const cleanEmail = (email || '').trim();
+    const user = await User.findOne({ 
+      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
+    });
     if (!user) {
       return res.status(404).json({ message: 'No account found with this email' });
     }
@@ -237,7 +243,7 @@ router.post('/verify-login-otp', async (req, res) => {
     }
 
     const user = await User.findOne({
-      email,
+      email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') },
       otp,
       otpExpires: { $gt: Date.now() }
     });
@@ -313,7 +319,7 @@ router.post('/register', async (req, res) => {
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
       const user = await User.create({
         name,
-        email,
+        email: (email || '').trim().toLowerCase(),
         phone: phone || undefined,
         password,
         role: role || 'admin',
@@ -391,7 +397,7 @@ router.post('/verify-email', async (req, res) => {
 
     try {
         const user = await User.findOne({ 
-          email, 
+          email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') }, 
           otp, 
           otpExpires: { $gt: Date.now() } 
         });
@@ -499,7 +505,10 @@ router.post('/forgot-password', async (req, res) => {
             return res.status(400).json({ message: 'Email is required' });
         }
 
-        const user = await User.findOne({ email });
+        const cleanEmail = (email || '').trim();
+    const user = await User.findOne({ 
+      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
+    });
         if (!user) {
             return res.status(404).json({ message: 'No account found with this email' });
         }
@@ -575,7 +584,7 @@ router.post('/reset-password', async (req, res) => {
         }
 
         const user = await User.findOne({
-          email,
+          email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') },
           resetPasswordToken: code,
           resetPasswordExpires: { $gt: Date.now() }
         });
@@ -729,7 +738,7 @@ router.post('/google', async (req, res) => {
       // New user registration
       user = await User.create({
         name: name || 'Google User',
-        email,
+        email: (email || '').trim().toLowerCase(),
         authProvider: 'google',
         googleId: googleId || undefined,
         role: role === 'caretaker' ? 'caretaker' : 'admin',
