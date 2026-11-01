@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import PricingPlans, { PRICING_TIERS } from "@/components/public/PricingPlans";
 import { Check, ShieldCheck, HelpCircle, PhoneCall, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
@@ -34,6 +35,12 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+      <SEO 
+        title="Pricing - Transparent Plans for Landlords & Property Managers"
+        canonicalPath="/pricing"
+        description="Affordable property management pricing starting from KES 0. No hidden setup fees. Automated M-Pesa rent matching, tenant billing, and KRA eTIMS reporting."
+        keywords="MakaziFlow pricing, rental management software Kenya cost, property management packages Nairobi, landlord software prices"
+      />
       <PublicNavbar />
 
       {/* Hero Header */}

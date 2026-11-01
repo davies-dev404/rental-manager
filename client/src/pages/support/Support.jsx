@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Phone, MapPin, Send, MessageCircle } from "lucide-react";
+import SEO from "@/components/SEO";
 
 export default function Support() {
     const { toast } = useToast();
@@ -43,6 +44,11 @@ export default function Support() {
 
     return (
         <div className="space-y-8 max-w-5xl mx-auto">
+            <SEO 
+                title="Customer Support & Help Center"
+                canonicalPath="/support"
+                description="Get in touch with the MakaziFlow support team. Find answers to common questions about rent billing, tenant management, and M-Pesa integration."
+            />
             <div>
                 <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">Support Center</h2>
                 <p className="text-muted-foreground mt-1">Need help? Find answers to common questions or get in touch with our team.</p>

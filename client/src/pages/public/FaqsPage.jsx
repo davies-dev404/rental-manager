@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import { ArrowRight, HelpCircle, MessageSquare } from "lucide-react";
 
 export default function FaqsPage() {
@@ -53,6 +54,12 @@ export default function FaqsPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+      <SEO 
+        title="Frequently Asked Questions (FAQs)"
+        canonicalPath="/faqs"
+        description="Got questions about MakaziFlow? Learn how automated M-Pesa collections work, data exports, tenant communication, pricing, and system security."
+        keywords="MakaziFlow FAQs, property management help Kenya, how to collect rent M-Pesa, rental software questions"
+      />
       <PublicNavbar />
 
       {/* FAQs Header Banner (Matching Screenshot 3) */}

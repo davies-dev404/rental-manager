@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import {
   CreditCard,
   Smartphone,
@@ -28,6 +29,12 @@ export default function LandlordPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+      <SEO 
+        title="For Landlords - Self-Manage Rentals & Automate Collections"
+        canonicalPath="/landlord"
+        description="Designed specifically for private landlords across Kenya. Eliminate chasing rent payments with automated M-Pesa tracking, SMS arrears notices, and clear tenancy ledgers."
+        keywords="landlord software Kenya, self-managing rentals, collect rent automated Kenya, private landlord tools Nairobi"
+      />
       <PublicNavbar />
 
       {/* Hero Section */}

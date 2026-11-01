@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import {
   CreditCard,
   FileText,
@@ -121,6 +122,12 @@ export default function FeaturesPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+      <SEO 
+        title="Features - Automated M-Pesa Rent Collection & Management"
+        canonicalPath="/features"
+        description="Explore MakaziFlow features: automated M-Pesa paybill/till reconciliation, digital PDF invoices & WhatsApp receipts, tenant onboarding, meter water billing, and accounting."
+        keywords="property management features, M-Pesa rent auto-reconciliation, tenant portal Kenya, digital lease agreement Kenya, water meter billing software"
+      />
       <PublicNavbar />
 
       {/* Hero Banner */}

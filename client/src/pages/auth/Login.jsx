@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
 import { trackRegistration } from "@/lib/metaPixel";
+import SEO from "@/components/SEO";
 
 export default function LoginPage() {
   const [location, setLocation] = useLocation();
@@ -543,6 +544,11 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-white px-4 py-8 font-sans select-none">
+      <SEO 
+        title={isSignup ? "Create Your Account - Start Managing Properties" : "Sign In to MakaziFlow"}
+        canonicalPath="/login"
+        description="Access your MakaziFlow account to track rental collections, send M-Pesa receipts, manage leases, and monitor property performance."
+      />
       
       {/* ────────────────── 1. OTP VERIFICATION VIEW ────────────────── */}
       {isOtpStep ? (

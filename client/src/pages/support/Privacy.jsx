@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import SEO from "@/components/SEO";
 import {
   ArrowLeft,
   FileText,
@@ -254,6 +255,11 @@ export default function PrivacyPolicy() {
 
   return (
     <div className="min-h-screen bg-linear-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <SEO 
+        title="Privacy Policy"
+        canonicalPath="/privacy"
+        description="MakaziFlow privacy policy, data protection standards, Kenya Data Protection Act (KDPA) compliance, and security measures."
+      />
       
       {/* Sticky Back Bar */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
@@ -339,7 +345,7 @@ export default function PrivacyPolicy() {
         {/* Footer */}
         <div className="text-center pt-4 pb-8">
           <p className="text-[11px] text-slate-400 dark:text-slate-500">
-            © {new Date().getFullYear()} MakaaziHub. All rights reserved.
+            © {new Date().getFullYear()} MakaaziFlow. All rights reserved.
           </p>
         </div>
       </div>

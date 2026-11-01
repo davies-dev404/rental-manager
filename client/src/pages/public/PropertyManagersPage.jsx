@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import {
   TrendingUp,
   FileText,
@@ -28,6 +29,12 @@ export default function PropertyManagersPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased">
+      <SEO 
+        title="For Property Managers & Real Estate Agencies"
+        canonicalPath="/property-managers"
+        description="Multi-property management at scale. Automated landlord disbursement statements, tenant screening, vacancy tracking, and staff role permissions."
+        keywords="property management agencies Kenya, multi-unit property software, landlord disbursement statements, real estate agency system Nairobi"
+      />
       <PublicNavbar />
 
       {/* Hero Section */}

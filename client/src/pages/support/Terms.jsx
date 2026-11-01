@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import SEO from "@/components/SEO";
 import {
   ArrowLeft,
   FileText,
@@ -344,6 +345,11 @@ export default function TermsOfService() {
 
   return (
     <div className="min-h-screen bg-linear-to-b from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <SEO 
+        title="Terms of Service"
+        canonicalPath="/terms"
+        description="MakaziFlow terms of service, billing policies, user agreement, and platform obligations."
+      />
       
       {/* Sticky Back Bar */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">

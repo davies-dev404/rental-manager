@@ -18,3 +18,4 @@ Disallow: /reports
 Disallow: /reports/*
 
 Sitemap: https://makaziflow.afrinextech.co.ke/sitemap.xml
+

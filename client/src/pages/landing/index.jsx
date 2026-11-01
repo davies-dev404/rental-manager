@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
+import SEO from "@/components/SEO";
 import {
   Building2,
   Users,
@@ -333,6 +334,11 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-950 font-sans antialiased selection:bg-[#007AFF] selection:text-white">
+      <SEO 
+        title="MakaziFlow - Property Management Software in Kenya & Africa"
+        canonicalPath="/"
+        description="MakaziFlow is Kenya and Africa's premier automated property management software. Effortlessly manage tenants, automate M-Pesa rent reconciliation, track expenses, handle maintenance, and generate financial reports."
+      />
       
       {/* ────────────────── 1. HEADER (Shared PublicNavbar) ────────────────── */}
       <PublicNavbar />

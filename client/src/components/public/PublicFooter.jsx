@@ -130,7 +130,15 @@ export default function PublicFooter() {
         {/* Bottom Copyright */}
         <div className="mt-12 pt-6 border-t border-white/5 text-xs text-slate-400 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            © 2026 MakaziFlow Property Management Software. All rights reserved.
+            © 2026 MakaziFlow. All rights reserved. A product of{" "}
+            <a 
+              href="https://afrinextech.co.ke" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-white hover:text-[#00d084] font-medium underline underline-offset-2 transition-colors"
+            >
+              AfrinexTech
+            </a>
           </div>
           <div>
             Built for African Real Estate • Powered by M-Pesa &amp; Banking Automation
