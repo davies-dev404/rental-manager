@@ -3,14 +3,10 @@ deployment:
   tasks:
     # -------------------------------------------------------------
     # MakaziFlow cPanel Git Deployment Configuration
-    # Official Documentation: https://go.cpanel.net/GitDeployment
-    #
-    # Default target: /home/username/public_html/
-    # If deploying to a subdomain, change to:
-    #   export DEPLOYPATH=/home/username/makaziflow.afrinextech.co.ke/
+    # Deploys to the makaziflow.afrinextech.co.ke subdomain folder
+    # (Never overwrite main public_html which belongs to afrinextech.co.ke)
     # -------------------------------------------------------------
-    - export DEPLOYPATH=${DEPLOYPATH:-/home/$(whoami)/public_html/}
+    - export DEPLOYPATH=${DEPLOYPATH:-/home/$(whoami)/makaziflow.afrinextech.co.ke/}
     - /bin/mkdir -p $DEPLOYPATH
     - /bin/cp -a client/dist/. $DEPLOYPATH
     - /bin/cp client/public/.htaccess $DEPLOYPATH 2>/dev/null || true
-
