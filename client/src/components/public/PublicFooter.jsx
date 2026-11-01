@@ -27,7 +27,13 @@ export default function PublicFooter() {
         
         {/* Top Bar with Brand & Ready CTA */}
         <div className="flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-center lg:justify-between">
-          <Link href="/" className="flex items-center cursor-pointer">
+          <Link href="/" className="flex items-center gap-2 cursor-pointer group">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2546e8] text-white shadow-xs group-hover:scale-105 transition-transform">
+              <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-[#ff5722]" aria-hidden="true">
+                <path d="M12 2C12.4 7.2 16.8 11.6 22 12C16.8 12.4 12.4 16.8 12 22C11.6 16.8 7.2 12.4 2 12C7.2 11.6 11.6 7.2 12 2Z" fill="currentColor"/>
+                <path d="M19.5 3.5C19.7 5 21 6.3 22.5 6.5C21 6.7 19.7 8 19.5 9.5C19.3 8 18 6.7 16.5 6.5C18 6.3 19.3 5 19.5 3.5Z" fill="currentColor"/>
+              </svg>
+            </span>
             <span className="text-2xl font-black tracking-tight select-none">
               <span className="text-white">Makazi</span><span className="text-[#00d084]">Flow</span>
             </span>
@@ -39,10 +45,10 @@ export default function PublicFooter() {
             </p>
             <button
               onClick={handleGetStarted}
-              className="rounded-full bg-white px-7 py-3.5 text-base font-semibold text-[#1d1d1f] hover:bg-slate-100 transition-colors shadow-md cursor-pointer flex items-center gap-4"
+              className="rounded-full bg-[#2546e8] hover:bg-[#1d38c4] px-7 py-3.5 text-base font-bold text-white transition-colors shadow-lg shadow-blue-600/30 cursor-pointer flex items-center gap-4"
             >
               <span>Get Started Free</span>
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#f0f2f4] text-lg text-[#1d1d1f]">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-lg text-white">
                 →
               </span>
             </button>
