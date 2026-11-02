@@ -29,16 +29,13 @@ export default function PublicNavbar() {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#1f1f22] text-white backdrop-blur">
       <div className="mx-auto flex min-h-18 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:min-h-20 sm:px-6 lg:px-8">
         
-        {/* Brand Logo with User Official Logo */}
-        <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+        {/* Brand Logo */}
+        <Link href="/" className="flex items-center cursor-pointer group">
           <img
             src="/logo.png"
             alt="MakaziFlow"
-            className="h-10 sm:h-11 w-auto object-contain transition-transform group-hover:scale-105"
+            className="h-10 sm:h-12 w-auto object-contain transition-transform group-hover:scale-105"
           />
-          <span className="text-2xl font-black tracking-tight select-none">
-            <span className="text-white">Makazi</span><span className="text-[#00d084]">Flow</span>
-          </span>
         </Link>
 
         {/* Desktop Navigation Links */}

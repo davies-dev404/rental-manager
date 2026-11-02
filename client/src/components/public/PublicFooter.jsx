@@ -27,15 +27,12 @@ export default function PublicFooter() {
         
         {/* Top Bar with Brand & Ready CTA */}
         <div className="flex flex-col gap-6 border-b border-white/10 pb-8 lg:flex-row lg:items-center lg:justify-between">
-          <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+          <Link href="/" className="flex items-center cursor-pointer group">
             <img
               src="/logo.png"
               alt="MakaziFlow"
-              className="h-10 sm:h-11 w-auto object-contain transition-transform group-hover:scale-105"
+              className="h-10 sm:h-12 w-auto object-contain transition-transform group-hover:scale-105"
             />
-            <span className="text-2xl font-black tracking-tight select-none">
-              <span className="text-white">Makazi</span><span className="text-[#00d084]">Flow</span>
-            </span>
           </Link>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between lg:gap-6">
