@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
-const { initiateSTKPush } = require('../utils/daraja');
+const { initiateSTKPush, registerPullTransactions, queryPullTransactions, generateToken } = require('../utils/daraja');
 const { sendPaymentReceipt } = require('../utils/sendPaymentReceipt');
 const Payment = require('../models/Payment');
 const logActivity = require('../utils/logActivity');
@@ -98,6 +98,82 @@ router.post('/callback', async (req, res) => {
     } catch (error) {
         console.error("Callback Error:", error);
         res.status(500).json({ result: "error" });
+    }
+});
+
+
+// @desc    Register Safaricom Pull API URL
+// @route   POST /api/mpesa/pull/register
+// @access  Private
+router.post("/pull/register", protect, async (req, res) => {
+    try {
+        const { shortCode, requestType, nominatedNumber, callbackUrl } = req.body;
+        const result = await registerPullTransactions({
+            shortCode,
+            requestType,
+            nominatedNumber,
+            callbackUrl
+        });
+
+        await logActivity(req.user, "M-Pesa Pull URL Registered", "Registered callback for shortcode " + (shortCode || "default"), "settings", "info");
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error("Pull Register Route Error:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to register Pull URL."
+        });
+    }
+});
+
+// @desc    Query Transactions via Safaricom Pull API
+// @route   POST /api/mpesa/pull/query
+// @access  Private
+router.post("/pull/query", protect, async (req, res) => {
+    try {
+        const { shortCode, startDate, endDate, offsetValue } = req.body;
+        const result = await queryPullTransactions({
+            shortCode,
+            startDate,
+            endDate,
+            offsetValue
+        });
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error("Pull Query Route Error:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to query pull transactions."
+        });
+    }
+});
+
+// @desc    Test M-Pesa OAuth Token generation
+// @route   GET /api/mpesa/token
+// @access  Private
+router.get("/token", protect, async (req, res) => {
+    try {
+        const { token, baseUrl } = await generateToken();
+        res.json({
+            success: true,
+            message: "Daraja OAuth token generated successfully",
+            baseUrl,
+            tokenGenerated: !!token
+        });
+    } catch (error) {
+        console.error("M-Pesa Token Test Error:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to generate Daraja token."
+        });
     }
 });
 
