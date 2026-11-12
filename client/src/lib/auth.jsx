@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
     }, []);
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
-    const login = async (email, password) => {
-        const result = await api.login(email, password);
+    const login = async (email, password, turnstileToken) => {
+        const result = await api.login(email, password, turnstileToken);
         // Server returns requiresOTP: true after credentials pass
         if (result.requiresOTP) {
             return result;

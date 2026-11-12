@@ -159,7 +159,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       // Step 1: Validate credentials with backend
-      const res = await login(usernameOrEmail.trim(), password);
+      const res = await login(usernameOrEmail.trim(), password, turnstileToken);
 
       if (res && res.requiresOTP) {
         // Backend generated an OTP and sent email

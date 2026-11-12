@@ -27,23 +27,47 @@ export const API_URL = getApiUrl();
 
 const RENDER_FALLBACK = 'https://rental-manager-1-7jmg.onrender.com/api';
 
+// Cache active fallback so we do not wait repeatedly on broken or disconnected backends
+let cachedFallbackBase = null;
+
+// On boot, if on production domain and local cPanel DB is disconnected, proactively switch
+if (typeof window !== 'undefined' && window.location.hostname.includes('makaziflow.afrinextech.co.ke')) {
+  fetch('/api/health')
+    .then((r) => r.json())
+    .then((data) => {
+      if (data && data.database && data.database.status === 'disconnected') {
+        console.warn('Live cPanel backend reports database disconnected; routing API to Render fallback directly.');
+        cachedFallbackBase = RENDER_FALLBACK;
+      }
+    })
+    .catch(() => {
+      cachedFallbackBase = RENDER_FALLBACK;
+    });
+}
+
 export async function smartFetch(url, options = {}) {
+  let targetUrl = url;
+  if (cachedFallbackBase && typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
+    targetUrl = url.replace(/^\/api/, cachedFallbackBase);
+  }
   try {
-    let res = await smartFetch(url, options);
-    if (!res.ok && res.status >= 500 && typeof url === 'string' && url.startsWith('/api')) {
+    let res = await fetch(targetUrl, options);
+    if (!res.ok && res.status >= 500 && typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
       const cloned = res.clone();
       const txt = await cloned.text().catch(() => '');
       if (txt.includes('Database connection failed') || txt.includes('Could not connect to any servers')) {
         console.warn('Primary /api failed with database IP block; routing to Render fallback API...');
-        const fallbackUrl = url.replace(/^\/api/, RENDER_FALLBACK);
+        cachedFallbackBase = RENDER_FALLBACK;
+        const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_FALLBACK);
         return await fetch(fallbackUrl, options);
       }
     }
     return res;
   } catch (err) {
-    if (typeof url === 'string' && url.startsWith('/api')) {
+    if (typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
       console.warn('Primary /api network error; routing to Render fallback API:', err.message);
-      const fallbackUrl = url.replace(/^\/api/, RENDER_FALLBACK);
+      cachedFallbackBase = RENDER_FALLBACK;
+      const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_FALLBACK);
       return await fetch(fallbackUrl, options);
     }
     throw err;
@@ -113,11 +137,11 @@ export const api = {
     }
   },
   // Users
-  login: async (email, password) => {
+  login: async (email, password, turnstileToken) => {
     const response = await smartFetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, turnstileToken })
     });
     return await parseApiResponse(response, 'Login failed');
   },
