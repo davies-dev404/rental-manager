@@ -87,7 +87,7 @@ const getEmailHeader = () => {
 
 // Cloudflare Turnstile token verification helper
 const verifyCloudflareTurnstile = async (token, reqIp) => {
-  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAFj6saB8ET8j49jonvgaxgQHZ84'; // Cloudflare Turnstile production secret key
+  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c'; // Cloudflare Turnstile production secret key
   if (!token) return true; // Gracefully pass if Turnstile token not submitted or not enforced
   try {
     const formData = new URLSearchParams();

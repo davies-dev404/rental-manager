@@ -20,7 +20,7 @@ export default function CloudflareTurnstile({
   const siteKey =
     import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY ||
     localStorage.getItem("cloudflare_turnstile_site_key") ||
-    "0x4AAAAAAFj6sWzemDdb1Pda"; // Cloudflare Turnstile production site key
+    "0x4AAAAAAF-iaSZWg6eejfHl"; // Cloudflare Turnstile production site key
 
   useEffect(() => {
     let isMounted = true;

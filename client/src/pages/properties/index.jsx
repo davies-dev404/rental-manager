@@ -654,27 +654,7 @@ function PropertyFormView({ onBack }) {
                 paymentCode: paymentCode.trim()
             };
 
-            const res = await api.addProperty(propertyData);
-            const propId = res?._id || res?.id;
-
-            const count = parseInt(unitsCount) || 0;
-            if (count > 0 && propId) {
-                try {
-                    for (let i = 1; i <= Math.min(count, 50); i++) {
-                        await api.addUnit({
-                            propertyId: propId,
-                            unitNumber: `U${i}`,
-                            type: "Apartment",
-                            rentAmount: "25000",
-                            bedrooms: "1",
-                            bathrooms: "1",
-                            status: "vacant"
-                        });
-                    }
-                } catch {
-                    // handled
-                }
-            }
+            await api.addProperty(propertyData);
 
             queryClient.invalidateQueries({ queryKey: ["properties"] });
             queryClient.invalidateQueries({ queryKey: ["units"] });
