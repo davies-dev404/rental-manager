@@ -13,7 +13,75 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Security Middleware: Helmet
-app.use(helmet());
+// Security Middleware: Helmet with Cloudflare Turnstile & API friendly CSP
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "https://challenges.cloudflare.com",
+          "https://*.cloudflare.com",
+          "https://static.cloudflareinsights.com",
+          "https://accounts.google.com",
+          "https://apis.google.com",
+          "https://connect.facebook.net"
+        ],
+        frameSrc: [
+          "'self'",
+          "https://challenges.cloudflare.com",
+          "https://*.challenges.cloudflare.com",
+          "https://*.cloudflare.com",
+          "https://accounts.google.com",
+          "https://appleid.apple.com"
+        ],
+        connectSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://challenges.cloudflare.com",
+          "https://*.challenges.cloudflare.com",
+          "https://*.cloudflare.com",
+          "https://*.cloudflarecaptcha.com",
+          "https://*.dnstest.challenges.cloudflare.com",
+          "https://dnstest.dev",
+          "https://static.cloudflareinsights.com",
+          "https://makaziflow.afrinextech.co.ke",
+          "https://afrinextech.co.ke",
+          "https://rental-manager-1-7jmg.onrender.com",
+          "https://rental-manager-gold.vercel.app",
+          "https://api.brevo.com",
+          "https://api.safaricom.co.ke",
+          "https://sandbox.safaricom.co.ke"
+        ],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "blob:",
+          "https:",
+          "http:"
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com"
+        ],
+        fontSrc: [
+          "'self'",
+          "data:",
+          "https://fonts.gstatic.com",
+          "https://challenges.cloudflare.com"
+        ],
+        upgradeInsecureRequests: null
+      }
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
 
 // Security Middleware: Rate Limiting
 const limiter = rateLimit({
@@ -91,7 +159,21 @@ const connectDB = async () => {
     cached.conn = null;
 
     const isServerless = !!(process.env.VERCEL || process.env.RENDER || process.env.AWS_LAMBDA_FUNCTION_NAME);
-    const uri = process.env.MONGODB_URI || (isServerless ? null : 'mongodb://127.0.0.1:27017/rental_manager');
+    const isProduction = process.env.NODE_ENV === 'production' || isServerless;
+
+    let uri = process.env.MONGODB_URI || (isServerless ? null : 'mongodb://127.0.0.1:27017/rental_manager_dev');
+
+    // Strict Environment Separation:
+    // Localhost / Development NEVER pollutes or shares database with Production!
+    if (!isProduction) {
+      if (process.env.MONGODB_DEV_URI) {
+        uri = process.env.MONGODB_DEV_URI;
+      } else if (uri && uri.includes('/rental_manager?')) {
+        uri = uri.replace('/rental_manager?', '/rental_manager_dev?');
+      } else if (uri && uri.endsWith('/rental_manager')) {
+        uri = uri.replace('/rental_manager', '/rental_manager_dev');
+      }
+    }
 
     if (!uri) {
         console.error('❌ MONGODB_URI environment variable is missing.');
