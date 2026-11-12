@@ -147,6 +147,22 @@ async function sendViaNodemailer(host, port, secure, user, pass, mailOptions, la
 }
 
 const sendEmail = async (options) => {
+  // Suppress emails to demo, placeholder, and test addresses
+  const targetEmail = (options.email || '').toLowerCase().trim();
+  const isDemoOrFake = 
+    targetEmail.endsWith('@example.com') ||
+    targetEmail.endsWith('@test.com') ||
+    targetEmail.endsWith('@demo.com') ||
+    targetEmail.endsWith('@sample.com') ||
+    targetEmail.endsWith('@dummy.com') ||
+    targetEmail.includes('demotenant') ||
+    targetEmail === 'tenant@makaziflow.com';
+
+  if (isDemoOrFake) {
+    console.log('[Email Suppressed] Skipped real delivery to demo/test tenant: ' + options.email);
+    return { success: true, simulated: true };
+  }
+
   let settings = null;
   try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {

@@ -369,10 +369,20 @@ router.post('/verify-login-otp', async (req, res) => {
     user.otpExpires = undefined;
     if (!user.isVerified) user.isVerified = true;
 
-    // 1. Senior Standard: Short-lived access token + Refresh token rotation
+    // 1. Multi-Device Sessions: Short-lived access token + Multi-device refresh tokens
     const accessToken = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
-    user.refreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+    if (!Array.isArray(user.refreshTokens)) {
+      user.refreshTokens = [];
+    }
+    // Allow concurrent sessions across devices/browsers (keep last 10)
+    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
+    if (user.refreshTokens.length > 10) {
+      user.refreshTokens.shift();
+    }
+    user.refreshToken = tokenHash;
     await user.save();
 
     // Set httpOnly secure cookies
@@ -402,7 +412,7 @@ router.post('/verify-login-otp', async (req, res) => {
   }
 });
 
-// @desc    Refresh access token (Token Rotation - Senior Standard)
+// @desc    Refresh access token (Multi-device concurrent session rotation)
 // @route   POST /api/auth/refresh
 // @access  Public
 router.post('/refresh', async (req, res) => {
@@ -415,25 +425,37 @@ router.post('/refresh', async (req, res) => {
     const decoded = jwt.verify(incomingToken, process.env.JWT_SECRET || 'makaziflow_secret');
     const user = await User.findById(decoded.id);
 
-    if (!user || !user.refreshToken) {
+    if (!user) {
       clearAuthCookies(res);
-      return res.status(401).json({ message: 'Session expired or revoked' });
+      return res.status(401).json({ message: 'Session expired or user not found' });
     }
 
-    // Verify token hash
     const incomingHashed = crypto.createHash('sha256').update(incomingToken).digest('hex');
-    if (user.refreshToken !== incomingHashed && user.refreshToken !== incomingToken) {
-      // Refresh token reuse detected! Invalidate all sessions immediately
-      user.refreshToken = undefined;
-      await user.save();
+    const tokenIndex = (user.refreshTokens || []).findIndex(
+      t => t.tokenHash === incomingHashed || t.tokenHash === incomingToken
+    );
+    const isLegacyMatch = user.refreshToken === incomingHashed || user.refreshToken === incomingToken;
+
+    if (tokenIndex === -1 && !isLegacyMatch) {
       clearAuthCookies(res);
-      return res.status(403).json({ message: 'Token reuse detected. Please sign in again.' });
+      return res.status(403).json({ message: 'Session expired on this device. Please sign in again.' });
     }
 
-    // Rotate: Issue new access token + new refresh token
+    // Rotate this specific session token while keeping other device sessions intact
     const newAccessToken = generateToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);
-    user.refreshToken = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+    const newHashed = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+
+    if (!Array.isArray(user.refreshTokens)) {
+      user.refreshTokens = [];
+    }
+
+    if (tokenIndex !== -1) {
+      user.refreshTokens[tokenIndex] = { tokenHash: newHashed, createdAt: new Date() };
+    } else {
+      user.refreshTokens.push({ tokenHash: newHashed, createdAt: new Date() });
+    }
+    user.refreshToken = newHashed;
     await user.save();
 
     setAuthCookies(res, newAccessToken, newRefreshToken);
@@ -448,7 +470,7 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
-// @desc    Logout & revoke session (Senior Standard)
+// @desc    Logout & revoke session (Multi-device safe)
 // @route   POST /api/auth/logout
 // @access  Public
 router.post('/logout', async (req, res) => {
@@ -457,10 +479,20 @@ router.post('/logout', async (req, res) => {
     if (incomingToken) {
       const incomingHashed = crypto.createHash('sha256').update(incomingToken).digest('hex');
       const user = await User.findOne({
-        $or: [{ refreshToken: incomingHashed }, { refreshToken: incomingToken }]
+        $or: [
+          { 'refreshTokens.tokenHash': incomingHashed },
+          { 'refreshTokens.tokenHash': incomingToken },
+          { refreshToken: incomingHashed },
+          { refreshToken: incomingToken }
+        ]
       });
       if (user) {
-        user.refreshToken = undefined;
+        if (Array.isArray(user.refreshTokens)) {
+          user.refreshTokens = user.refreshTokens.filter(t => t.tokenHash !== incomingHashed && t.tokenHash !== incomingToken);
+        }
+        if (user.refreshToken === incomingHashed || user.refreshToken === incomingToken) {
+          user.refreshToken = undefined;
+        }
         await user.save();
       }
     }

@@ -108,9 +108,7 @@ const connectDB = async () => {
 
     cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
         console.log('✅ MongoDB Connected:', uri.split('@')[1]?.split('/')[0] || 'local');
-        if (!isServerless) {
-            startRentReminders();
-        }
+        // Background reminders only dispatched when initiated by user/landlord
         cached.conn = mongooseInstance;
         return mongooseInstance;
     }).catch((err) => {

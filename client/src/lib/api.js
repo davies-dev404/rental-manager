@@ -64,6 +64,10 @@ async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem("rental_user");
+      window.dispatchEvent(new Event("auth:logout"));
+    }
     if (data && (data.message || data.error)) {
       throw new Error(data.message || data.error);
     }
@@ -96,6 +100,18 @@ export const getAuthHeaders = () => {
 export const api = {
   API_URL,
   getAuthHeaders, // Expose for direct fetch use
+  logout: async () => {
+    try {
+      const response = await smartFetch(`${API_URL}/auth/logout`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      return await response.json().catch(() => ({}));
+    } catch {
+      return {};
+    }
+  },
   // Users
   login: async (email, password) => {
     const response = await smartFetch(`${API_URL}/auth/login`, {

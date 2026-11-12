@@ -9,16 +9,41 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         const storedUser = localStorage.getItem("rental_user");
         if (storedUser) {
-            const parsed = JSON.parse(storedUser);
-            if (parsed && parsed.token) {
-                setUser(parsed);
-            } else {
-                console.log("Detecting stale mock user, clearing session.");
+            try {
+                const parsed = JSON.parse(storedUser);
+                if (parsed && parsed.token) {
+                    // Check if token has expired
+                    const tokenParts = parsed.token.split('.');
+                    if (tokenParts.length === 3) {
+                        try {
+                            const payload = JSON.parse(atob(tokenParts[1]));
+                            if (payload.exp && Date.now() >= payload.exp * 1000) {
+                                console.log("Session token expired, clearing stored session.");
+                                localStorage.removeItem("rental_user");
+                                setUser(null);
+                                setIsLoading(false);
+                                return;
+                            }
+                        } catch (e) {}
+                    }
+                    setUser(parsed);
+                } else {
+                    localStorage.removeItem("rental_user");
+                    setUser(null);
+                }
+            } catch {
                 localStorage.removeItem("rental_user");
                 setUser(null);
             }
         }
         setIsLoading(false);
+
+        const handleLogoutEvent = () => {
+            setUser(null);
+            localStorage.removeItem("rental_user");
+        };
+        window.addEventListener("auth:logout", handleLogoutEvent);
+        return () => window.removeEventListener("auth:logout", handleLogoutEvent);
     }, []);
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
@@ -66,7 +91,10 @@ export function AuthProvider({ children }) {
         }
     };
 
-    const logout = () => {
+    const logout = async () => {
+        try {
+            await api.logout();
+        } catch (e) {}
         setUser(null);
         localStorage.removeItem("rental_user");
         toast({ title: "Logged out successfully" });

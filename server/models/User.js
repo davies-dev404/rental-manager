@@ -30,6 +30,11 @@ const userSchema = new mongoose.Schema({
   subscriptionTier: { type: String, default: 'starter' },
   isDemoMode: { type: Boolean, default: false },
   refreshToken: { type: String },
+  refreshTokens: [{
+    tokenHash: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+    userAgent: { type: String }
+  }],
   failedLoginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date }
 });

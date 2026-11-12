@@ -6,6 +6,10 @@ const sendEmail = require('../utils/sendEmail');
 
 // Schedule check every minute to handle "Immediate" and scheduled reminders
 const startRentReminders = () => {
+  if (process.env.ENABLE_AUTO_CRON_REMINDERS !== 'true') {
+    console.log('ℹ️ Automatic background rent reminders are disabled. Reminders are only dispatched when explicitly initiated by the user/landlord.');
+    return;
+  }
   cron.schedule('* * * * *', async () => {
     try {
       if (require('mongoose').connection.readyState !== 1) {
