@@ -32,7 +32,8 @@ const unitSchema = z.object({
     rentAmount: z.string().min(1, "Rent Amount is required"),
     bedrooms: z.string().min(1, "Bedrooms is required"),
     bathrooms: z.string().min(1, "Bathrooms is required"),
-    status: z.string().optional()
+    status: z.string().optional(),
+    tenantId: z.string().optional()
 });
 
 
@@ -239,6 +240,22 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
     const queryClient = useQueryClient();
     const { t } = useTranslation();
     const { currency } = usePreferences();
+    const { data: tenants = [] } = useQuery({ queryKey: ["tenants"], queryFn: api.getTenants });
+    
+    const currentTenant = (tenants || []).find(t => {
+        const uId = t.unitId?._id || t.unitId?.id || t.unitId;
+        return String(uId) === String(unit?._id || unit?.id);
+    });
+    const [selectedTenantId, setSelectedTenantId] = useState(currentTenant?._id || currentTenant?.id || "none");
+
+    React.useEffect(() => {
+        const cur = (tenants || []).find(t => {
+            const uId = t.unitId?._id || t.unitId?.id || t.unitId;
+            return String(uId) === String(unit?._id || unit?.id);
+        });
+        setSelectedTenantId(cur?._id || cur?.id || "none");
+    }, [unit, tenants]);
+
     const form = useForm({
         resolver: zodResolver(unitSchema),
         defaultValues: {
@@ -247,7 +264,8 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
             rentAmount: String(unit.rentAmount || ""),
             bedrooms: String(unit.bedrooms || "1"),
             bathrooms: String(unit.bathrooms || "1"),
-            status: unit.status || "vacant"
+            status: unit.status || "vacant",
+            tenantId: currentTenant?._id || currentTenant?.id || "none"
         }
     });
 
@@ -255,16 +273,23 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
         mutationFn: api.updateUnit,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["tenants"] });
             queryClient.invalidateQueries({ queryKey: ["properties"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
             onOpenChange(false);
-            toast({ title: "Unit Updated", description: "Unit details updated." });
+            toast({ title: "Unit Updated", description: "Unit details and tenant assignment updated." });
         },
-        onError: () => toast({ variant: "destructive", title: "Error", description: "Failed to update unit." })
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.message || "Failed to update unit." })
     });
 
     function onSubmit(values) {
-        mutation.mutate({ ...values, id: unit._id || unit.id, propertyId: unit.propertyId });
+        mutation.mutate({
+            ...values,
+            id: unit._id || unit.id,
+            propertyId: unit.propertyId,
+            tenantId: selectedTenantId === "none" ? "" : selectedTenantId,
+            status: selectedTenantId !== "none" ? "occupied" : values.status
+        });
     }
 
     return (
@@ -310,6 +335,29 @@ function EditUnitDialog({ unit, open, onOpenChange }) {
                         <FormField control={form.control} name="rentAmount" render={({ field }) => (
                             <FormItem><FormLabel>{t('rent')} ({currency})</FormLabel><FormControl><Input type="number" {...field}/></FormControl><FormMessage /></FormItem>
                         )}/>
+                        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <Label className="text-xs font-semibold">Assign Tenant to Unit</Label>
+                            <select
+                                value={selectedTenantId}
+                                onChange={(e) => {
+                                    setSelectedTenantId(e.target.value);
+                                    if (e.target.value !== "none") {
+                                        form.setValue("status", "occupied");
+                                    }
+                                }}
+                                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs text-foreground focus:ring-1 focus:ring-blue-600"
+                            >
+                                <option value="none">-- Vacant (No Tenant Assigned) --</option>
+                                {(tenants || []).map((t) => (
+                                    <option key={t._id || t.id} value={t._id || t.id}>
+                                        {t.name} ({t.phone || 'No phone'}) {t.unitId && (t.unitId?._id || t.unitId) === (unit?._id || unit?.id) ? '★ Current Tenant' : ''}
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-[11px] text-muted-foreground">
+                                Assigning a tenant sets unit to Occupied and updates tenancy records.
+                            </p>
+                        </div>
                         <DialogFooter>
                             <Button type="submit" disabled={mutation.isPending}>
                                 {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Save

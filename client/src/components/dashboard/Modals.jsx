@@ -65,6 +65,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
     tenantUnitId: "",
     tenantRent: "20000",
     tenantDeposit: "20000",
+    tenantDepositType: "Rent Deposit",
     // Unit form fields
     unitNumber: "",
     unitType: "1 Bedroom",
@@ -147,7 +148,8 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
           nationalId: formData.tenantIdNumber || "12345678",
           unitId: formData.tenantUnitId || undefined,
           rentAmount: Number(formData.tenantRent || 0),
-          deposit: Number(formData.tenantDeposit || 0)
+          deposit: Number(formData.tenantDeposit || 0),
+          depositType: formData.tenantDepositType || "Rent Deposit"
         });
         queryClient.invalidateQueries({ queryKey: ["tenants"] });
         queryClient.invalidateQueries({ queryKey: ["units"] });
@@ -618,7 +620,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label>Monthly Rent (KES)</Label>
                   <Input 
@@ -626,6 +628,22 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                     value={formData.tenantRent}
                     onChange={(e) => handleChange("tenantRent", e.target.value)}
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Deposit Type</Label>
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-600"
+                    value={formData.tenantDepositType || "Rent Deposit"}
+                    onChange={(e) => handleChange("tenantDepositType", e.target.value)}
+                  >
+                    <option value="Rent Deposit">Rent Deposit</option>
+                    <option value="Water Deposit">Water Deposit</option>
+                    <option value="Electricity Deposit">Electricity Deposit</option>
+                    <option value="Security Deposit">Security Deposit</option>
+                    <option value="Key Deposit">Key Deposit</option>
+                    <option value="Garbage Deposit">Garbage Deposit</option>
+                    <option value="Other Deposit">Other Deposit</option>
+                  </select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Deposit (KES)</Label>

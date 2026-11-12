@@ -278,7 +278,7 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
   const [hideOptional, setHideOptional] = useState(false);
 
   // Optional fields
-  const [depositType, setDepositType] = useState("");
+  const [depositType, setDepositType] = useState("Rent Deposit");
   const [depositAmountPaid, setDepositAmountPaid] = useState("");
   const [depositAmountReturned, setDepositAmountReturned] = useState("");
   const [deposits, setDeposits] = useState([]);
@@ -316,9 +316,8 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
   });
 
   const handleAddDeposit = () => {
-    if (!depositType && !depositAmountPaid) return;
-    setDeposits([...deposits, { type: depositType || "General Deposit", paid: depositAmountPaid, returned: depositAmountReturned || "0" }]);
-    setDepositType("");
+    if (!depositAmountPaid) return;
+    setDeposits([...deposits, { type: depositType || "Rent Deposit", paid: depositAmountPaid, returned: depositAmountReturned || "0" }]);
     setDepositAmountPaid("");
     setDepositAmountReturned("");
   };
@@ -400,13 +399,23 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
       return;
     }
 
+    let finalDeposits = [...deposits];
+    if (depositAmountPaid && Number(depositAmountPaid) > 0) {
+      finalDeposits.push({
+        type: depositType || "Rent Deposit",
+        paid: Number(depositAmountPaid),
+        returned: Number(depositAmountReturned) || 0
+      });
+    }
+    const totalDeposit = finalDeposits.reduce((acc, d) => acc + (Number(d.paid) || 0), 0);
+
     setLoading(true);
     try {
       await api.addTenant({
         name: fullName,
         phone: phone.startsWith("+") ? phone : `+254${phone.replace(/^0+/, "")}`,
-        email: email || `${firstName.toLowerCase() || "tenant"}@makaziflow.com`,
-        unitId: unitId || (propertyUnits[0]?._id || propertyUnits[0]?.id),
+        email: email || `${(firstName || "tenant").toLowerCase().replace(/[^a-z0-9]/g, "")}@makaziflow.com`,
+        unitId: unitId || (propertyUnits[0]?._id || propertyUnits[0]?.id) || undefined,
         nationalId: nationalId || "ID-" + Math.floor(100000 + Math.random() * 900000),
         idType: "national_id",
         leaseStart: leaseStartDate,
@@ -414,7 +423,9 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
         notes,
         accountNumber,
         kraPin,
-        deposits,
+        deposit: totalDeposit,
+        depositType: depositType || "Rent Deposit",
+        deposits: finalDeposits,
         nextOfKin: nextOfKins
       });
       queryClient.invalidateQueries({ queryKey: ["tenants"] });
@@ -423,8 +434,9 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
       toast({ title: "Tenant Added", description: `Tenant ${fullName} added successfully.` });
       if (onSuccess) onSuccess();
       onBack();
-    } catch {
-      toast({ variant: "destructive", title: "Error", description: "Failed to add tenant." });
+    } catch (err) {
+      const errMsg = err?.response?.data?.message || err?.message || "Failed to add tenant.";
+      toast({ variant: "destructive", title: "Error Adding Tenant", description: errMsg });
     } finally {
       setLoading(false);
     }
@@ -585,19 +597,26 @@ function TenantFormView({ properties = [], units = [], onBack, onSuccess }) {
               </label>
               <div className="flex-1 max-w-lg space-y-2">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
+                  <select
                     value={depositType}
                     onChange={(e) => setDepositType(e.target.value)}
-                    placeholder="deposit type ..."
                     className="flex-1 h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
-                  />
+                  >
+                    <option value="Rent Deposit">Rent Deposit</option>
+                    <option value="Water Deposit">Water Deposit</option>
+                    <option value="Electricity Deposit">Electricity Deposit</option>
+                    <option value="Security Deposit">Security Deposit</option>
+                    <option value="Key Deposit">Key Deposit</option>
+                    <option value="Garbage Deposit">Garbage Deposit</option>
+                    <option value="Other Deposit">Other / Custom Deposit</option>
+                  </select>
                   <button
                     type="button"
                     onClick={handleAddDeposit}
-                    className="h-9 w-9 flex items-center justify-center border border-slate-300 dark:border-slate-700 rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-base font-medium cursor-pointer"
+                    title="Add to deposit schedule"
+                    className="h-9 px-3 flex items-center justify-center gap-1 border border-slate-300 dark:border-slate-700 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-xs font-semibold cursor-pointer"
                   >
-                    +
+                    <span>+ Add</span>
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

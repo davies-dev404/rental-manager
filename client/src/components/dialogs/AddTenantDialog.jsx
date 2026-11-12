@@ -18,12 +18,14 @@ const DRAFT_STORAGE_KEY = "dwello_tenant_draft";
 
 const tenantSchema = z.object({
     name: z.string().min(2, "Name must be at least 2 characters"),
-    email: z.string().email("Invalid email address"),
-    phone: z.string().regex(/^\+?[\d\s-]{10,15}$/, "Invalid phone number format"),
-    idType: z.enum(["national_id", "passport", "driving_license"]),
-    nationalId: z.string().min(5, "ID Number must be at least 5 characters"),
-    unitId: z.string().min(1, "Please select a unit"),
-    leaseStart: z.string().refine((date) => new Date(date).toString() !== 'Invalid Date', { message: "Invalid date" }),
+    email: z.string().optional().or(z.literal('')),
+    phone: z.string().min(6, "Please enter a valid phone number"),
+    idType: z.enum(["national_id", "passport", "driving_license"]).optional(),
+    nationalId: z.string().optional().or(z.literal('')),
+    unitId: z.string().optional().or(z.literal('')),
+    leaseStart: z.string().optional(),
+    deposit: z.string().optional(),
+    depositType: z.string().optional(),
 });
 
 export function AddTenantDialog() {
@@ -168,8 +170,8 @@ export function AddTenantDialog() {
             form.reset();
             toast({ title: t('tenant_added'), description: t('tenant_added_desc') });
         },
-        onError: () => {
-            toast({ variant: "destructive", title: t('error'), description: t('tenant_add_failed') });
+        onError: (err) => {
+            toast({ variant: "destructive", title: t('error'), description: err?.message || t('tenant_add_failed') });
         }
     });
 

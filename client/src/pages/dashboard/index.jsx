@@ -250,53 +250,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Stuck on something? Banner */}
-      {showAiBanner && (
-        <div className="bg-white dark:bg-slate-900 border-l-4 border-l-teal-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-xs text-slate-900 dark:text-white">Stuck on something? Ask MakaaziBot</span>
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("open-makaazibot"));
-                  const el = document.getElementById("open-ai-chat-btn");
-                  if (el) el.click();
-                }}
-                className="text-xs text-blue-600 hover:underline font-medium cursor-pointer"
-              >
-                Ask MakaaziBot
-              </button>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Try{" "}
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("open-makaazibot", { detail: { prompt: "How do I add a payment?" } }))}
-                className="text-blue-600 hover:underline cursor-pointer italic"
-              >
-                "How do I add a payment?"
-              </button>{" "}
-              or{" "}
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("open-makaazibot", { detail: { prompt: "How do I remove a tenant who has left?" } }))}
-                className="text-blue-600 hover:underline cursor-pointer italic"
-              >
-                "How do I remove a tenant who has left?"
-              </button>
-            </p>
-          </div>
-          <button 
-            onClick={handleDismissAiBanner}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none cursor-pointer p-1"
-            title="Dismiss banner"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
       {/* Onboarding Progress Banner */}
       {showOnboarding && (
         <div className="bg-white dark:bg-slate-900 border-l-4 border-l-blue-500 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs">

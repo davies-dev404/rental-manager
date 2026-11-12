@@ -377,6 +377,177 @@ function BulkAddUnitsDialog({ properties, open, onOpenChange }) {
   );
 }
 
+
+// ─── Edit Unit & Assign Tenant Modal ───────────────────────────────────────────
+function EditUnitModal({ unit, open, onOpenChange, tenants, properties }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [unitNumber, setUnitNumber] = useState(unit?.unitName || '');
+  const [type, setType] = useState(unit?.type || 'Apartment');
+  const [rentAmount, setRentAmount] = useState(String(unit?.rent || 0));
+  const [status, setStatus] = useState(unit?.status || 'vacant');
+  
+  // Find current tenant
+  const currentTenant = (tenants || []).find(t => {
+    const uId = t.unitId?._id || t.unitId?.id || t.unitId;
+    return String(uId) === String(unit?.id);
+  });
+  const [tenantId, setTenantId] = useState(currentTenant?._id || currentTenant?.id || 'none');
+  const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (unit) {
+      setUnitNumber(unit.unitName || '');
+      setType(unit.type || 'Apartment');
+      setRentAmount(String(unit.rent || 0));
+      setStatus(unit.status || 'vacant');
+      const cur = (tenants || []).find(t => {
+        const uId = t.unitId?._id || t.unitId?.id || t.unitId;
+        return String(uId) === String(unit.id);
+      });
+      setTenantId(cur?._id || cur?.id || 'none');
+    }
+  }, [unit, tenants]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!unitNumber.trim()) {
+      toast({ variant: 'destructive', title: 'Unit Number Required' });
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.updateUnit({
+        id: unit.id,
+        unitNumber,
+        type,
+        rentAmount: Number(rentAmount || 0),
+        status: tenantId !== 'none' ? 'occupied' : status,
+        tenantId: tenantId === 'none' ? '' : tenantId
+      });
+      queryClient.invalidateQueries({ queryKey: ['units'] });
+      queryClient.invalidateQueries({ queryKey: ['tenants'] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      toast({ title: 'Unit Updated', description: `Unit ${unitNumber} updated successfully.` });
+      onOpenChange(false);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message || 'Failed to update unit' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Unit &amp; Assign Tenant</DialogTitle>
+          <DialogDescription>
+            Update unit specifications or assign/reassign a tenant directly.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSave} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Unit Name / Number</Label>
+            <Input
+              value={unitNumber}
+              onChange={(e) => setUnitNumber(e.target.value)}
+              placeholder="e.g. Unit 4B"
+              className="h-9 text-xs"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Type</Label>
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+              >
+                <option value="Apartment">Apartment</option>
+                <option value="Studio">Studio</option>
+                <option value="Bedsitter">Bedsitter</option>
+                <option value="1 Bedroom">1 Bedroom</option>
+                <option value="2 Bedroom">2 Bedroom</option>
+                <option value="3 Bedroom">3 Bedroom</option>
+                <option value="Shop">Shop</option>
+                <option value="Commercial">Commercial</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
+              >
+                <option value="vacant">Vacant</option>
+                <option value="occupied">Occupied</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Monthly Rent (KES)</Label>
+            <Input
+              type="number"
+              value={rentAmount}
+              onChange={(e) => setRentAmount(e.target.value)}
+              placeholder="e.g. 25000"
+              className="h-9 text-xs"
+            />
+          </div>
+
+          {/* Assign Tenant dropdown */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <Label className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+              Assign Tenant to this Unit
+            </Label>
+            <select
+              value={tenantId}
+              onChange={(e) => {
+                setTenantId(e.target.value);
+                if (e.target.value !== 'none') {
+                  setStatus('occupied');
+                }
+              }}
+              className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs text-foreground focus:ring-1 focus:ring-blue-600"
+            >
+              <option value="none">-- Vacant (No Tenant Assigned) --</option>
+              {(tenants || []).map((t) => (
+                <option key={t._id || t.id} value={t._id || t.id}>
+                  {t.name} ({t.phone || 'No phone'}) {t.unitId && (t.unitId?._id || t.unitId) === unit?.id ? '★ Current Tenant' : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Selecting a tenant links them to this unit and automatically sets status to Occupied.
+            </p>
+          </div>
+
+          <DialogFooter className="pt-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={loading}
+              className="bg-[#0b1065] hover:bg-[#161c8a] text-white"
+            >
+              {loading && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function UnitsPage() {
   const { toast } = useToast();
   const [view, setView] = useState(() => {
@@ -399,6 +570,21 @@ export default function UnitsPage() {
   const [downloadPropId, setDownloadPropId] = useState('all');
   const { data: properties = [], isLoading: isPropsLoading } = useQuery({ queryKey: ['properties'], queryFn: api.getProperties });
   const { data: rawUnits = [], isLoading: isUnitsLoading } = useQuery({ queryKey: ['units'], queryFn: () => api.getUnits() });
+  const { data: tenants = [] } = useQuery({ queryKey: ['tenants'], queryFn: api.getTenants });
+  const [editingUnit, setEditingUnit] = useState(null);
+  const queryClient = useQueryClient();
+
+  const handleDeleteUnit = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this unit?")) return;
+    try {
+      await api.deleteUnit(id);
+      queryClient.invalidateQueries({ queryKey: ['units'] });
+      queryClient.invalidateQueries({ queryKey: ['properties'] });
+      toast({ title: 'Unit Deleted' });
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
+    }
+  };
   const isLoading = isPropsLoading || isUnitsLoading;
 
   const allUnits = rawUnits.length > 0
@@ -457,6 +643,15 @@ export default function UnitsPage() {
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
       <BulkAddUnitsDialog properties={properties} open={bulkAddOpen} onOpenChange={setBulkAddOpen} />
+      {editingUnit && (
+        <EditUnitModal
+          unit={editingUnit}
+          open={!!editingUnit}
+          onOpenChange={(val) => !val && setEditingUnit(null)}
+          tenants={tenants}
+          properties={properties}
+        />
+      )}
       <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Download Rent Schedule</DialogTitle><DialogDescription>Select property or download all.</DialogDescription></DialogHeader>
@@ -557,10 +752,10 @@ export default function UnitsPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem><Pencil className="w-3.5 h-3.5 mr-2" /> Edit Unit</DropdownMenuItem>
-                                <DropdownMenuItem><UserCheck className="w-3.5 h-3.5 mr-2" /> Assign Tenant</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setEditingUnit(unit)}><Pencil className="w-3.5 h-3.5 mr-2" /> Edit Unit</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setEditingUnit(unit)}><UserCheck className="w-3.5 h-3.5 mr-2" /> Assign Tenant</DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-red-600"><Trash2 className="w-3.5 h-3.5 mr-2" /> Delete</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleDeleteUnit(unit.id)} className="text-red-600"><Trash2 className="w-3.5 h-3.5 mr-2" /> Delete</DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </td>

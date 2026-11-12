@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Tenant = require('../models/Tenant');
 const Unit = require('../models/Unit');
 const Payment = require('../models/Payment');
@@ -9,7 +10,7 @@ const { protect } = require('../middleware/authMiddleware');
 // Get all tenants with payment status
 router.get('/', protect, async (req, res) => {
   try {
-    const tenants = await Tenant.find({ user: req.user.id }).populate('unitId', 'unitNumber rentAmount');
+    const tenants = await Tenant.find({ user: req.user.id }).populate('unitId', 'unitNumber rentAmount propertyId');
     
     // Get current month date range
     const now = new Date();
@@ -76,13 +77,55 @@ router.get('/', protect, async (req, res) => {
 // Add tenant
 router.post('/', protect, async (req, res) => {
   try {
-    if (req.body.unitId === "") delete req.body.unitId;
-    
-    const tenant = await Tenant.create({ ...req.body, user: req.user.id });
+    const payload = { ...req.body };
+
+    // Sanitize unitId: remove if empty, "none", "undefined", or invalid ObjectId
+    if (!payload.unitId || payload.unitId === "" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
+      delete payload.unitId;
+    } else if (!mongoose.Types.ObjectId.isValid(payload.unitId)) {
+      delete payload.unitId;
+    }
+
+    // Default name validation
+    if (!payload.name || payload.name.trim() === '') {
+      return res.status(400).json({ message: 'Tenant Name is required.' });
+    }
+
+    // Default phone validation
+    if (!payload.phone || payload.phone.trim() === '') {
+      return res.status(400).json({ message: 'Tenant Phone Number is required.' });
+    }
+
+    // Default nationalId if missing or empty
+    if (!payload.nationalId || payload.nationalId.trim() === '') {
+      payload.nationalId = `ID-${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+
+    // Default email if missing or empty
+    if (!payload.email || payload.email.trim() === '') {
+      const cleanName = payload.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'tenant';
+      payload.email = `${cleanName}_${Date.now()}@makaziflow.com`;
+    }
+
+    // Deposit computation: if deposits array has items, sum them; otherwise use deposit field
+    let totalDeposit = Number(payload.deposit) || 0;
+    if (Array.isArray(payload.deposits) && payload.deposits.length > 0) {
+      const sumDeposits = payload.deposits.reduce((acc, d) => acc + (Number(d.paid) || 0), 0);
+      if (sumDeposits > 0) {
+        totalDeposit = sumDeposits;
+      }
+    }
+    payload.deposit = totalDeposit;
+
+    if (!payload.depositType) {
+      payload.depositType = payload.deposits?.[0]?.type || 'Rent Deposit';
+    }
+
+    const tenant = await Tenant.create({ ...payload, user: req.user.id });
 
     // If unit assigned, update unit status to occupied
     if (tenant.unitId) {
-        await Unit.findByIdAndUpdate(tenant.unitId, { status: 'occupied' });
+      await Unit.findByIdAndUpdate(tenant.unitId, { status: 'occupied' });
     }
 
     await logActivity(req.user, 'Add Tenant', `Added tenant ${tenant.name}`, 'tenant', 'success');
@@ -90,37 +133,50 @@ router.post('/', protect, async (req, res) => {
     res.status(201).json(tenant);
   } catch (error) {
     if (req.user) {
-        await logActivity(req.user, 'Add Tenant Failed', `Failed to add tenant: ${error.message}`, 'tenant', 'error');
+      await logActivity(req.user, 'Add Tenant Failed', `Failed to add tenant: ${error.message}`, 'tenant', 'error');
     }
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error.message || 'Failed to add tenant.' });
   }
 });
 
 // Update tenant
 router.put('/:id', protect, async (req, res) => {
   try {
-    if (req.body.unitId === "") {
-        req.body.unitId = null;
+    const payload = { ...req.body };
+
+    if (payload.unitId === "" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
+      payload.unitId = null;
+    } else if (payload.unitId && !mongoose.Types.ObjectId.isValid(payload.unitId)) {
+      payload.unitId = null;
     }
+
     const originalTenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!originalTenant) return res.status(404).json({ message: 'Tenant not found' });
 
     // Handle unit swap/removal logic
-    if (req.body.unitId !== undefined && req.body.unitId !== (originalTenant.unitId?.toString() || null)) {
-        // Vacate old unit if it existed
-        if (originalTenant.unitId) {
-            await Unit.findByIdAndUpdate(originalTenant.unitId, { status: 'vacant' });
-        }
-        // Occupy new unit if assigned
-        if (req.body.unitId) {
-            await Unit.findByIdAndUpdate(req.body.unitId, { status: 'occupied' });
-        }
+    if (payload.unitId !== undefined && payload.unitId !== (originalTenant.unitId?.toString() || null)) {
+      // Vacate old unit if it existed
+      if (originalTenant.unitId) {
+        await Unit.findByIdAndUpdate(originalTenant.unitId, { status: 'vacant' });
+      }
+      // Occupy new unit if assigned
+      if (payload.unitId) {
+        await Unit.findByIdAndUpdate(payload.unitId, { status: 'occupied' });
+      }
     }
 
-    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
+    // Deposit recalculation if updated
+    if (Array.isArray(payload.deposits) && payload.deposits.length > 0) {
+      const sumDeposits = payload.deposits.reduce((acc, d) => acc + (Number(d.paid) || 0), 0);
+      if (sumDeposits > 0) {
+        payload.deposit = sumDeposits;
+      }
+    }
+
+    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, payload, { new: true });
     res.json(tenant);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: error.message || 'Failed to update tenant.' });
   }
 });
 
@@ -132,13 +188,13 @@ router.delete('/:id', protect, async (req, res) => {
 
     // Vacate unit if active
     if (tenant.status === 'active' && tenant.unitId) {
-        await Unit.findByIdAndUpdate(tenant.unitId, { status: 'vacant' });
+      await Unit.findByIdAndUpdate(tenant.unitId, { status: 'vacant' });
     }
 
     await tenant.deleteOne();
     res.json({ message: 'Tenant removed' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Failed to delete tenant.' });
   }
 });
 
