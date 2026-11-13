@@ -10,7 +10,14 @@ const { protect } = require('../middleware/authMiddleware');
 // Get all tenants with payment status
 router.get('/', protect, async (req, res) => {
   try {
-    const tenants = await Tenant.find({ user: req.user.id }).populate('unitId', 'unitNumber rentAmount propertyId');
+    const tenants = await Tenant.find({ user: req.user.id }).populate({
+      path: 'unitId',
+      select: 'unitNumber rentAmount propertyId',
+      populate: {
+        path: 'propertyId',
+        select: 'name address'
+      }
+    });
     
     // Get current month date range
     const now = new Date();
@@ -54,8 +61,19 @@ router.get('/', protect, async (req, res) => {
             status = 'partial';
         }
 
+        const unitObj = tenant.unitId;
+        const propObj = unitObj && typeof unitObj === 'object' ? unitObj.propertyId : null;
+        const propId = propObj && typeof propObj === 'object' ? propObj._id : (propObj || null);
+        const propName = propObj && typeof propObj === 'object' ? propObj.name : '';
+        const unitNum = unitObj && typeof unitObj === 'object' ? unitObj.unitNumber : (tenant.unit || '');
+
         return { 
             ...tenant.toObject(), 
+            propertyId: propId ? propId.toString() : (tenant.propertyId ? tenant.propertyId.toString() : ''),
+            property: propName || tenant.property || '',
+            propertyName: propName || tenant.property || '',
+            unitNumber: unitNum,
+            unit: unitNum,
             paymentStatus: status,
             totalExpected,
             totalPaid,

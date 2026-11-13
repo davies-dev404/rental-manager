@@ -8,8 +8,9 @@ const Property = require('../models/Property');
 const { protect } = require('../middleware/authMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
 const sendEmail = require('../utils/sendEmail');
+const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
-const { getReceiptEmailBody } = require('../utils/emailTemplates');
+const { getReceiptEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
 
 const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
 const sendReceiptEmail = sendPaymentReceipt;
@@ -20,10 +21,25 @@ const sendReceiptEmail = sendPaymentReceipt;
 router.get('/', protect, async (req, res) => {
   try {
     const payments = await Payment.find({ user: req.user.id })
-      .populate('tenantId', 'name email')
-      .populate('unitId', 'unitNumber')
+      .populate('tenantId', 'name email phone')
+      .populate({
+        path: 'unitId',
+        select: 'unitNumber propertyId',
+        populate: {
+          path: 'propertyId',
+          select: 'name'
+        }
+      })
       .sort({ date: -1 });
-    res.json(payments);
+
+    const paymentsWithProperty = payments.map((p) => {
+      const propName = p.unitId?.propertyId?.name || p.property || 'Property';
+      return {
+        ...p.toObject(),
+        property: propName
+      };
+    });
+    res.json(paymentsWithProperty);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -225,7 +241,7 @@ router.get('/:id/pdf', protect, async (req, res) => {
         const propertyName = await getPropertyNameForPayment(payment);
         const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
 
-        const businessName = propertyName || settings?.orgName || 'MakaaziHub';
+        const businessName = propertyName || settings?.orgName || 'MakaziFlow';
         const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${payment._id}.pdf`;
 
         res.set({
@@ -237,6 +253,106 @@ router.get('/:id/pdf', protect, async (req, res) => {
     } catch (error) {
         console.error("PDF Generation Error:", error);
         res.status(500).json({ message: 'Failed to generate PDF' });
+    }
+});
+
+// @desc    Dispatch Invoice via Corporate Email and Instant SMS
+// @route   POST /api/payments/send-invoice
+// @access  Private
+router.post('/send-invoice', protect, async (req, res) => {
+    try {
+        const { tenantId, invoiceId, amount, dueDate, notes, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
+        
+        let tenant = null;
+        if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+            tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId');
+        }
+        if (!tenant && fallbackName) {
+            tenant = await Tenant.findOne({ name: new RegExp('^' + fallbackName.trim() + '$', 'i'), user: req.user.id }).populate('unitId');
+        }
+
+        const recipientName = tenant?.name || fallbackName || 'Valued Tenant';
+        const recipientEmail = tenant?.email || fallbackEmail;
+        const recipientPhone = tenant?.phone || fallbackPhone;
+
+        const settings = await Settings.findOne() || {};
+        const businessName = propertyName || settings?.orgName || 'MakaziFlow';
+        const uNum = unitNumber || tenant?.unitId?.unitNumber || tenant?.unit || 'assigned unit';
+        const invRef = invoiceId || `INV-${Date.now().toString().slice(-6)}`;
+        const totalAmt = Number(amount || 0).toLocaleString();
+        const cleanDueDate = dueDate || new Date().toISOString().split('T')[0];
+
+        let emailSent = false;
+        let smsSent = false;
+
+        // 1. Corporate Email Dispatch
+        if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
+            try {
+                const emailContent = `
+                    <div style="font-size: 15px; color: #334155; line-height: 1.6;">
+                        <p style="margin: 0 0 16px 0; font-size: 16px; font-weight: 700; color: #0f172a;">
+                            Dear ${recipientName},
+                        </p>
+                        <p style="margin: 0 0 16px 0;">
+                            An official invoice has been issued for <strong>Unit ${uNum}</strong> at <strong>${businessName}</strong>.
+                        </p>
+                        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+                            <tr>
+                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #64748b;">Invoice Reference:</td>
+                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; text-align: right;">${invRef}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #64748b;">Due Date:</td>
+                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; text-align: right;">${cleanDueDate}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 14px 16px; font-weight: 700; color: #0f172a; font-size: 16px;">Total Amount Due:</td>
+                                <td style="padding: 14px 16px; font-weight: 800; color: #0284c7; font-size: 18px; text-align: right;">KES ${totalAmt}</td>
+                            </tr>
+                        </table>
+                        ${notes ? `<p style="margin: 16px 0; font-size: 13px; color: #64748b; font-style: italic;">Note: ${notes}</p>` : ''}
+                        <p style="margin: 20px 0 0 0; font-size: 14px; color: #475569;">
+                            Please make payment on or before the due date. Thank you for your continued cooperation.
+                        </p>
+                    </div>
+                `;
+
+                await sendEmail({
+                    email: recipientEmail,
+                    subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
+                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: businessName })
+                });
+                emailSent = true;
+                console.log(`📧 Invoice #${invRef} emailed to ${recipientEmail}`);
+            } catch (err) {
+                console.error(`❌ Failed to email invoice to ${recipientEmail}:`, err.message);
+            }
+        }
+
+        // 2. Instant SMS Dispatch
+        if (recipientPhone) {
+            try {
+                const smsMsg = `Invoice #${invRef}: KES ${totalAmt} due on ${cleanDueDate} for Unit ${uNum} (${businessName}). Please remit payment on time. Thank you.`;
+                await sendSMS({ phone: recipientPhone, message: smsMsg });
+                smsSent = true;
+                console.log(`📱 Instant SMS invoice dispatched to ${recipientPhone}`);
+            } catch (smsErr) {
+                console.error(`❌ Failed to send SMS invoice to ${recipientPhone}:`, smsErr.message);
+            }
+        }
+
+        await logActivity(
+            req.user,
+            'Send Invoice',
+            `Dispatched invoice #${invRef} of KES ${totalAmt} to ${recipientName} (Email: ${emailSent ? 'Yes' : 'No'}, SMS: ${smsSent ? 'Yes' : 'No'})`,
+            'invoice',
+            'success'
+        );
+
+        res.json({ success: true, emailSent, smsSent, recipientName, invRef });
+    } catch (error) {
+        console.error("Invoice Dispatch Error:", error);
+        res.status(500).json({ message: error.message || 'Failed to dispatch invoice' });
     }
 });
 

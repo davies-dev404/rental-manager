@@ -43,6 +43,55 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 
+
+// ─── Tenant & Property Sync Helpers ──────────────────────────────────────────
+const getTenantPropId = (t) => {
+  if (!t) return "";
+  if (t.propertyId) return typeof t.propertyId === "object" ? String(t.propertyId._id || t.propertyId.id || "") : String(t.propertyId);
+  if (t.unitId && typeof t.unitId === "object") {
+    if (t.unitId.propertyId) {
+      return typeof t.unitId.propertyId === "object" ? String(t.unitId.propertyId._id || t.unitId.propertyId.id || "") : String(t.unitId.propertyId);
+    }
+    if (t.unitId.property) {
+      return typeof t.unitId.property === "object" ? String(t.unitId.property._id || t.unitId.property.id || "") : String(t.unitId.property);
+    }
+  }
+  if (t.property && typeof t.property === "object") return String(t.property._id || t.property.id || "");
+  return "";
+};
+
+const getTenantPropName = (t) => {
+  if (!t) return "";
+  if (typeof t.property === "string") return t.property;
+  if (t.propertyName) return t.propertyName;
+  if (t.property?.name) return t.property.name;
+  if (t.unitId?.propertyId?.name) return t.unitId.propertyId.name;
+  if (typeof t.unitId?.property === "string") return t.unitId.property;
+  if (t.unitId?.property?.name) return t.unitId.property.name;
+  return "";
+};
+
+const getTenantUnitNumber = (t) => {
+  if (!t) return "";
+  if (t.unitNumber) return String(t.unitNumber);
+  if (t.unit && typeof t.unit !== "object") return String(t.unit);
+  if (t.unitId && typeof t.unitId === "object") return String(t.unitId.unitNumber || t.unitId.unit || "");
+  return "";
+};
+
+const tenantMatchesProperty = (t, propIdOrName, properties = []) => {
+  if (!propIdOrName || propIdOrName === "all" || propIdOrName === "") return true;
+  const pId = getTenantPropId(t);
+  const pName = getTenantPropName(t);
+  const foundProp = properties.find((p) => String(p._id || p.id) === String(propIdOrName));
+
+  if (pId && String(pId) === String(propIdOrName)) return true;
+  if (foundProp && pName && pName.toLowerCase() === foundProp.name?.toLowerCase()) return true;
+  if (t.property && String(t.property) === String(propIdOrName)) return true;
+  if (pName && pName.toLowerCase() === String(propIdOrName).toLowerCase()) return true;
+  return false;
+};
+
 const statusColors = {
   open: "bg-blue-100 text-blue-700 border-blue-200",
   partial: "bg-amber-100 text-amber-700 border-amber-200",
@@ -88,10 +137,10 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
     }
   };
 
-  const selectedProp = properties.find((p) => (p._id || p.id) === propertyId);
+  const selectedProp = properties.find((p) => String(p._id || p.id) === String(propertyId));
   const filteredTenants = tenants.filter((t) => {
-    if (!propertyId) return true;
-    return (t.propertyId || t.property) === propertyId;
+    if (!propertyId || propertyId === "" || propertyId === "all") return true;
+    return tenantMatchesProperty(t, propertyId, properties);
   });
 
   const handleSubmit = async (e) => {
@@ -129,8 +178,9 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         _id: "INV-" + Date.now().toString().slice(-6),
         date: invoiceDate,
         tenantId: selectedTenant ? selectedTenant.name : "Tenant",
-        unitId: selectedTenant?.unitNumber || selectedTenant?.unit || "Unit",
-        property: selectedProp?.name || "Property",
+        rawTenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
+        unitId: getTenantUnitNumber(selectedTenant) || "Unit",
+        property: selectedProp?.name || getTenantPropName(selectedTenant) || "Property",
         item: validItems[0]?.name || "Rent",
         items: validItems,
         amount: totalAmount,
@@ -449,7 +499,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
 
   const eligibleTenants = tenants.filter(t => {
     if (selectedProps.length === 0) return false;
-    return selectedProps.includes(t.propertyId || t.property);
+    return selectedProps.some(pid => tenantMatchesProperty(t, pid, properties));
   });
 
   const handleContinueToPreview = () => {
@@ -477,9 +527,9 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
     const targetTenants = eligibleTenants.length > 0 ? eligibleTenants : tenants;
     
     targetTenants.forEach(t => {
-      const propObj = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
-      const propName = propObj?.name || t.property || "Property";
-      const unitNum = t.unitNumber || t.unit || "Unit";
+      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
+      const propName = propObj?.name || getTenantPropName(t) || "Property";
+      const unitNum = getTenantUnitNumber(t) || "Unit";
 
       if (invoiceTypes.rent) {
         newInvoices.push({
@@ -906,7 +956,7 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
 
     const selectedProp = properties.find(p => (p._id || p.id) === propertyId);
     const propName = selectedProp?.name || "Property";
-    const targetTenants = tenants.filter(t => !propertyId || (t.propertyId || t.property) === propertyId);
+    const targetTenants = tenants.filter(t => !propertyId || tenantMatchesProperty(t, propertyId, properties));
     const list = targetTenants.length > 0 ? targetTenants : [{ name: "Tenant", unitNumber: "Unit 1" }];
 
     const created = [];
@@ -1165,11 +1215,11 @@ function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const targetTenants = tenants.filter(t => selectedProps.includes(t.propertyId || t.property));
+    const targetTenants = tenants.filter(t => selectedProps.some(pid => tenantMatchesProperty(t, pid, properties)));
     const list = targetTenants.length > 0 ? targetTenants : tenants;
 
     const created = list.map(t => {
-      const propObj = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
+      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
       return {
         _id: `inv_rent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         date: today,
@@ -2060,12 +2110,60 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleSendInvoices = () => {
-    const count =
-      selectedInvoices.length > 0 ? selectedInvoices.length : filtered.length;
+  const [isSendingInvoices, setIsSendingInvoices] = useState(false);
+
+  const handleSendInvoices = async () => {
+    const invoicesToSend =
+      selectedInvoices.length > 0
+        ? allInvoices.filter((inv) => selectedInvoices.includes(inv._id))
+        : filtered;
+
+    if (invoicesToSend.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Invoices Found",
+        description: "Please select at least one invoice to send."
+      });
+      return;
+    }
+
+    setIsSendingInvoices(true);
     toast({
-      title: "Invoices Sent",
-      description: `Dispatched ${count} invoice notification(s) via Email and SMS.`
+      title: "Dispatching Invoices...",
+      description: `Delivering ${invoicesToSend.length} invoice(s) via Corporate Email and Instant SMS.`
+    });
+
+    let sentSuccess = 0;
+    for (const inv of invoicesToSend) {
+      try {
+        const tenant = tenants.find(
+          (t) =>
+            (t._id || t.id) === inv.rawTenantId ||
+            (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
+        );
+
+        await api.sendInvoice({
+          tenantId: tenant?._id || tenant?.id || inv.rawTenantId,
+          tenantName: tenant?.name || inv.tenantId,
+          email: tenant?.email,
+          phone: tenant?.phone,
+          invoiceId: inv._id,
+          amount: inv.amount,
+          dueDate: inv.date,
+          propertyName: inv.property,
+          unitNumber: inv.unitId,
+          notes: inv.notes || inv.item
+        });
+        sentSuccess++;
+      } catch (err) {
+        console.warn("Invoice dispatch notice:", err.message);
+      }
+    }
+
+    setIsSendingInvoices(false);
+    toast({
+      title: "Invoices Dispatched 🎉",
+      description: `Successfully sent ${sentSuccess} of ${invoicesToSend.length} invoice notification(s) via Corporate Email and SMS.`
     });
   };
 

@@ -168,7 +168,7 @@ router.post('/', protect, async (req, res) => {
           try {
             await sendEmail({
               email: tenant.email,
-              subject: `MakaaziHub: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+              subject: `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
               message: generatePersonalizedEmailHtml(tenant, calculation)
             });
           } catch (e) {
@@ -236,7 +236,7 @@ router.post('/', protect, async (req, res) => {
           try {
             await sendEmail({
               email: tenant.email,
-              subject: `MakaaziHub: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+              subject: `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
               message: generatePersonalizedEmailHtml(tenant, item)
             });
           } catch (e) {

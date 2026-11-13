@@ -178,7 +178,7 @@ export function RecordPaymentDialog() {
                                     <SelectContent>
                                         {tenants?.map(tenant => (
                                             <SelectItem key={tenant._id || tenant.id} value={tenant._id || tenant.id}>
-                                                {tenant.name} (Unit {typeof tenant.unitId === 'object' ? (tenant.unitId.unitNumber || 'N/A') : tenant.unitId?.toString().replace('un', '')})
+                                                {tenant.name} (Unit {tenant.unitNumber || (typeof tenant.unitId === 'object' ? tenant.unitId?.unitNumber : '') || 'N/A'}{tenant.propertyName ? ` · ${tenant.propertyName}` : ''})
                                             </SelectItem>
                                         ))}
                                     </SelectContent>

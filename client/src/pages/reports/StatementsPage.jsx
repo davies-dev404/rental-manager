@@ -7,6 +7,55 @@ import { Button } from "@/components/ui/button";
 import { Minus, ChevronDown, Check } from "lucide-react";
 import { exportToPDF, generateCSVReport } from "@/lib/reports";
 
+
+// ─── Tenant & Property Sync Helpers ──────────────────────────────────────────
+const getTenantPropId = (t) => {
+  if (!t) return "";
+  if (t.propertyId) return typeof t.propertyId === "object" ? String(t.propertyId._id || t.propertyId.id || "") : String(t.propertyId);
+  if (t.unitId && typeof t.unitId === "object") {
+    if (t.unitId.propertyId) {
+      return typeof t.unitId.propertyId === "object" ? String(t.unitId.propertyId._id || t.unitId.propertyId.id || "") : String(t.unitId.propertyId);
+    }
+    if (t.unitId.property) {
+      return typeof t.unitId.property === "object" ? String(t.unitId.property._id || t.unitId.property.id || "") : String(t.unitId.property);
+    }
+  }
+  if (t.property && typeof t.property === "object") return String(t.property._id || t.property.id || "");
+  return "";
+};
+
+const getTenantPropName = (t) => {
+  if (!t) return "";
+  if (typeof t.property === "string") return t.property;
+  if (t.propertyName) return t.propertyName;
+  if (t.property?.name) return t.property.name;
+  if (t.unitId?.propertyId?.name) return t.unitId.propertyId.name;
+  if (typeof t.unitId?.property === "string") return t.unitId.property;
+  if (t.unitId?.property?.name) return t.unitId.property.name;
+  return "";
+};
+
+const getTenantUnitNumber = (t) => {
+  if (!t) return "";
+  if (t.unitNumber) return String(t.unitNumber);
+  if (t.unit && typeof t.unit !== "object") return String(t.unit);
+  if (t.unitId && typeof t.unitId === "object") return String(t.unitId.unitNumber || t.unitId.unit || "");
+  return "";
+};
+
+const tenantMatchesProperty = (t, propIdOrName, properties = []) => {
+  if (!propIdOrName || propIdOrName === "all" || propIdOrName === "") return true;
+  const pId = getTenantPropId(t);
+  const pName = getTenantPropName(t);
+  const foundProp = properties.find((p) => String(p._id || p.id) === String(propIdOrName));
+
+  if (pId && String(pId) === String(propIdOrName)) return true;
+  if (foundProp && pName && pName.toLowerCase() === foundProp.name?.toLowerCase()) return true;
+  if (t.property && String(t.property) === String(propIdOrName)) return true;
+  if (pName && pName.toLowerCase() === String(propIdOrName).toLowerCase()) return true;
+  return false;
+};
+
 export default function StatementsPage() {
   const { toast } = useToast();
   const { formatCurrency } = usePreferences();
@@ -166,6 +215,21 @@ export default function StatementsPage() {
       const filtered = payments.filter(p => {
         if (startDate && new Date(p.date || p.createdAt) < new Date(startDate)) return false;
         if (endDate && new Date(p.date || p.createdAt) > new Date(endDate)) return false;
+        if (selectedTenant && selectedTenant !== "") {
+          const tId = typeof p.tenantId === 'object' ? (p.tenantId?._id || p.tenantId?.id) : p.tenantId;
+          const tName = typeof p.tenantId === 'object' ? p.tenantId?.name : (p.tenantName || p.tenantId);
+          const selTenantObj = tenants.find(t => (t._id || t.id) === selectedTenant);
+          if (tId !== selectedTenant && (!selTenantObj || !tName || tName.toLowerCase() !== selTenantObj.name?.toLowerCase())) {
+            return false;
+          }
+        }
+        if (selectedProperty && selectedProperty !== "all") {
+          const pProp = p.property || p.unitId?.propertyId?.name;
+          const foundProp = properties.find(pr => (pr._id || pr.id) === selectedProperty);
+          if (foundProp && pProp && pProp.toLowerCase() !== foundProp.name?.toLowerCase() && p.propertyId !== selectedProperty) {
+            return false;
+          }
+        }
         return true;
       });
       const totalAmount = filtered.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -279,13 +343,24 @@ export default function StatementsPage() {
                         <label className="text-slate-600 dark:text-slate-400 font-medium">
                           Select Tenant
                         </label>
-                        <input
-                          type="text"
-                          placeholder=""
+                        <select
                           value={selectedTenant}
                           onChange={(e) => setSelectedTenant(e.target.value)}
                           className="w-full h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
-                        />
+                        >
+                          <option value="">All Tenants</option>
+                          {tenants
+                            .filter(t => selectedProperty === "all" || tenantMatchesProperty(t, selectedProperty, properties))
+                            .map((t) => {
+                              const uNum = getTenantUnitNumber(t);
+                              const pName = getTenantPropName(t);
+                              return (
+                                <option key={t._id || t.id} value={t._id || t.id}>
+                                  {t.name} (Unit {uNum || "—"}{pName ? ` · ${pName}` : ""})
+                                </option>
+                              );
+                            })}
+                        </select>
                       </div>
                     </div>
 

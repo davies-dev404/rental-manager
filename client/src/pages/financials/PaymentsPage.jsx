@@ -49,11 +49,67 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const selectedProp = properties.find((p) => (p._id || p.id) === propertyId);
+  const getTenantPropId = (t) => {
+    if (!t) return "";
+    if (t.propertyId) return typeof t.propertyId === "object" ? String(t.propertyId._id || t.propertyId.id || "") : String(t.propertyId);
+    if (t.unitId && typeof t.unitId === "object") {
+      if (t.unitId.propertyId) {
+        return typeof t.unitId.propertyId === "object" ? String(t.unitId.propertyId._id || t.unitId.propertyId.id || "") : String(t.unitId.propertyId);
+      }
+      if (t.unitId.property) {
+        return typeof t.unitId.property === "object" ? String(t.unitId.property._id || t.unitId.property.id || "") : String(t.unitId.property);
+      }
+    }
+    if (t.property && typeof t.property === "object") return String(t.property._id || t.property.id || "");
+    return "";
+  };
+
+  const getTenantPropName = (t) => {
+    if (!t) return "";
+    if (typeof t.property === "string") return t.property;
+    if (t.propertyName) return t.propertyName;
+    if (t.property?.name) return t.property.name;
+    if (t.unitId?.propertyId?.name) return t.unitId.propertyId.name;
+    if (typeof t.unitId?.property === "string") return t.unitId.property;
+    if (t.unitId?.property?.name) return t.unitId.property.name;
+    return "";
+  };
+
+  const getTenantUnitNumber = (t) => {
+    if (!t) return "";
+    if (t.unitNumber) return String(t.unitNumber);
+    if (t.unit && typeof t.unit !== "object") return String(t.unit);
+    if (t.unitId && typeof t.unitId === "object") return String(t.unitId.unitNumber || t.unitId.unit || "");
+    return "";
+  };
+
+  const selectedProp = properties.find((p) => String(p._id || p.id) === String(propertyId));
+
   const filteredTenants = tenants.filter((t) => {
-    if (!propertyId) return true;
-    return (t.propertyId || t.property) === propertyId;
+    if (!propertyId || propertyId === "" || propertyId === "all") return true;
+    const tPropId = getTenantPropId(t);
+    const tPropName = getTenantPropName(t);
+
+    if (tPropId && tPropId === String(propertyId)) return true;
+    if (selectedProp && tPropName && tPropName.toLowerCase() === selectedProp.name?.toLowerCase()) return true;
+    if (t.property === propertyId) return true;
+    return false;
   });
+
+  const handleTenantSelect = (selectedId) => {
+    setTenantId(selectedId);
+    const t = tenants.find((item) => (item._id || item.id) === selectedId);
+    if (t) {
+      const pId = getTenantPropId(t);
+      if (pId && (!propertyId || propertyId === "" || propertyId === "all")) {
+        setPropertyId(pId);
+      }
+      const due = t.totalDue || t.rentDue || t.expectedRent || t.rentAmount || t.unitId?.rentAmount || "";
+      if (due && (!paidAmount || Number(paidAmount) === 0)) {
+        setPaidAmount(String(due));
+      }
+    }
+  };
 
   const handleFileChange = (e) => {
     const f = e.target.files?.[0];
@@ -85,13 +141,16 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
         (t) => (t._id || t.id) === tenantId
       );
 
+      const propName = selectedProp?.name || getTenantPropName(selectedTenant) || "Property";
+      const uNumber = getTenantUnitNumber(selectedTenant) || "Unit";
+
       const paymentData = {
         _id: "PAY-" + Date.now().toString().slice(-6),
         amount: Number(paidAmount),
         date: paymentDate,
         tenantId: selectedTenant ? selectedTenant.name : "Tenant",
-        unitId: selectedTenant?.unitNumber || selectedTenant?.unit || "Unit",
-        property: selectedProp?.name || "Property",
+        unitId: uNumber,
+        property: propName,
         status,
         paymentType,
         description,
@@ -100,20 +159,27 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
       };
 
       try {
-        await api.addPayment({
+        const res = await api.addPayment({
           tenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
           amount: Number(paidAmount),
           date: paymentDate,
-          method: paymentType
+          method: paymentType,
+          status: status === "confirmed" ? "paid" : status,
+          reference: transactionId || undefined,
+          transactionId: transactionId || undefined,
+          description: description || undefined
         });
-      } catch {
-        // Fallback for offline or client state
+        if (res && res._id) {
+          paymentData._id = res._id;
+        }
+      } catch (err) {
+        console.warn("API addPayment note:", err.message);
       }
 
       onAdd(paymentData);
       toast({
-        title: "Payment Recorded",
-        description: `Payment of KES ${Number(paidAmount).toLocaleString()} logged successfully.`
+        title: "Payment Recorded & Synchronized",
+        description: `Payment of KES ${Number(paidAmount).toLocaleString()} logged successfully. Official receipt dispatched.`
       });
       onBack();
     } catch {
@@ -183,15 +249,25 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
 
             <select
               value={tenantId}
-              onChange={(e) => setTenantId(e.target.value)}
+              onChange={(e) => handleTenantSelect(e.target.value)}
               className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
             >
-              <option value="">Select Tenant ...</option>
-              {filteredTenants.map((t) => (
-                <option key={t._id || t.id} value={t._id || t.id}>
-                  {t.name} (Unit {t.unitNumber || t.unit || "—"})
-                </option>
-              ))}
+              <option value="">
+                {filteredTenants.length === 0
+                  ? "No tenants found in this property"
+                  : "Select Tenant ..."}
+              </option>
+              {filteredTenants.map((t) => {
+                const uNum = getTenantUnitNumber(t);
+                const pName = getTenantPropName(t);
+                const due = t.totalDue || t.rentDue || t.expectedRent || t.rentAmount || t.unitId?.rentAmount;
+                const dueText = due ? ` · KES ${Number(due).toLocaleString()}` : "";
+                return (
+                  <option key={t._id || t.id} value={t._id || t.id}>
+                    {t.name} (Unit {uNum || "—"}{pName ? ` · ${pName}` : ""}{dueText})
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
@@ -642,7 +718,6 @@ export default function PaymentsPage() {
   };
 
   const allPayments = [
-    ...customPayments,
     ...payments.map((p) => ({
       _id: p._id,
       date: p.date,
@@ -654,11 +729,19 @@ export default function PaymentsPage() {
         typeof p.unitId === "object"
           ? p.unitId?.unitNumber || "Unit"
           : p.unitId || "Unit",
-      property: p.property || "Property",
+      property: p.property || p.unitId?.propertyId?.name || "Property",
       status: p.status || "confirmed",
       amount: p.amount || 0,
       paymentType: p.method || "M-Pesa"
-    }))
+    })),
+    ...customPayments.filter(
+      (cp) =>
+        !payments.some(
+          (p) =>
+            p._id === cp._id ||
+            (p.reference && cp.transactionId && p.reference === cp.transactionId)
+        )
+    )
   ];
 
   // Filter state

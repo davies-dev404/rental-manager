@@ -516,6 +516,20 @@ export const api = {
       }
       return await response.json();
   },
+
+  sendInvoice: async (invoiceData) => {
+    const response = await smartFetch(`${API_URL}/payments/send-invoice`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(invoiceData)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || "Failed to dispatch invoice");
+    }
+    return await response.json();
+  },
   
   initiateSTKPush: async (paymentData) => {
       const response = await smartFetch(`${API_URL}/mpesa/stk-push`, {
