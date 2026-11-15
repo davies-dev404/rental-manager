@@ -1,54 +1,29 @@
 // Real API Implementation connected to MERN Backend
 import { toast } from "sonner"; // Assuming sonner is used, or replace with console for now if imports differ
 
+const RENDER_PROD_API = 'https://rental-manager-1-7jmg.onrender.com/api';
+
 const getApiUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_DIR;
   if (typeof window !== 'undefined') {
+    // In local development, use Vite proxy to local server
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      if (!envUrl || envUrl.includes('onrender.com') || envUrl === '/api') {
-        return '/api';
-      }
-    }
-    if (window.location.protocol === 'https:') {
-      if (!envUrl || envUrl.startsWith('http://localhost') || envUrl.startsWith('http://127.0.0.1')) {
-        return '/api';
-      }
-    }
-  }
-  if (import.meta.env.PROD) {
-    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
       return '/api';
     }
+    // On live production domain (makaziflow.afrinextech.co.ke or any external domain),
+    // always connect directly to the live Render backend where MongoDB Atlas is connected.
+    return RENDER_PROD_API;
   }
-  return envUrl || '/api';
+  return import.meta.env.VITE_API_URL || RENDER_PROD_API;
 };
 
 export const API_URL = getApiUrl();
 
-const RENDER_FALLBACK = 'https://rental-manager-1-7jmg.onrender.com/api';
-
-// Cache active fallback so we do not wait repeatedly on broken or disconnected backends
-let cachedFallbackBase = null;
-
-// On boot, if on production domain and local cPanel DB is disconnected, proactively switch
-if (typeof window !== 'undefined' && window.location.hostname.includes('makaziflow.afrinextech.co.ke')) {
-  fetch('/api/health')
-    .then((r) => r.json())
-    .then((data) => {
-      if (data && data.database && data.database.status === 'disconnected') {
-        console.warn('Live cPanel backend reports database disconnected; routing API to Render fallback directly.');
-        cachedFallbackBase = RENDER_FALLBACK;
-      }
-    })
-    .catch(() => {
-      cachedFallbackBase = RENDER_FALLBACK;
-    });
-}
-
 export async function smartFetch(url, options = {}) {
   let targetUrl = url;
-  if (cachedFallbackBase && typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
-    targetUrl = url.replace(/^\/api/, cachedFallbackBase);
+  if (typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      targetUrl = targetUrl.replace(/^\/api/, RENDER_PROD_API);
+    }
   }
   try {
     let res = await fetch(targetUrl, options);
@@ -56,18 +31,16 @@ export async function smartFetch(url, options = {}) {
       const cloned = res.clone();
       const txt = await cloned.text().catch(() => '');
       if (txt.includes('Database connection failed') || txt.includes('Could not connect to any servers')) {
-        console.warn('Primary /api failed with database IP block; routing to Render fallback API...');
-        cachedFallbackBase = RENDER_FALLBACK;
-        const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_FALLBACK);
+        console.warn('Primary /api failed with database IP block; routing to Render API...');
+        const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_PROD_API);
         return await fetch(fallbackUrl, options);
       }
     }
     return res;
   } catch (err) {
     if (typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
-      console.warn('Primary /api network error; routing to Render fallback API:', err.message);
-      cachedFallbackBase = RENDER_FALLBACK;
-      const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_FALLBACK);
+      console.warn('Primary /api network error; routing to Render API:', err.message);
+      const fallbackUrl = targetUrl.replace(/^\/api/, RENDER_PROD_API);
       return await fetch(fallbackUrl, options);
     }
     throw err;

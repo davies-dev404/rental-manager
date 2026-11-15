@@ -151,7 +151,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       id: "dashboard",
       icon: LayoutGrid,
       label: "Dashboard",
-      href: "/"
+      href: "/dashboard"
     },
     {
       id: "financials",
@@ -233,7 +233,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
               ? location.startsWith("/properties") || location.startsWith("/units") || location.startsWith("/utilities") || location.startsWith("/maintenance") || location.startsWith("/property-grouping")
               : location.startsWith(item.href || (item.subItems ? item.subItems[0].href : "___"));
 
-            const targetHref = item.href || (item.subItems ? item.subItems[0].href : "/");
+            const targetHref = item.href || (item.subItems ? item.subItems[0].href : "/dashboard");
 
             return (
               <Link key={item.id} href={targetHref} onClick={onClose} title={item.label}>
@@ -294,7 +294,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
     <div className="flex flex-col h-full bg-[#0d2240] text-[#a8bfd4] select-none border-r border-[#1a3a5c]">
       {/* Brand Header */}
       <div className="px-5 py-5 border-b border-[#1a3a5c]/80 flex items-center justify-between">
-        <Link href="/" onClick={onClose} className="cursor-pointer">
+        <Link href="/dashboard" onClick={onClose} className="cursor-pointer">
           <DwelloLogo />
         </Link>
       </div>

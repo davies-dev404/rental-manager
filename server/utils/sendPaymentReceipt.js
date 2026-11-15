@@ -60,7 +60,7 @@ const sendPaymentReceipt = async (paymentId) => {
         let emailSent = false;
         let smsSent = false;
 
-        // 1. Send Corporate Email Receipt with Attached PDF
+        // 1. Send Corporate Email Receipt with Attached PDF (Strictly via Email)
         if (tenant.email) {
             try {
                 console.log(`Generating PDF receipt for ${tenant.email}...`);
@@ -80,30 +80,14 @@ const sendPaymentReceipt = async (paymentId) => {
                     ]
                 });
                 emailSent = true;
-                console.log(`📧 Receipt PDF emailed to ${tenant.email}`);
+                console.log(`📧 Receipt PDF emailed strictly to ${tenant.email}`);
             } catch (err) {
                 console.error(`❌ Failed to email receipt to ${tenant.email}:`, err.message);
             }
         }
 
-        // 2. Send Instant SMS Receipt Confirmation
-        if (tenant.phone) {
-            try {
-                const cleanPhone = tenant.phone.trim();
-                const smsMessage = `Payment Received: KES ${amountFormatted} confirmed from ${tenant.name} for ${unitNumber}. Ref: ${reference}. Thank you! - ${businessName}`;
-                
-                await sendSMS({
-                    phone: cleanPhone,
-                    message: smsMessage
-                });
-                smsSent = true;
-                console.log(`📱 Instant SMS receipt dispatched to ${cleanPhone}`);
-            } catch (smsErr) {
-                console.error(`❌ Failed to send SMS receipt to ${tenant.phone}:`, smsErr.message);
-            }
-        }
-
-        return { success: true, emailSent, smsSent };
+        // Receipts are configured to be sent strictly via email (no SMS per configuration)
+        return { success: true, emailSent, smsSent: false };
     } catch (error) {
         console.error("Critical error in sendPaymentReceipt:", error);
         throw error;
