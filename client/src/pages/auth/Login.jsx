@@ -361,10 +361,19 @@ export default function LoginPage() {
         setIsRegistrationOtp(true);
         setIsOtpStep(true);
         setOtpCountdown(180);
-        setOtpCode("");
+        if (regRes.fallbackOtp) {
+          setFallbackOtp(regRes.fallbackOtp);
+          setOtpCode(regRes.fallbackOtp);
+        } else {
+          setFallbackOtp("");
+          setOtpCode("");
+        }
         toast({
-          title: "Account Created!",
-          description: "Please enter the verification code sent to your email to verify your account."
+          variant: regRes.emailSent === false ? "destructive" : "default",
+          title: regRes.emailSent === false ? "Account Created (Email Delayed)" : "Account Created!",
+          description: regRes.fallbackOtp
+            ? `Email delivery delayed. Your verification code is: ${regRes.fallbackOtp}`
+            : "Please enter the verification code sent to your email to verify your account."
         });
         return;
       }
@@ -745,7 +754,7 @@ export default function LoginPage() {
             </div>
 
             {/* Cloudflare Turnstile Bot Protection */}
-            <CloudflareTurnstile onVerify={(token) => setTurnstileToken(token)} />
+            <CloudflareTurnstile key="login-turnstile" onVerify={(token) => setTurnstileToken(token)} />
 
             {/* Sign In Button */}
             <div className="pt-1">
@@ -910,7 +919,7 @@ export default function LoginPage() {
             </div>
 
             {/* Cloudflare Turnstile Bot Protection */}
-            <CloudflareTurnstile onVerify={(token) => setTurnstileToken(token)} />
+            <CloudflareTurnstile key="signup-turnstile" onVerify={(token) => setTurnstileToken(token)} />
 
             {/* Submit Button */}
             <div className="pt-2">

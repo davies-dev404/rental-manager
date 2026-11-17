@@ -69,11 +69,16 @@ function ManageUnitsDialog({ property }) {
             queryClient.invalidateQueries({ queryKey: ["units"] });
             queryClient.invalidateQueries({ queryKey: ["properties"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] }); // Update dashboard
+            queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
             form.reset();
             toast({ title: "Unit Added", description: "New unit created successfully." });
         },
-        onError: () => {
-            toast({ variant: "destructive", title: "Error", description: "Failed to add unit." });
+        onError: (err) => {
+            toast({
+              variant: "destructive",
+              title: err?.code === "UNIT_LIMIT_REACHED" ? "Subscription Unit Limit Reached" : "Error",
+              description: err?.message || "Failed to add unit."
+            });
         }
     });
 

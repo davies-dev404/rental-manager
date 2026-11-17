@@ -87,8 +87,10 @@ const getEmailHeader = () => {
 
 // Cloudflare Turnstile token verification helper
 const verifyCloudflareTurnstile = async (token, reqIp) => {
-  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c'; // Cloudflare Turnstile production secret key
-  if (!token || token.startsWith('cf-')) return true; // Gracefully pass if Turnstile token not submitted or test token
+  if (!token || token.startsWith('cf-') || token.startsWith('XXXX.DUMMY.TOKEN')) {
+    return true; // Gracefully pass if Turnstile test/fallback token submitted
+  }
+  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c';
   try {
     const formData = new URLSearchParams();
     formData.append('secret', secretKey);
@@ -117,7 +119,7 @@ const isProductionOrHosted = () => {
   );
 };
 
-// Generate real random 6-digit OTP code sent via Email API (Resend / SMTP)
+// Generate real random 6-digit OTP code sent via Brevo (Email & SMS)
 const generateOtpCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
@@ -255,15 +257,30 @@ router.post('/login', async (req, res) => {
       console.error('Login OTP email failed:', emailErr.message);
     }
 
-    await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
+    let smsSent = false;
+    if (user.phone) {
+      try {
+        await sendSMS({
+          phone: user.phone,
+          message: `Your MakaziFlow login verification code is: ${loginOtp}. Expires in 3 minutes.`
+        });
+        smsSent = true;
+        console.log(`📱 Login OTP SMS dispatched via Brevo to ${user.phone}`);
+      } catch (smsErr) {
+        console.warn('Login OTP SMS dispatch failed (non-fatal):', smsErr.message);
+      }
+    }
+
+    await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
     return res.json({
       requiresOTP: true,
       email: user.email,
       name: user.name,
       emailSent,
+      smsSent,
       emailError: emailSent ? undefined : emailError,
-      fallbackOtp: emailSent ? undefined : loginOtp
+      fallbackOtp: (emailSent || smsSent) ? undefined : loginOtp
     });
   } catch (error) {
     console.error('Login error:', error.message);
@@ -323,16 +340,31 @@ router.post('/resend-login-otp', async (req, res) => {
       console.error('Resend login OTP email failed:', emailErr.message);
     }
 
-    await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email}`, 'auth', emailSent ? 'info' : 'warning');
+    let smsSent = false;
+    if (user.phone) {
+      try {
+        await sendSMS({
+          phone: user.phone,
+          message: `Your MakaziFlow login verification code is: ${loginOtp}. Expires in 3 minutes.`
+        });
+        smsSent = true;
+        console.log(`📱 Login OTP SMS resent via Brevo to ${user.phone}`);
+      } catch (smsErr) {
+        console.warn('Resend login OTP SMS failed (non-fatal):', smsErr.message);
+      }
+    }
+
+    await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
     return res.json({
       success: true,
-      message: emailSent
-        ? 'A new verification code has been sent to your email.'
-        : 'Email sending failed due to unverified test sender. Your verification code is provided below.',
+      message: (emailSent || smsSent)
+        ? 'A new verification code has been sent via Brevo.'
+        : 'Verification code delivery failed. Your verification code is provided below.',
       emailSent,
+      smsSent,
       emailError: emailSent ? undefined : emailError,
-      fallbackOtp: emailSent ? undefined : loginOtp
+      fallbackOtp: (emailSent || smsSent) ? undefined : loginOtp
     });
   } catch (error) {
     console.error('Resend login OTP error:', error.message);
@@ -390,12 +422,16 @@ router.post('/verify-login-otp', async (req, res) => {
 
     await logActivity(user, 'User Logged In', `User ${user.name} completed OTP login`, 'auth', 'success');
 
+    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+
     res.json({
       _id: user._id,
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      isSuperAdmin,
       avatar: user.avatar,
       token: accessToken,
       refreshToken: refreshToken,
@@ -534,13 +570,18 @@ router.post('/register', async (req, res) => {
       const otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 mins
       console.log(`🔑 [OTP] Registration verification code for ${email}: ${otp}`);
 
+      // Security: Never allow self-registering as superadmin via public endpoint
+      const safeRole = ['landlord', 'caretaker', 'tenant', 'manager', 'admin'].includes(role)
+        ? role
+        : 'admin';
+
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
       const user = await User.create({
         name,
         email: (email || '').trim().toLowerCase(),
         phone: phone || undefined,
         password,
-        role: role || 'admin',
+        role: safeRole,
         otp,
         otpExpires,
         isVerified: false
@@ -973,12 +1014,16 @@ router.post('/google', async (req, res) => {
       await logActivity(user, 'Google Account Created', `New user registered via Google`, 'auth', 'success');
     }
 
+    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+
     res.json({
       _id: user._id,
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      isSuperAdmin,
       avatar: user.avatar,
       authProvider: user.authProvider || 'google',
       token: generateToken(user._id),
@@ -1064,12 +1109,16 @@ router.post('/apple', async (req, res) => {
       await logActivity(user, 'Apple Account Created', `New user registered via Apple`, 'auth', 'success');
     }
 
+    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+
     res.json({
       _id: user._id,
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      isSuperAdmin,
       avatar: user.avatar,
       authProvider: user.authProvider || 'apple',
       token: generateToken(user._id),
@@ -1094,7 +1143,12 @@ router.get('/me', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password -otp -twoFactorSecret');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json(user);
+    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const userObj = user.toObject();
+    if (superEmails.includes((user.email || '').toLowerCase())) {
+      userObj.isSuperAdmin = true;
+    }
+    res.json(userObj);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1131,12 +1185,16 @@ router.post('/onboarding', protect, async (req, res) => {
       'success'
     );
 
+    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+
     res.json({
       _id: user._id,
       id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      isSuperAdmin,
       avatar: user.avatar,
       authProvider: user.authProvider,
       token: generateToken(user._id),

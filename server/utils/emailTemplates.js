@@ -3,10 +3,12 @@
  * Professional, brandable, mobile-responsive HTML templates for receipts and rent reminders.
  */
 
+const BUSINESS_CONFIG = require('../config/businessConfig');
+
 const getEmailTemplate = (title, content, settings, options = {}) => {
-    const orgName = options.propertyName || settings?.orgName || "MakaziFlow Property Management";
-    const orgEmail = settings?.orgEmail || process.env.FROM_EMAIL || "support@makaziflow.com";
-    const orgPhone = settings?.orgPhone || "+254 700 000 000";
+    const orgName = options.propertyName || settings?.orgName || BUSINESS_CONFIG.name || "MakaziFlow Property Management";
+    const orgEmail = settings?.orgEmail || process.env.FROM_EMAIL || BUSINESS_CONFIG.email || "info@afrinextech.co.ke";
+    const orgPhone = settings?.orgPhone || process.env.BUSINESS_PHONE || BUSINESS_CONFIG.phone || "0790264792";
     const primaryColor = "#0f172a"; // Deep slate / obsidian
 
     return `
@@ -62,7 +64,7 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
                                 ${orgName}
                             </p>
                             <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                                Inquiries: <a href="mailto:${orgEmail}" style="color: #0284c7; text-decoration: none;">${orgEmail}</a>
+                                Inquiries: <a href="mailto:${orgEmail}" style="color: #0284c7; text-decoration: none;">${orgEmail}</a> &nbsp;|&nbsp; Tel: <a href="tel:${orgPhone}" style="color: #0284c7; text-decoration: none;">${orgPhone}</a>
                             </p>
                             <p style="margin: 0; color: #cbd5e1; font-size: 11px;">
                                 &copy; ${new Date().getFullYear()} ${orgName}. Automated & secured by MakaziFlow.

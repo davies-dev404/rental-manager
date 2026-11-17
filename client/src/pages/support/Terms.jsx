@@ -251,10 +251,10 @@ const sections = [
     title: "21. Contact Us",
     content: [],
     contact: {
-      company: "MakaaziHub",
-      address: "P.O BOX 576-0300 Nairobi, Kenya",
-      phone: "+254 717 512 483",
-      email: "support@makaazihub.com"
+      company: "MakaziFlow",
+      address: "The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya",
+      phone: "0790264792",
+      email: "info@afrinextech.co.ke"
     }
   }
 ];

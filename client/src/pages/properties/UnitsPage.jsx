@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'wouter';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { usePreferences } from '@/lib/currency';
@@ -90,11 +91,16 @@ function UnitFormView({ properties, onBack, onSuccess }) {
       });
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['my-subscription'] });
       toast({ title: 'Unit Added', description: `Unit ${unitName} added successfully.` });
       if (onSuccess) onSuccess();
       onBack();
-    } catch {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to add unit.' });
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: err?.code === 'UNIT_LIMIT_REACHED' ? 'Subscription Unit Limit Reached' : 'Error',
+        description: err?.message || 'Failed to add unit.'
+      });
     } finally {
       setLoading(false);
     }
@@ -571,6 +577,8 @@ export default function UnitsPage() {
   const { data: properties = [], isLoading: isPropsLoading } = useQuery({ queryKey: ['properties'], queryFn: api.getProperties });
   const { data: rawUnits = [], isLoading: isUnitsLoading } = useQuery({ queryKey: ['units'], queryFn: () => api.getUnits() });
   const { data: tenants = [] } = useQuery({ queryKey: ['tenants'], queryFn: api.getTenants });
+  const { data: mySubData } = useQuery({ queryKey: ['my-subscription'], queryFn: api.getMySubscription });
+  const entitlement = mySubData?.entitlement;
   const [editingUnit, setEditingUnit] = useState(null);
   const queryClient = useQueryClient();
 
@@ -642,6 +650,27 @@ export default function UnitsPage() {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
+      {entitlement && (
+        <div className={`rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+          !entitlement.isUnlimited && entitlement.registeredUnits >= entitlement.purchasedUnits
+            ? 'border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-100'
+            : 'border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800 text-slate-700 dark:text-slate-200'
+        }`}>
+          <div>
+            <span className="font-bold">{entitlement.planName} Plan:</span>{' '}
+            {entitlement.registeredUnits} of {entitlement.isUnlimited ? 'Unlimited' : entitlement.purchasedUnits} rental units registered
+            {!entitlement.isUnlimited && ` (${entitlement.availableSlots} slots remaining)`}.
+            {!entitlement.isUnlimited && entitlement.registeredUnits >= entitlement.purchasedUnits && (
+              <span className="block font-semibold text-amber-700 dark:text-amber-300 mt-0.5">
+                You have reached your current subscription limit of {entitlement.purchasedUnits} rental units. Upgrade your subscription to add more units.
+              </span>
+            )}
+          </div>
+          <Link href="/billing" className="inline-flex items-center px-3 py-1.5 rounded-md bg-[#0b1065] hover:bg-[#161c8a] text-white font-semibold shrink-0">
+            Upgrade Subscription
+          </Link>
+        </div>
+      )}
       <BulkAddUnitsDialog properties={properties} open={bulkAddOpen} onOpenChange={setBulkAddOpen} />
       {editingUnit && (
         <EditUnitModal

@@ -152,10 +152,10 @@ const sections = [
     title: "12. How Can You Contact Us About This Notice?",
     content: [],
     contact: {
-      company: "MakaaziHub",
-      address: "P.O BOX 576-0300 Nairobi, Kenya",
-      phone: "+254 717 512 483",
-      email: "support@makaazihub.com"
+      company: "MakaziFlow",
+      address: "The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya",
+      phone: "0790264792",
+      email: "info@afrinextech.co.ke"
     }
   },
   {
@@ -304,8 +304,8 @@ export default function PrivacyPolicy() {
           </p>
           <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
             Thank you for choosing to be part of our community at MakaaziHub ("MakaaziHub," "we," "us," or "our"). We are committed to protecting your personal information and your right to privacy. If you have any questions or concerns about this privacy notice or our practices with regard to your personal information, please contact us at{" "}
-            <a href="mailto:support@makaazihub.com" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
-              support@makaazihub.com
+            <a href="mailto:info@afrinextech.co.ke" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
+              info@afrinextech.co.ke
             </a>.
           </p>
         </div>

@@ -36,7 +36,7 @@ export default function FaqsPage() {
     },
     {
       q: "Do you provide support?",
-      a: "Yes, we provide support through email (support@makaziflow.com) and phone (+254 711 000 555). You may contact us anytime between 8am-7pm (GMT+3, Kenyan time). Our team also offers training and live onboarding on how to use the system."
+      a: "Yes, we provide support through email (info@afrinextech.co.ke) and phone (0790264792). You may contact us anytime between 8am-7pm (GMT+3, Kenyan time). Our team also offers training and live onboarding on how to use the system."
     },
     {
       q: "Can I export my data?",
@@ -101,10 +101,10 @@ export default function FaqsPage() {
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4">
               <a
-                href="tel:+254711000555"
+                href="tel:0790264792"
                 className="px-6 py-3 rounded-full border border-slate-300 bg-white text-slate-800 font-semibold text-sm hover:bg-slate-50 transition shadow-2xs"
               >
-                Call +254 711 000 555
+                Call 0790264792
               </a>
               <button
                 onClick={handleGetStarted}

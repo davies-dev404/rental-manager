@@ -23,6 +23,14 @@ const protect = async (req, res, next) => {
       if (!req.user) {
         return res.status(401).json({ message: 'User belonging to this token no longer exists' });
       }
+      // Allow env-configured superadmin promotion without DB migration
+      const superEmails = (process.env.SUPERADMIN_EMAILS || '')
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(Boolean);
+      if (superEmails.includes((req.user.email || '').toLowerCase())) {
+        req.user.isSuperAdmin = true;
+      }
       return next();
     } catch (error) {
       return res.status(401).json({ message: 'Not authorized, session expired or invalid' });
@@ -33,11 +41,19 @@ const protect = async (req, res, next) => {
 };
 
 const admin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && (['admin', 'landlord', 'superadmin'].includes(req.user.role) || req.user.isSuperAdmin)) {
     next();
   } else {
-    res.status(401).json({ message: 'Not authorized as an admin' });
+    res.status(403).json({ message: 'Not authorized as a landlord or administrator' });
   }
 };
 
-module.exports = { protect, admin };
+const superAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'superadmin' || req.user.isSuperAdmin === true)) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Super Admin authorization required' });
+  }
+};
+
+module.exports = { protect, admin, superAdmin };

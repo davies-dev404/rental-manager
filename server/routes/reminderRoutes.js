@@ -3,11 +3,12 @@ const router = express.Router();
 const Reminder = require('../models/Reminder');
 const Tenant = require('../models/Tenant');
 const Payment = require('../models/Payment');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
 const { getCorporateReminderEmailBody } = require('../utils/emailTemplates');
+const { createAndSendEmailCampaign } = require('../utils/brevoService');
 
 // Get all reminders
 router.get('/', protect, async (req, res) => {
@@ -334,6 +335,59 @@ router.delete('/:id', protect, async (req, res) => {
     await logActivity(req.user, 'Delete Reminder', `Deleted reminder "${reminder.title}"`, 'reminder', 'info');
     res.json({ message: 'Reminder removed' });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// @desc    Create (and optionally schedule/send) a Brevo Email Campaign
+// @route   POST /api/reminders/campaign
+// @access  Private (Admin / Landlord)
+router.post('/campaign', protect, admin, async (req, res) => {
+  try {
+    const {
+      name,
+      subject,
+      htmlContent,
+      senderName,
+      senderEmail,
+      listIds,
+      scheduledAt,
+      sendNow
+    } = req.body || {};
+
+    if (!subject || !htmlContent) {
+      return res.status(400).json({ message: 'Campaign subject and htmlContent are required' });
+    }
+
+    const parsedListIds = Array.isArray(listIds)
+      ? listIds.map(Number).filter(n => !Number.isNaN(n))
+      : [];
+
+    const result = await createAndSendEmailCampaign({
+      name: name || `MakaziFlow Campaign — ${subject}`,
+      subject,
+      htmlContent,
+      senderName,
+      senderEmail,
+      listIds: parsedListIds,
+      scheduledAt: scheduledAt || null,
+      sendNow: Boolean(sendNow)
+    });
+
+    await logActivity(
+      req.user,
+      'Brevo Campaign',
+      `Created Brevo email campaign "${name || subject}" (ID: ${result.campaignId || 'N/A'}, sentNow: ${result.sentNow})`,
+      'reminder',
+      'success'
+    );
+
+    res.status(201).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Brevo campaign error:', error);
     res.status(500).json({ message: error.message });
   }
 });

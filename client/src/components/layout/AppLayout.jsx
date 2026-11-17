@@ -41,7 +41,9 @@ import {
   FormInput,
   Smartphone,
   History,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck,
+  Wallet
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
@@ -199,6 +201,28 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Communication",
       href: "/reminders"
     },
+    {
+      id: "tenant_portal",
+      icon: Wallet,
+      label: "Online Pay Portal",
+      href: "/tenant-portal"
+    },
+    {
+      id: "billing",
+      icon: CreditCard,
+      label: "Billing & Plans",
+      href: "/billing"
+    },
+    ...(user?.isSuperAdmin || user?.role === "superadmin"
+      ? [
+          {
+            id: "super_admin",
+            icon: ShieldCheck,
+            label: "Super Admin",
+            href: "/super-admin"
+          }
+        ]
+      : []),
     {
       id: "settings",
       icon: Settings,
@@ -549,6 +573,15 @@ export default function AppLayout({ children }) {
     }
     if (location.startsWith("/reminders")) {
       return { title: "Communication", Icon: Mail };
+    }
+    if (location.startsWith("/billing")) {
+      return { title: "Billing & Subscription", Icon: CreditCard };
+    }
+    if (location.startsWith("/tenant-portal")) {
+      return { title: "Online Pay Portal", Icon: Wallet };
+    }
+    if (location.startsWith("/super-admin")) {
+      return { title: "Super Admin Control", Icon: ShieldCheck };
     }
     return { title: "Dashboard", Icon: LayoutGrid };
   };

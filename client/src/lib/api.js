@@ -372,7 +372,14 @@ export const api = {
         headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(unit)
     });
-    if (!response.ok) throw new Error("Failed to add unit");
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const err = new Error(errBody.message || "Failed to add unit");
+      err.code = errBody.code;
+      err.limit = errBody.limit;
+      err.upgradeRequired = Boolean(errBody.upgradeRequired);
+      throw err;
+    }
     return await response.json();
   },
   updateUnit: async (unit) => {
@@ -583,6 +590,15 @@ export const api = {
           headers: getAuthHeaders(), credentials: 'include'
       });
   },
+  sendBrevoCampaign: async (campaignData) => {
+      const response = await smartFetch(`${API_URL}/reminders/campaign`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(campaignData)
+      });
+      return await parseApiResponse(response, 'Failed to create Brevo email campaign');
+  },
   getExpenses: async () => {
     const response = await smartFetch(`${API_URL}/expenses`, { headers: getAuthHeaders(), credentials: 'include' });
     if (!response.ok) return [];
@@ -689,5 +705,247 @@ export const api = {
       return false;
     }
   },
-  resetData: async () => { localStorage.clear(); window.location.reload(); }
+  resetData: async () => { localStorage.clear(); window.location.reload(); },
+
+  // ─── SaaS Subscriptions & Unit Entitlements ───────────────────────────────
+  getSubscriptionPlans: async () => {
+    const response = await smartFetch(`${API_URL}/subscriptions/plans`);
+    return await parseApiResponse(response, "Failed to load subscription plans");
+  },
+  calculateSubscription: async (payload) => {
+    const response = await smartFetch(`${API_URL}/subscriptions/calculate`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to calculate subscription price");
+  },
+  getMySubscription: async () => {
+    const response = await smartFetch(`${API_URL}/subscriptions/my`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load subscription details");
+  },
+  subscribeToPlan: async (payload) => {
+    const response = await smartFetch(`${API_URL}/subscriptions/subscribe`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(data.message || "Subscription initiation failed");
+      err.code = data.code;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  },
+  cancelSubscription: async (reason) => {
+    const response = await smartFetch(`${API_URL}/subscriptions/cancel`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify({ reason })
+    });
+    return await parseApiResponse(response, "Failed to cancel subscription");
+  },
+  previewDowngrade: async (payload) => {
+    const response = await smartFetch(`${API_URL}/subscriptions/downgrade-preview`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to preview downgrade");
+  },
+
+  // ─── Centralized Payment Gateway (Pesaflow + Adapters) & Tenant Portal ────
+  getPaymentProviders: async () => {
+    const response = await smartFetch(`${API_URL}/v2/payments/providers`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load payment providers");
+  },
+  initiateTenantPayment: async (payload) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/tenant/initiate`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(data.message || "Failed to initiate tenant payment");
+      err.code = data.code;
+      throw err;
+    }
+    return data;
+  },
+  verifyGatewayTransaction: async (transactionId) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/verify/${transactionId}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to verify transaction");
+  },
+  getGatewayTransactions: async (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    const response = await smartFetch(`${API_URL}/v2/payments/transactions${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load transactions");
+  },
+  getStructuredInvoices: async (category = "") => {
+    const response = await smartFetch(`${API_URL}/v2/payments/invoices${category ? `?category=${category}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load invoices");
+  },
+  createStructuredInvoice: async (payload) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/invoices`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to create invoice");
+  },
+  getTenantPortalSummary: async () => {
+    const response = await smartFetch(`${API_URL}/v2/payments/tenant-portal/summary`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load tenant portal summary");
+  },
+
+  // ─── KRA eTIMS Compliance ─────────────────────────────────────────────────
+  submitInvoiceToEtims: async (invoiceId, overrideConfig = {}) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/etims/submit/${invoiceId}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(overrideConfig)
+    });
+    return await parseApiResponse(response, "Failed to submit invoice to eTIMS");
+  },
+  retryEtimsSubmission: async (submissionId) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/etims/retry/${submissionId}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to retry eTIMS submission");
+  },
+  getEtimsSubmissions: async () => {
+    const response = await smartFetch(`${API_URL}/v2/payments/etims/submissions`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load eTIMS submissions");
+  },
+
+  // ─── Super Admin Financial & Subscription Governance ──────────────────────
+  getSuperAdminOverview: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/overview`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load Super Admin overview");
+  },
+  getSuperAdminPlans: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/plans`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load plans");
+  },
+  createSuperAdminPlan: async (payload) => {
+    const response = await smartFetch(`${API_URL}/super-admin/plans`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to create plan");
+  },
+  updateSuperAdminPlan: async (id, payload) => {
+    const response = await smartFetch(`${API_URL}/super-admin/plans/${id}`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to update plan");
+  },
+  getSuperAdminLandlords: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/landlords`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load landlords");
+  },
+  overrideLandlordSubscription: async (landlordId, payload) => {
+    const response = await smartFetch(`${API_URL}/super-admin/landlords/${landlordId}/subscription-override`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to update landlord subscription");
+  },
+  getSuperAdminTransactions: async (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v !== undefined && v !== "all"));
+    const qs = new URLSearchParams(clean).toString();
+    const response = await smartFetch(`${API_URL}/super-admin/transactions${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load Super Admin transactions");
+  },
+  getSuperAdminUnmatched: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/unmatched`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load unmatched payments");
+  },
+  verifySuperAdminTransaction: async (id) => {
+    const response = await smartFetch(`${API_URL}/super-admin/transactions/${id}/verify`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to verify transaction");
+  },
+  reverseSuperAdminTransaction: async (id, reason) => {
+    const response = await smartFetch(`${API_URL}/super-admin/transactions/${id}/reverse`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify({ reason })
+    });
+    return await parseApiResponse(response, "Failed to reverse transaction");
+  },
+  processSubscriptionExpirations: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/subscriptions/process-expirations`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to process expirations");
+  },
+  getSubscriptionAuditLogs: async () => {
+    const response = await smartFetch(`${API_URL}/super-admin/audit-logs`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load subscription audit logs");
+  }
 };

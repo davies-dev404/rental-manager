@@ -63,17 +63,25 @@ router.put('/', protect, async (req, res) => {
   }
 });
 
-// @desc    Test SMTP Connection
+// @desc    Test SMTP Connection (defaults to Brevo SMTP Relay when omitted)
 // @route   POST /api/settings/test-smtp
 // @access  Private (Admin)
-router.post('/test-smtp', async (req, res) => {
-    const { host, port, user, pass } = req.body;
+router.post('/test-smtp', protect, async (req, res) => {
+    const body = req.body || {};
+    const host = body.host || process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST || 'smtp-relay.brevo.com';
+    const port = Number(body.port || process.env.BREVO_SMTP_PORT || process.env.SMTP_PORT || 587);
+    const user = body.user || process.env.BREVO_SMTP_USER || process.env.SMTP_USER;
+    const pass = body.pass || process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS;
+
+    if (!user || !pass) {
+        return res.status(400).json({ message: 'SMTP Test Failed: Brevo SMTP credentials are missing.' });
+    }
 
     try {
         const transporter = nodemailer.createTransport({
             host,
             port,
-            secure: port === 465, // true for 465, false for other ports
+            secure: port === 465, // true for 465, false for 587 STARTTLS
             auth: {
                 user,
                 pass
@@ -81,7 +89,7 @@ router.post('/test-smtp', async (req, res) => {
         });
 
         await transporter.verify();
-        res.json({ message: 'SMTP Connection Successful!' });
+        res.json({ message: `SMTP Connection Successful via ${host}:${port}!` });
     } catch (error) {
         console.error('SMTP Test Failed:', error);
         res.status(400).json({ message: 'SMTP Connection Failed: ' + error.message });

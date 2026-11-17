@@ -19,118 +19,135 @@ export const PRICING_TIERS = [
   {
     id: "starter",
     name: "Starter",
-    badge: "For Solo Landlords",
-    unitsRange: "1 – 10 units",
+    badge: "Solo Landlords",
+    unitsRange: "Up to 5 units",
     minUnits: 1,
-    maxUnits: 10,
+    maxUnits: 5,
     monthlyPrice: 1500,
-    annualPrice: 1200, // KES 1,200/mo billed annually
+    annualPrice: 1200,
     accentColor: "border-slate-200 hover:border-blue-400",
     headerBg: "bg-slate-50",
     buttonClass: "bg-[#1d1d1f] text-white hover:bg-slate-800",
     popular: false,
-    highlight: "Great for single plots & bungalows in Ruaka, Rongai, or Mombasa.",
+    highlight: "Great for individual landlords managing plots & bungalows across Kenya.",
     features: [
-      "Up to 10 rental units",
-      "M-Pesa payment matching (Paybill / Till)",
-      "Automated tenant WhatsApp reminders",
-      "Instant Kenyan Law PDF Leases with stamp",
-      "Tenant balance tracking & receipts",
-      "1 Staff / Caretaker login",
-      "Email & WhatsApp support"
+      "Up to 5 rental units",
+      "Pesaflow M-Pesa, Paybill & Card collection",
+      "Automated tenant email & SMS reminders",
+      "Official PDF receipts & invoices",
+      "Tenant balance tracking & statements",
+      "1 Staff / Caretaker login"
     ]
   },
   {
     id: "basic",
     name: "Basic",
-    badge: "Small Apartment Blocks",
-    unitsRange: "11 – 25 units",
-    minUnits: 11,
-    maxUnits: 25,
+    badge: "Small Plots",
+    unitsRange: "Up to 10 units",
+    minUnits: 1,
+    maxUnits: 10,
     monthlyPrice: 2500,
     annualPrice: 2000,
     accentColor: "border-slate-200 hover:border-cyan-400",
     headerBg: "bg-slate-50",
     buttonClass: "bg-[#1d1d1f] text-white hover:bg-slate-800",
     popular: false,
-    highlight: "Ideal for residential plots with bedsitters, 1-bedrooms & 2-bedrooms.",
+    highlight: "Built for residential apartment blocks with 6 to 10 units.",
     features: [
-      "Up to 25 rental units",
+      "Up to 10 rental units",
       "Everything in Starter, plus:",
-      "Water & electricity sub-meter calculation",
-      "Automated late rent penalty fee engine",
+      "Water & electricity sub-meter billing",
+      "Automated late payment penalty tracking",
       "Bulk monthly rent invoice generation",
-      "Tenant shift & handover checkout sheets",
       "2 Caretaker logins"
     ]
   },
   {
-    id: "standard",
-    name: "Standard",
+    id: "growth",
+    name: "Growth",
     badge: "Most Popular",
-    unitsRange: "26 – 60 units",
-    minUnits: 26,
-    maxUnits: 60,
+    unitsRange: "Up to 25 units",
+    minUnits: 1,
+    maxUnits: 25,
     monthlyPrice: 4500,
     annualPrice: 3600,
     accentColor: "border-[#007AFF] shadow-xl shadow-blue-500/10 ring-2 ring-[#007AFF]/20",
     headerBg: "bg-linear-to-r from-blue-50 to-cyan-50",
     buttonClass: "bg-linear-to-r from-[#0069d4] to-[#007AFF] text-white hover:brightness-110 shadow-lg shadow-blue-500/25",
     popular: true,
-    highlight: "Chosen by over 70% of growing property managers across Kenya.",
+    highlight: "Chosen by growing Kenyan property managers scaling multi-block portfolios.",
     features: [
-      "Up to 60 rental units",
+      "Up to 25 rental units",
       "Everything in Basic, plus:",
-      "Direct Daraja M-Pesa automated webhook sync",
-      "Landlord monthly payout & remittance reports",
-      "Bulk SMS broadcast to all tenants",
-      "Maintenance work orders & fund disbursement",
+      "Centralized Pesaflow M-Pesa, Card & Bank sync",
+      "Automated reconciliation & arrears ledger",
+      "KRA MRI & tax reporting tools",
       "5 Staff logins with permission controls"
     ]
   },
   {
-    id: "premium",
-    name: "Premium",
+    id: "professional",
+    name: "Professional",
     badge: "Property Agencies",
-    unitsRange: "61 – 120 units",
-    minUnits: 61,
-    maxUnits: 120,
+    unitsRange: "Up to 50 units",
+    minUnits: 1,
+    maxUnits: 50,
     monthlyPrice: 7000,
     annualPrice: 5600,
     accentColor: "border-slate-200 hover:border-emerald-400",
     headerBg: "bg-slate-50",
     buttonClass: "bg-[#1d1d1f] text-white hover:bg-slate-800",
     popular: false,
-    highlight: "Designed for property managers running multiple residential estates.",
+    highlight: "Designed for real estate agencies managing up to 50 units.",
     features: [
-      "Up to 120 rental units",
-      "Everything in Standard, plus:",
-      "Bank statement parser (KCB, Equity, Co-op)",
-      "KRA eTIMS invoice compliance export",
-      "Landlord Owner Portal with read-only views",
-      "Detailed P&L and tax readiness reports",
-      "Priority 24/7 phone & WhatsApp support"
+      "Up to 50 rental units",
+      "Everything in Growth, plus:",
+      "KRA eTIMS OSCU/VSCU submission tracking",
+      "Tenant Self-Service Online Pay Portal",
+      "Detailed P&L and owner statements",
+      "Priority Kenyan support desk"
+    ]
+  },
+  {
+    id: "business",
+    name: "Business",
+    badge: "Large Estates",
+    unitsRange: "Up to 100 units",
+    minUnits: 1,
+    maxUnits: 100,
+    monthlyPrice: 12000,
+    annualPrice: 9600,
+    accentColor: "border-slate-200 hover:border-purple-400",
+    headerBg: "bg-slate-50",
+    buttonClass: "bg-[#1d1d1f] text-white hover:bg-slate-800",
+    popular: false,
+    highlight: "Comprehensive automation for established residential estates up to 100 units.",
+    features: [
+      "Up to 100 rental units",
+      "Everything in Professional, plus:",
+      "Multi-bank adapter integration support",
+      "Dedicated onboarding specialist",
+      "Full financial & subscription audit logs"
     ]
   },
   {
     id: "enterprise",
     name: "Enterprise",
-    badge: "Large Portfolios",
-    unitsRange: "120+ units",
-    minUnits: 121,
-    maxUnits: 9999,
-    monthlyPrice: 12000,
-    annualPrice: 9600,
+    badge: "Custom Scale",
+    unitsRange: "Custom Units",
+    minUnits: 101,
+    maxUnits: 99999,
+    monthlyPrice: 20000,
+    annualPrice: 16000,
     accentColor: "border-slate-200 hover:border-indigo-400",
     headerBg: "bg-slate-50",
     buttonClass: "bg-slate-900 text-white hover:bg-slate-800",
     popular: false,
-    highlight: "Tailored for large commercial complexes, institutional developers & SACCOs.",
+    highlight: "Tailored for commercial complexes, institutional developers & SACCOs.",
     features: [
-      "Unlimited rental units",
-      "Everything in Premium, plus:",
+      "Custom / Unlimited rental units",
+      "Everything in Business, plus:",
       "Custom API webhooks & ERP integrations",
-      "Custom branded tenancy contract templates",
       "Unlimited caretaker & accountant logins",
       "Dedicated Kenyan account manager",
       "Formal SLA & 99.9% uptime guarantee"
@@ -144,11 +161,12 @@ export default function PricingPlans({ onSelectPlan }) {
 
   const filterOptions = [
     { label: "All Plans", value: "all" },
-    { label: "1 – 10 Units (Starter)", value: "starter" },
-    { label: "11 – 25 Units (Basic)", value: "basic" },
-    { label: "26 – 60 Units (Standard)", value: "standard" },
-    { label: "61 – 120 Units (Premium)", value: "premium" },
-    { label: "120+ Units (Enterprise)", value: "enterprise" }
+    { label: "1 – 5 Units (Starter)", value: "starter" },
+    { label: "Up to 10 Units (Basic)", value: "basic" },
+    { label: "Up to 25 Units (Growth)", value: "growth" },
+    { label: "Up to 50 Units (Professional)", value: "professional" },
+    { label: "Up to 100 Units (Business)", value: "business" },
+    { label: "100+ Units (Enterprise)", value: "enterprise" }
   ];
 
   const handleSelect = (tier) => {
@@ -217,7 +235,7 @@ export default function PricingPlans({ onSelectPlan }) {
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
         {PRICING_TIERS.map((tier, idx) => {
           const isFilterMatch =
             selectedUnitsFilter === "all" || selectedUnitsFilter === tier.id;
@@ -329,10 +347,10 @@ export default function PricingPlans({ onSelectPlan }) {
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-xs font-semibold text-slate-500">Need a custom quote?</span>
           <a
-            href="tel:+254711000555"
+            href="tel:0790264792"
             className="px-4 py-2 rounded-full border border-slate-300 bg-white text-xs font-bold text-slate-800 hover:bg-slate-100 transition"
           >
-            Call Sales: 0711 000 555
+            Call Sales: 0790264792
           </a>
         </div>
       </div>

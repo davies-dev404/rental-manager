@@ -36,7 +36,10 @@ app.use(
           "https://*.challenges.cloudflare.com",
           "https://*.cloudflare.com",
           "https://accounts.google.com",
-          "https://appleid.apple.com"
+          "https://appleid.apple.com",
+          "https://test.pesaflow.com",
+          "https://payments.ecitizen.go.ke",
+          "https://*.pesaflow.com"
         ],
         connectSrc: [
           "'self'",
@@ -54,8 +57,11 @@ app.use(
           "https://rental-manager-1-7jmg.onrender.com",
           "https://rental-manager-gold.vercel.app",
           "https://api.brevo.com",
-          "https://api.safaricom.co.ke",
-          "https://sandbox.safaricom.co.ke"
+          "https://test.pesaflow.com",
+          "https://payments.ecitizen.go.ke",
+          "https://*.pesaflow.com",
+          "https://etims-api-sbx.kra.go.ke",
+          "https://etims-api.kra.go.ke"
         ],
         imgSrc: [
           "'self'",
@@ -78,6 +84,7 @@ app.use(
         upgradeInsecureRequests: null
       }
     },
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: "cross-origin" }
   })
@@ -207,7 +214,26 @@ const connectDB = async () => {
 // Initiate connection on boot — await it so routes only register after DB is ready
 let dbReady = false;
 const dbBootPromise = connectDB()
-    .then(() => { dbReady = true; })
+    .then(async () => {
+      dbReady = true;
+      if (process.env.NODE_ENV !== 'test') {
+        try {
+          const { seedDefaultPlans, processSubscriptionExpirations } = require('./services/subscriptionService');
+          const PaymentService = require('./services/payments/PaymentService');
+          await seedDefaultPlans();
+          await PaymentService.seedProviders();
+          const cron = require('node-cron');
+          // Run daily subscription expiry & pre-expiry notification sweep at 06:00 EAT
+          cron.schedule('0 6 * * *', () => {
+            if (mongoose.connection.readyState === 1) {
+              processSubscriptionExpirations().catch((e) => console.warn('Expiry sweep warning:', e.message));
+            }
+          });
+        } catch (seedErr) {
+          console.warn('SaaS seed notice:', seedErr.message);
+        }
+      }
+    })
     .catch(err => console.error('Initial DB connect error:', err.message));
 
 // Middleware to ensure DB is connected before processing API requests
@@ -247,6 +273,9 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reminders', require('./routes/reminderRoutes'));
 app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
 app.use('/api/mpesa', require('./routes/mpesaRoutes'));
+app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
+app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
+app.use('/api/super-admin', require('./routes/superAdminRoutes'));
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 

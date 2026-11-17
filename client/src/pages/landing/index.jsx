@@ -337,7 +337,7 @@ export default function LandingPage() {
     },
     {
       q: "Do you provide support and on-site staff training?",
-      a: "Yes, our Nairobi-based support team is available via email (support@makaziflow.com), WhatsApp, and phone (+254 711 000 555) from 8:00 AM to 7:00 PM (EAT). We also offer live Zoom and in-person staff onboarding."
+      a: "Yes, our Nairobi-based support team is available via email (info@afrinextech.co.ke), WhatsApp, and phone (0790264792) from 8:00 AM to 7:00 PM (EAT). We also offer live Zoom and in-person staff onboarding."
     },
     {
       q: "Can I get a free trial before paying?",

@@ -103,7 +103,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Email Us</p>
-                                    <p className="text-muted-foreground">support@makaazihub.com</p>
+                                    <p className="text-muted-foreground">info@afrinextech.co.ke</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3 text-sm">
@@ -112,7 +112,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Call Us</p>
-                                    <p className="text-muted-foreground">+254 717 512 483</p>
+                                    <p className="text-muted-foreground">0790264792</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3 text-sm">

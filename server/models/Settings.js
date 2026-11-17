@@ -2,15 +2,15 @@ const mongoose = require('mongoose');
 
 const settingsSchema = new mongoose.Schema({
   // Organization Details
-  orgName: { type: String, default: '' },
-  orgEmail: { type: String, default: '' },
-  orgPhone: { type: String, default: '' },
-  orgAddress: { type: String, default: '' },
+  orgName: { type: String, default: 'MakaziFlow' },
+  orgEmail: { type: String, default: 'info@afrinextech.co.ke' },
+  orgPhone: { type: String, default: '0790264792' },
+  orgAddress: { type: String, default: 'The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya' },
   taxId: { type: String, default: '' },
   
   // App Preferences
-  currency: { type: String, default: 'USD' },
-  timezone: { type: String, default: 'UTC' },
+  currency: { type: String, default: 'KES' },
+  timezone: { type: String, default: 'Africa/Nairobi' },
   theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
   
   // Notification Settings (toggles)
@@ -24,62 +24,34 @@ const settingsSchema = new mongoose.Schema({
   // Integrations
   integrations: {
       email: {
-          provider: { type: String, default: 'smtp' }, // smtp, sendgrid, gmail
+          provider: { type: String, default: 'brevo' }, // brevo, smtp
           smtp: {
-              host: { type: String, default: '' },
+              host: { type: String, default: 'smtp-relay.brevo.com' },
               port: { type: Number, default: 587 },
               user: { type: String, default: '' },
               pass: { type: String, default: '' },
-              fromEmail: { type: String, default: '' }
+              fromEmail: { type: String, default: 'info@afrinextech.co.ke' }
           },
           brevo: {
               apiKey: { type: String, default: '' },
-              smtpKey: { type: String, default: '' }
-          },
-          sendgrid: {
-              apiKey: { type: String, default: '' }
-          },
-          resend: {
-              apiKey: { type: String, default: '' }
-          },
-          gmail: {
-              clientId: { type: String, default: '' },
-              clientSecret: { type: String, default: '' }
+              smtpUser: { type: String, default: '' },
+              smtpKey: { type: String, default: '' },
+              senderEmail: { type: String, default: 'info@afrinextech.co.ke' }
           }
       },
       sms: {
-          enabled: { type: Boolean, default: false },
-          provider: { type: String, default: 'twilio' },
-          twilio: {
-              accountSid: { type: String, default: '' },
-              authToken: { type: String, default: '' },
-              apiKeySid: { type: String, default: '' },
-              apiSecret: { type: String, default: '' },
-              phoneNumber: { type: String, default: '' }
-          },
-          africastalking: {
-              username: { type: String, default: '' },
-              apiKey: { type: String, default: '' }
-          }
+          enabled: { type: Boolean, default: true },
+          provider: { type: String, default: 'brevo' },
+          senderName: { type: String, default: 'MakaziFlow' }
       },
       whatsapp: {
           enabled: { type: Boolean, default: false },
-          provider: { type: String, default: 'twilio' },
-          twilio: {
-              accountSid: { type: String, default: '' },
-              authToken: { type: String, default: '' },
-              apiKeySid: { type: String, default: '' },
-              apiSecret: { type: String, default: '' },
-              fromNumber: { type: String, default: '' } 
-          }
+          provider: { type: String, default: 'brevo' },
+          senderNumber: { type: String, default: '' }
       },
-      mpesa: {
-          enabled: { type: Boolean, default: false },
-          environment: { type: String, default: 'sandbox' },
-          paybill: { type: String, default: '' },
-          consumerKey: { type: String, default: '' },
-          consumerSecret: { type: String, default: '' },
-          passkey: { type: String, default: '' }
+      pesaflow: {
+          enabled: { type: Boolean, default: true },
+          environment: { type: String, default: 'sandbox' }
       },
       cloudflare: {
           turnstileSiteKey: { type: String, default: '' },

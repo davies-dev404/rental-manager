@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearch } from "wouter";
+import { useSearch, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -393,11 +393,11 @@ function MpesaTransactionsTab() {
               MPESA Transactions Status
             </h2>
             <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
-              Daraja Ready
+              Pesaflow Ready
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Live M-Pesa payment callbacks, instant transaction lookup, and Daraja C2B/STK logs.
+            Live M-Pesa payment callbacks, instant transaction lookup, and Pesaflow STK/C2B logs.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -422,9 +422,9 @@ function MpesaTransactionsTab() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white">Daraja Live Callbacks</span>
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Pesaflow Live Callbacks</span>
           </div>
-          <span className="text-[11px] text-muted-foreground">Register these in your Safaricom Daraja Portal</span>
+          <span className="text-[11px] text-muted-foreground">Configured automatically via Pesaflow merchant gateway</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -680,9 +680,11 @@ export default function SettingsPage() {
 
   // General Settings State matching Bomahut General tab
   const [generalSettings, setGeneralSettings] = useState({
-    companyName: "Dwello Properties Ltd",
-    abbreviatedName: "Dwello",
-    companyAddress: "P.O. Box 45012 - 00100, Westlands, Nairobi, Kenya",
+    companyName: "MakaziFlow Properties Ltd",
+    abbreviatedName: "MakaziFlow",
+    companyAddress: "The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya",
+    companyEmail: "info@afrinextech.co.ke",
+    companyPhone: "0790264792",
     invoiceTitle: "Invoice",
     invoiceFootnote: "This is a computer generated invoice and does not require a physical signature.",
     currency: currency || "KES",
@@ -710,8 +712,8 @@ export default function SettingsPage() {
   // Account Form State
   const [accountForm, setAccountForm] = useState({
     name: user?.name || "Admin Manager",
-    email: user?.email || "admin@dwello.co.ke",
-    phone: user?.phone || "+254 712 345 678",
+    email: user?.email || "info@afrinextech.co.ke",
+    phone: user?.phone || "0790264792",
     oldPassword: "",
     newPassword: "",
     confirmPassword: ""
@@ -1830,20 +1832,16 @@ export default function SettingsPage() {
 
           {/* ────────────────── 5. BILLING ────────────────── */}
           {activeTab === "billing" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                Billing & Subscription
-              </h2>
+            <div className="space-y-4 animate-in fade-in duration-200">
               <div className="border rounded-xl p-5 bg-linear-to-r from-blue-900/10 to-transparent flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <Badge className="bg-blue-600 text-white text-[10px] uppercase">Active Plan</Badge>
-                  <h3 className="text-lg font-bold mt-2">Standard Portfolio Tier</h3>
-                  <p className="text-xs text-muted-foreground">Up to 25 units • Automated SMS & M-Pesa Reconciliation Included</p>
+                  <Badge className="bg-blue-600 text-white text-[10px] uppercase">Subscription &amp; Unit Entitlement</Badge>
+                  <h3 className="text-lg font-bold mt-2">MakaziFlow SaaS Billing Center</h3>
+                  <p className="text-xs text-muted-foreground">Manage unit allowances, upgrade plans, download eTIMS-ready invoices &amp; pay via Pesaflow.</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-xl font-bold text-blue-600">KES 2,500 <span className="text-xs text-muted-foreground font-normal">/ month</span></p>
-                  <Button size="sm" className="mt-2 bg-[#0b1065] text-white text-xs">Renew Subscription</Button>
-                </div>
+                <Link href="/billing" className="inline-flex items-center px-4 py-2 rounded-md bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold">
+                  Open Full Billing Dashboard
+                </Link>
               </div>
             </div>
           )}

@@ -39,6 +39,9 @@ import MaintenancePage from "@/pages/properties/MaintenancePage";
 import UnitsPage from "@/pages/properties/UnitsPage";
 import StatementsPage from "@/pages/reports/StatementsPage";
 import InsightsPage from "@/pages/reports/InsightsPage";
+import BillingDashboardPage from "@/pages/billing";
+import TenantPortalPage from "@/pages/tenant-portal";
+import SuperAdminDashboardPage from "@/pages/super-admin";
 
 function PrivateRoute({ component: Component, ...rest }) {
     const { user, isLoading } = useAuth();
@@ -150,6 +153,15 @@ function Router() {
       <Route path="/terms" component={TermsOfService}/>
       <Route path="/support">
         {() => <PrivateRoute component={Support}/>}
+      </Route>
+      <Route path="/billing">
+        {() => <PrivateRoute component={BillingDashboardPage}/>}
+      </Route>
+      <Route path="/tenant-portal">
+        {() => <PrivateRoute component={TenantPortalPage}/>}
+      </Route>
+      <Route path="/super-admin">
+        {() => <PrivateRoute component={SuperAdminDashboardPage}/>}
       </Route>
 
       <Route component={NotFound}/>

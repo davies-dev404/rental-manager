@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const Unit = require('../models/Unit');
 const Tenant = require('../models/Tenant');
 const { protect, admin } = require('../middleware/authMiddleware');
+const { resolveLandlordId } = require('../middleware/subscriptionMiddleware');
+const { reserveUnitSlot, releaseUnitSlot } = require('../services/subscriptionService');
 const logActivity = require('../utils/logActivity');
 
 // @desc    Get all units (optionally filter by propertyId)
@@ -36,11 +38,19 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// @desc    Create a unit
+// @desc    Create a unit (Protected by Atomic Subscription Unit Limit Enforcement)
 // @route   POST /api/units
 // @access  Private (Admin)
 router.post('/', protect, admin, async (req, res) => {
+  let slotReserved = false;
+  let landlordId = req.user._id || req.user.id;
   try {
+    landlordId = await resolveLandlordId(req);
+
+    // 1. Atomic concurrency-safe check & reservation against purchased unit limit
+    await reserveUnitSlot(landlordId);
+    slotReserved = true;
+
     const payload = { ...req.body };
     const tenantIdToAssign = payload.tenantId;
     delete payload.tenantId;
@@ -49,7 +59,7 @@ router.post('/', protect, admin, async (req, res) => {
       payload.status = 'occupied';
     }
 
-    const unit = await Unit.create({ ...payload, user: req.user.id });
+    const unit = await Unit.create({ ...payload, user: landlordId });
 
     // If a tenant was chosen during creation, link them
     if (tenantIdToAssign && mongoose.Types.ObjectId.isValid(tenantIdToAssign)) {
@@ -62,8 +72,19 @@ router.post('/', protect, admin, async (req, res) => {
     await logActivity(req.user, 'Create Unit', `Created unit "${unit.unitNumber}"`, 'unit', 'success');
     res.status(201).json(unit);
   } catch (error) {
-    await logActivity(req.user, 'Create Unit Failed', `Failed to create unit: ${error.message}`, 'unit', 'error');
-    res.status(400).json({ message: error.message });
+    // Roll back reserved slot if Unit.create failed after reservation
+    if (slotReserved) {
+      await releaseUnitSlot(landlordId);
+    }
+    const statusCode = error.statusCode || 400;
+    await logActivity(req.user, 'Create Unit Failed', `Failed to create unit: ${error.message}`, 'unit', statusCode === 403 ? 'warning' : 'error');
+    res.status(statusCode).json({
+      message: error.message,
+      code: error.code || undefined,
+      limit: error.limit || undefined,
+      activeUnitCount: error.activeUnitCount || undefined,
+      upgradeRequired: error.code === 'UNIT_LIMIT_REACHED' || error.code === 'SUBSCRIPTION_INACTIVE' || error.code === 'SUBSCRIPTION_EXPIRED'
+    });
   }
 });
 
@@ -129,6 +150,7 @@ router.delete('/:id', protect, admin, async (req, res) => {
     await Tenant.updateMany({ unitId: unit._id }, { $unset: { unitId: "" } });
 
     await unit.deleteOne();
+    await releaseUnitSlot(unit.user || req.user.id);
     await logActivity(req.user, 'Delete Unit', `Deleted unit "${uNum}"`, 'unit', 'warning');
     res.json({ message: 'Unit removed' });
   } catch (error) {

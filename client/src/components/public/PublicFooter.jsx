@@ -112,13 +112,13 @@ export default function PublicFooter() {
             <h2 className="text-xl font-semibold text-white">Contact Us</h2>
             <ul className="mt-4 space-y-3 text-base text-slate-300">
               <li>
-                <a className="transition hover:text-white" href="tel:+254711000555">
-                  +254 711 000 555
+                <a className="transition hover:text-white" href="tel:0790264792">
+                  0790264792
                 </a>
               </li>
               <li>
-                <a className="block break-all transition hover:text-white" href="mailto:support@makaziflow.com">
-                  support@makaziflow.com
+                <a className="block break-all transition hover:text-white" href="mailto:info@afrinextech.co.ke">
+                  info@afrinextech.co.ke
                 </a>
               </li>
               <li className="leading-7 text-slate-400">
