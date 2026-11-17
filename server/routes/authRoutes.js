@@ -809,14 +809,28 @@ router.post('/forgot-password', async (req, res) => {
             console.error('Email send failed for forgot-password:', emailErr.message);
         }
 
-        await logActivity(user, 'Password Reset Requested', `Password reset code sent to ${user.email} (Status: ${emailSent ? 'Sent' : 'Failed'})`, 'auth', emailSent ? 'info' : 'warning');
+        let smsSent = false;
+        if (user.phone) {
+            try {
+                await sendSMS({
+                    phone: user.phone,
+                    message: `Your MakaziFlow password reset code is: ${resetCode}. Expires in 3 minutes.`
+                });
+                smsSent = true;
+            } catch (smsErr) {
+                console.warn('Password reset SMS failed (non-fatal):', smsErr.message);
+            }
+        }
+
+        await logActivity(user, 'Password Reset Requested', `Password reset code sent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
         res.json({
             message: 'A 3-minute one-time password reset code has been sent to your email.',
             email: user.email,
             emailSent,
+            smsSent,
             emailError: emailSent ? undefined : emailError,
-            fallbackOtp: emailSent ? undefined : resetCode
+            fallbackOtp: (emailSent || smsSent) ? undefined : resetCode
         });
     } catch (error) {
         console.error('Forgot password error:', error.message);
