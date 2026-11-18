@@ -28,7 +28,9 @@ app.use(
           "https://static.cloudflareinsights.com",
           "https://accounts.google.com",
           "https://apis.google.com",
-          "https://connect.facebook.net"
+          "https://connect.facebook.net",
+          "https://cdn.brevo.com",
+          "https://*.brevo.com"
         ],
         frameSrc: [
           "'self'",
@@ -57,6 +59,8 @@ app.use(
           "https://rental-manager-1-7jmg.onrender.com",
           "https://rental-manager-gold.vercel.app",
           "https://api.brevo.com",
+          "https://cdn.brevo.com",
+          "https://*.brevo.com",
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com",
