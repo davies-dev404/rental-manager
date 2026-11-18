@@ -121,7 +121,7 @@ export default function Support() {
                                 </div>
                                 <div>
                                     <p className="font-medium">Visit Us</p>
-                                    <p className="text-muted-foreground">P.O. BOX 576-0300 Nairobi, Kenya</p>
+                                    <p className="text-muted-foreground">Busia, Kenya</p>
                                 </div>
                             </div>
                         </CardContent>

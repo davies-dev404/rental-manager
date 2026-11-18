@@ -682,7 +682,7 @@ export default function SettingsPage() {
   const [generalSettings, setGeneralSettings] = useState({
     companyName: "MakaziFlow Properties Ltd",
     abbreviatedName: "MakaziFlow",
-    companyAddress: "The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya",
+    companyAddress: "Busia, Kenya",
     companyEmail: "info@afrinextech.co.ke",
     companyPhone: "0790264792",
     invoiceTitle: "Invoice",
@@ -828,7 +828,9 @@ export default function SettingsPage() {
     metaPixelId: localStorage.getItem("meta_pixel_id") || "",
     cfTurnstileSiteKey: localStorage.getItem("cloudflare_turnstile_site_key") || "",
     cfTurnstileSecretKey: "",
-    cfAnalyticsToken: localStorage.getItem("cloudflare_analytics_token") || ""
+    cfAnalyticsToken: localStorage.getItem("cloudflare_analytics_token") || "",
+    googlePlaceId: "",
+    googleWriteReviewUrl: ""
   });
 
   useEffect(() => {
@@ -847,7 +849,9 @@ export default function SettingsPage() {
           metaPixelId: serverSettings.integrations.metaPixel?.pixelId || localStorage.getItem("meta_pixel_id") || "",
           cfTurnstileSiteKey: serverSettings.integrations.cloudflare?.turnstileSiteKey || localStorage.getItem("cloudflare_turnstile_site_key") || "",
           cfTurnstileSecretKey: serverSettings.integrations.cloudflare?.turnstileSecretKey || "",
-          cfAnalyticsToken: serverSettings.integrations.cloudflare?.analyticsToken || localStorage.getItem("cloudflare_analytics_token") || ""
+          cfAnalyticsToken: serverSettings.integrations.cloudflare?.analyticsToken || localStorage.getItem("cloudflare_analytics_token") || "",
+          googlePlaceId: serverSettings.integrations.googleReviews?.placeId || "",
+          googleWriteReviewUrl: serverSettings.integrations.googleReviews?.writeReviewUrl || ""
         });
       }
     }
@@ -871,11 +875,16 @@ export default function SettingsPage() {
             turnstileSiteKey: integrationSettings.cfTurnstileSiteKey,
             turnstileSecretKey: integrationSettings.cfTurnstileSecretKey,
             analyticsToken: integrationSettings.cfAnalyticsToken
+          },
+          googleReviews: {
+            enabled: true,
+            placeId: integrationSettings.googlePlaceId,
+            writeReviewUrl: integrationSettings.googleWriteReviewUrl
           }
         }
       });
       initMetaPixel(integrationSettings.metaPixelId);
-      toast({ title: "Integrations Saved", description: "Cloudflare and Meta Pixel configurations updated successfully." });
+      toast({ title: "Integrations Saved", description: "Cloudflare, Meta Pixel, and Google Reviews settings updated." });
     } catch (err) {
       toast({ title: "Save Failed", description: err.message, variant: "destructive" });
     } finally {
@@ -2481,6 +2490,49 @@ export default function SettingsPage() {
                       className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
                     />
                     <span className="text-[10px] text-muted-foreground">Privacy-first web performance analytics beacon token.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Google Business Reviews Card */}
+              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 font-bold text-sm">
+                    G
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Google Business Ratings &amp; Reviews</h4>
+                    <p className="text-[11px] text-muted-foreground">Display live Google ratings and customer reviews automatically on the MakaziFlow landing page.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Google Place ID
+                    </label>
+                    <input
+                      type="text"
+                      value={integrationSettings.googlePlaceId}
+                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, googlePlaceId: e.target.value.trim() })}
+                      placeholder="e.g. ChIJ..."
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Found in Google Business Profile / Place ID Finder.</span>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Direct Google Review Link (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={integrationSettings.googleWriteReviewUrl}
+                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, googleWriteReviewUrl: e.target.value.trim() })}
+                      placeholder="https://g.page/r/.../review"
+                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Used for the &quot;Rate Us on Google&quot; button on the landing page.</span>
                   </div>
                 </div>
               </div>

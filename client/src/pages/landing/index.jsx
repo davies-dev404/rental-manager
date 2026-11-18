@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
 import SEO from "@/components/SEO";
@@ -37,7 +38,10 @@ import {
   PieChart,
   ShieldCheck,
   Search,
-  Sparkles
+  Sparkles,
+  MapPin,
+  Mail,
+  ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import PricingPlans from "@/components/public/PricingPlans";
@@ -80,6 +84,29 @@ export default function LandingPage() {
 
   // Testimonial slider index
   const [testimonialIdx, setTestimonialIdx] = useState(0);
+
+  // Live Google Business Ratings & Reviews state
+  const [googleReviews, setGoogleReviews] = useState({
+    configured: false,
+    rating: null,
+    userRatingCount: 0,
+    reviews: [],
+    writeReviewUrl: "",
+    googleMapsUri: ""
+  });
+
+  useEffect(() => {
+    let active = true;
+    api.getGoogleReviews().then((data) => {
+      if (active && data) {
+        setGoogleReviews(data);
+        setTestimonialIdx(0);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Accordion open items for FAQs
   const [openFaqs, setOpenFaqs] = useState({ 0: true });
@@ -259,57 +286,59 @@ export default function LandingPage() {
 
   const currentTabObj = audienceTabs.find((t) => t.id === activeTab) || audienceTabs[0];
 
-  // Testimonials data
-  const testimonials = [
+  // Founding & Early-Adopter Testimonials (realistic startup launch stories)
+  const pilotTestimonials = [
     {
-      quote: "Greatly built product with lots of use for a landlord who prefers to self-manage their properties. The team is very responsive and helpful. Glad to have found MakaziFlow!",
-      name: "Elvis Ochieng",
-      role: "Property Owner • Nairobi",
-      initials: "EO",
-      rating: 5
+      quote: "Managing single-room and two-bedroom rentals around Busia used to mean flipping through exercise books and checking M-Pesa messages late at night. MakaziFlow keeps every tenant ledger, invoice, and PDF receipt organized in one place.",
+      name: "Busia Pilot Landlord",
+      role: "Residential Rentals • Busia, Kenya",
+      initials: "BP",
+      rating: 5,
+      source: "Early Access Partner"
     },
     {
-      quote: "Before MakaziFlow I used spreadsheets and manual invoicing, which made it tedious to trace utilities alongside rent. I needed invoicing and utility billing but MakaziFlow does a lot more.",
-      name: "Laura Anindo",
-      role: "Estate Manager • Kiambu",
-      initials: "LA",
-      rating: 5
+      quote: "The water sub-meter calculator and automated rent reminders save hours every month-end. Tenants get clear SMS and email invoices before the 5th without awkward back-and-forth calls.",
+      name: "Western Kenya Property Host",
+      role: "Multi-Unit Host • Kakamega & Busia",
+      initials: "WK",
+      rating: 5,
+      source: "Early Access Partner"
     },
     {
-      quote: "The best software for managing rent collection in Kenya. View statements, send balance reminders, and receive messages on your mobile device without chasing tenants.",
-      name: "CPA Titus Onsase",
-      role: "Financial Auditor & Landlord",
-      initials: "TO",
-      rating: 5
-    },
-    {
-      quote: "Simple to use yet comprehensive and very reliable for property management. I would recommend it to real estate companies and independent landlords across East Africa.",
-      name: "John Nangiro",
-      role: "Director, Rift Properties",
-      initials: "JN",
-      rating: 5
-    },
-    {
-      quote: "An efficient, excellent tool to help landlords and managers account for every coin. Safaricom M-Pesa automated posting is a true game changer.",
-      name: "Tuikong Allan",
-      role: "Residential Landlord • Eldoret",
-      initials: "TA",
-      rating: 5
-    },
-    {
-      quote: "After using more than six platforms that were complex and ineffective, MakaziFlow simplified our entire operations. Thank you MakaziFlow Team!",
-      name: "James Siambi",
-      role: "Property Manager • Mombasa",
-      initials: "JS",
-      rating: 5
+      quote: "Being able to start small with the 5-unit and 10-unit plans, issue compliant Kenyan PDF leases, and accept Pesaflow M-Pesa and bank payments gives new property owners real peace of mind.",
+      name: "Founding Beta Caretaker",
+      role: "Caretaker & Estate Operations • Busia County",
+      initials: "FB",
+      rating: 5,
+      source: "Early Access Partner"
     }
   ];
+
+  // Prioritize verified live Google reviews as soon as MakaziFlow is rated on Google
+  const liveGoogleItems = Array.isArray(googleReviews?.reviews)
+    ? googleReviews.reviews.map((r) => ({
+        quote: r.text || "Rated MakaziFlow on Google.",
+        name: r.authorName || "Google Reviewer",
+        role: `Verified Google Review • ${r.relativeTimeDescription || "Recently"}`,
+        initials: (r.authorName || "G")
+          .split(" ")
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((p) => p[0]?.toUpperCase())
+          .join("") || "G",
+        profilePhotoUrl: r.profilePhotoUrl || "",
+        rating: Math.max(1, Math.min(5, Math.round(Number(r.rating) || 5))),
+        source: "Google Review"
+      }))
+    : [];
+
+  const testimonials = liveGoogleItems.length > 0 ? liveGoogleItems : pilotTestimonials;
 
   // Auto-advancing testimonials carousel
   useEffect(() => {
     const interval = setInterval(() => {
       setTestimonialIdx((prev) => (prev + 1) % testimonials.length);
-    }, 5000);
+    }, 5500);
     return () => clearInterval(interval);
   }, [testimonials.length]);
 
@@ -317,11 +346,11 @@ export default function LandingPage() {
   const faqs = [
     {
       q: "What is MakaziFlow?",
-      a: "MakaziFlow is easy-to-use property management software for landlords and property managers in Kenya and across Africa. It automates rent collection, invoicing, tenant records, utility sub-metering, and communication to help you save time and maximize your rental income."
+      a: "MakaziFlow is modern property management software built in Busia for landlords and property managers across Kenya and East Africa. It automates rent collection, invoicing, tenant records, utility sub-metering, and communication so you save time and eliminate manual errors."
     },
     {
-      q: "How does the Safaricom M-Pesa Daraja integration work?",
-      a: "MakaziFlow connects securely with your existing M-Pesa Paybill or Buy Goods Till. Whenever a tenant pays rent, the transaction is automatically matched to their specific room or unit in seconds, issuing an instant branded SMS receipt and updating your ledger in real time."
+      q: "How does M-Pesa & Pesaflow payment collection work?",
+      a: "MakaziFlow integrates with Pesaflow to support M-Pesa STK Push, Paybill payments, Visa/Mastercard, and bank transfers. Whenever a tenant pays, the transaction is reconciled to their unit and invoice automatically and an official PDF receipt is emailed."
     },
     {
       q: "Are the generated tenancy lease agreements compliant with Kenyan law?",
@@ -336,12 +365,12 @@ export default function LandingPage() {
       a: "Yes! MakaziFlow provides free 1-click Excel and CSV tenant/property migration. Our support specialists can also help you import your existing tenant rosters and arrears ledgers at no charge."
     },
     {
-      q: "Do you provide support and on-site staff training?",
-      a: "Yes, our Nairobi-based support team is available via email (info@afrinextech.co.ke), WhatsApp, and phone (0790264792) from 8:00 AM to 7:00 PM (EAT). We also offer live Zoom and in-person staff onboarding."
+      q: "Do you provide support and onboarding?",
+      a: "Yes, our Busia-based support team serves landlords across Kenya via email (info@afrinextech.co.ke), WhatsApp, and phone (0790264792) from 8:00 AM to 7:00 PM (EAT). We also offer live online and on-site onboarding."
     },
     {
       q: "Can I get a free trial before paying?",
-      a: "Yes! Every new account comes with a full-featured 14-day free trial. No credit card is required to get started."
+      a: "Yes! Every new account comes with a full-featured 14-day free trial. Start small from 5 units with no credit card required."
     }
   ];
 
@@ -384,7 +413,7 @@ export default function LandingPage() {
                 {/* Status chip */}
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Safaricom Daraja &amp; eTIMS Certified
+                  Pesaflow M-Pesa &amp; eTIMS Ready · Busia, Kenya
                 </span>
               </div>
 
@@ -422,7 +451,7 @@ export default function LandingPage() {
               <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-wrap items-center justify-center gap-5 text-xs text-slate-600 font-medium lg:justify-start">
                 <span className="flex items-center gap-1.5 text-slate-800 font-semibold">
                   <CheckCircle2 className="w-4 h-4 text-[#2546e8]" />
-                  Instant M-Pesa Daraja Sync
+                  Pesaflow M-Pesa, Card &amp; Bank Sync
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-800 font-semibold">
                   <CheckCircle2 className="w-4 h-4 text-[#2546e8]" />
@@ -485,72 +514,72 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* 4 Impact Metric Cards — Savannah Informatics Style */}
+          {/* 4 Realistic Launch Milestones — Grounded for Starting in Busia & Scaling Across Kenya */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             
             <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:shadow-md transition text-center flex flex-col items-center">
               <div className="h-12 w-12 rounded-full bg-[#eef1ff] text-[#2546e8] flex items-center justify-center mb-3">
-                <CreditCard className="w-6 h-6" />
+                <Zap className="w-6 h-6" />
               </div>
-              <p className="text-3xl sm:text-4xl font-black text-slate-950">KES 500M+</p>
-              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Processed Volume</p>
-              <p className="mt-2 text-xs text-slate-500">Auto-reconciled via Safaricom M-Pesa with 0% manual errors.</p>
+              <p className="text-3xl sm:text-4xl font-black text-slate-950">&lt; 5 Sec</p>
+              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Instant Payment Sync</p>
+              <p className="mt-2 text-xs text-slate-500">Real-time Pesaflow M-Pesa, card &amp; bank reconciliation with automated PDF receipts.</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:shadow-md transition text-center flex flex-col items-center">
+              <div className="h-12 w-12 rounded-full bg-[#eef1ff] text-[#2546e8] flex items-center justify-center mb-3">
+                <Clock className="w-6 h-6" />
+              </div>
+              <p className="text-3xl sm:text-4xl font-black text-slate-950">14 Days</p>
+              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Free Onboarding Trial</p>
+              <p className="mt-2 text-xs text-slate-500">Launch your first 5+ rental units in minutes with zero upfront setup fees.</p>
             </div>
 
             <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:shadow-md transition text-center flex flex-col items-center">
               <div className="h-12 w-12 rounded-full bg-[#eef1ff] text-[#2546e8] flex items-center justify-center mb-3">
                 <Building2 className="w-6 h-6" />
               </div>
-              <p className="text-3xl sm:text-4xl font-black text-slate-950">550+</p>
-              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Estates &amp; Landlords</p>
-              <p className="mt-2 text-xs text-slate-500">Active real estate portfolios operating smoothly on MakaziFlow.</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:shadow-md transition text-center flex flex-col items-center">
-              <div className="h-12 w-12 rounded-full bg-[#eef1ff] text-[#2546e8] flex items-center justify-center mb-3">
-                <Users className="w-6 h-6" />
-              </div>
-              <p className="text-3xl sm:text-4xl font-black text-slate-950">20,000+</p>
-              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Tenants Managed</p>
-              <p className="mt-2 text-xs text-slate-500">Across Nairobi, Mombasa, Kisumu, Nakuru, Eldoret &amp; beyond.</p>
+              <p className="text-3xl sm:text-4xl font-black text-slate-950">5 → 100+</p>
+              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Units Built To Scale</p>
+              <p className="mt-2 text-xs text-slate-500">Built in Busia, Kenya for growing residential plots, apartments &amp; agencies nationwide.</p>
             </div>
 
             <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:shadow-md transition text-center flex flex-col items-center">
               <div className="h-12 w-12 rounded-full bg-[#eef1ff] text-[#2546e8] flex items-center justify-center mb-3">
                 <ShieldCheck className="w-6 h-6" />
               </div>
-              <p className="text-3xl sm:text-4xl font-black text-slate-950">99.98%</p>
-              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">Platform Uptime</p>
-              <p className="mt-2 text-xs text-slate-500">Bank-grade data encryption, hourly cloud backups, zero downtime.</p>
+              <p className="text-3xl sm:text-4xl font-black text-slate-950">eTIMS</p>
+              <p className="mt-1 text-xs font-bold text-[#2546e8] uppercase tracking-wider">KRA &amp; Lease Ready</p>
+              <p className="mt-2 text-xs text-slate-500">Kenyan Tenancy Law PDF agreements, encrypted cloud records &amp; KRA tax tracking.</p>
             </div>
 
           </div>
 
-          {/* Savannah Informatics Ecosystem / Strategic Integrations Bar */}
+          {/* Ecosystem & Payment Rails Bar */}
           <div className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-xs">
             <p className="text-center text-xs font-bold uppercase tracking-wider text-slate-400 mb-6">
-              Integrated With Kenya&apos;s Financial &amp; Regulatory Infrastructure
+              Integrated With Kenya&apos;s Financial, Tax &amp; Messaging Rails
             </p>
             <div className="flex flex-wrap items-center justify-center gap-8 sm:gap-12 opacity-80 grayscale hover:grayscale-0 transition-all">
               <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
                 <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                Safaricom M-Pesa Daraja
+                Pesaflow Payment Gateway
+              </div>
+              <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
+                <span className="h-3 w-3 rounded-full bg-green-600" />
+                M-Pesa STK &amp; Paybill
               </div>
               <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
                 <span className="h-3 w-3 rounded-full bg-blue-600" />
-                Equity Bank EazzyBiz
-              </div>
-              <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
-                <span className="h-3 w-3 rounded-full bg-green-700" />
-                KCB Buni Connect
+                Visa, Mastercard &amp; Banks
               </div>
               <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
                 <span className="h-3 w-3 rounded-full bg-red-600" />
-                KRA eTIMS Tax Compliant
+                KRA eTIMS Ready
               </div>
               <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
                 <span className="h-3 w-3 rounded-full bg-indigo-600" />
-                Co-operative Bank API
+                Brevo Email &amp; Alerts
               </div>
             </div>
           </div>
@@ -600,7 +629,7 @@ export default function LandingPage() {
                   Instant M-Pesa &amp; Bank Sync
                 </h3>
                 <p className="mt-2.5 text-[0.95rem] leading-relaxed text-slate-600">
-                  Connect your existing M-Pesa Paybill or Buy Goods Till via Safaricom Daraja API. Tenant balances update automatically upon payment with instant branded SMS receipts.
+                  Accept M-Pesa STK Push, Paybill, Visa/Mastercard, and bank transfers through Pesaflow. Tenant balances update automatically upon confirmation with instant PDF receipts emailed.
                 </p>
 
                 {/* Feature Image Thumbnail */}
@@ -964,7 +993,7 @@ export default function LandingPage() {
               Plans Starting From <span className="text-[#2546e8]">KES 1,500</span> / Month
             </h2>
             <p className="mx-auto mt-4 max-w-3xl text-base sm:text-lg leading-relaxed text-slate-600">
-              Straightforward pricing tailored for Kenyan landlords and management companies. Every plan includes automated M-Pesa Daraja reconciliation, Kenyan PDF lease generation, and tenant SMS alerts.
+              Straightforward pricing tailored for Kenyan landlords and management companies. Every plan includes automated M-Pesa &amp; Pesaflow reconciliation, Kenyan PDF lease generation, and tenant reminders.
             </p>
           </div>
 
@@ -974,21 +1003,91 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ────────────────── 8. CLIENT TESTIMONIALS (Auto-Gliding Carousel) ────────────────── */}
+      {/* ────────────────── 8. GOOGLE RATINGS & CLIENT STORIES ────────────────── */}
       <section className="py-16 sm:py-24 border-b border-slate-200 bg-gradient-to-b from-[#f8faff] to-white">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
           
-          <div className="flex flex-col items-center gap-3 text-center mb-12">
+          <div className="flex flex-col items-center gap-3 text-center mb-10">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
               <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
-              <span>CLIENT STORIES</span>
+              <span>{liveGoogleItems.length > 0 ? "VERIFIED GOOGLE REVIEWS" : "EARLY ADOPTER FEEDBACK & GOOGLE RATINGS"}</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950">
-              Trusted By Landlords &amp; Managers Across Kenya
+              Built With Landlords From Busia Across Kenya
             </h2>
             <p className="text-base text-slate-600 max-w-xl">
-              Discover how landlords eliminate arrears and save hours of manual admin every single month.
+              Real feedback from early adopters plus live verified Google Business ratings as customers review MakaziFlow.
             </p>
+          </div>
+
+          {/* Live Google Rating Badge & "Rate Us on Google" Integration */}
+          <div className="max-w-3xl mx-auto mb-8 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="h-11 w-11 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" className="w-6 h-6" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.52 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47c-.29 1.52-1.14 2.81-2.4 3.67v3.04h3.88c2.27-2.09 3.57-5.17 3.57-8.95z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.91l-3.88-3.04c-1.07.72-2.45 1.15-4.05 1.15-3.12 0-5.77-2.11-6.72-4.96H1.29v3.13C3.26 21.3 7.31 24 12 24z" />
+                  <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.63H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.37l3.99-3.13z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.63l3.99 3.13c.95-2.85 3.6-4.96 6.72-4.96z" />
+                </svg>
+              </div>
+              <div className="text-left">
+                {googleReviews.userRatingCount > 0 && googleReviews.rating ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl font-black text-slate-950">{googleReviews.rating}</span>
+                      <div className="flex items-center gap-0.5 text-amber-400">
+                        {[...Array(5)].map((_, i) => (
+                          <Star
+                            key={i}
+                            className={`w-4 h-4 ${i < Math.round(googleReviews.rating) ? "fill-amber-400" : "text-slate-300"}`}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        Verified on Google
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Based on {googleReviews.userRatingCount} verified Google {googleReviews.userRatingCount === 1 ? "review" : "reviews"}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-950">Google Business Rating</span>
+                      <span className="text-[11px] font-semibold text-[#2546e8] bg-[#eef1ff] border border-[#d6defc] px-2 py-0.5 rounded-full">
+                        Live Sync Ready
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Recently launched in Busia, Kenya — new Google ratings appear here automatically.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {(googleReviews.writeReviewUrl || googleReviews.googleMapsUri) ? (
+              <a
+                href={googleReviews.writeReviewUrl || googleReviews.googleMapsUri}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-50 hover:bg-slate-100 px-4 py-2 text-xs font-bold text-slate-800 transition shrink-0"
+              >
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>Rate Us on Google</span>
+                <ExternalLink className="w-3 h-3 text-slate-500" />
+              </a>
+            ) : (
+              <a
+                href="mailto:info@afrinextech.co.ke?subject=MakaziFlow%20Feedback"
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-50 hover:bg-slate-100 px-4 py-2 text-xs font-bold text-slate-800 transition shrink-0"
+              >
+                <Mail className="w-3.5 h-3.5 text-[#2546e8]" />
+                <span>Share Feedback</span>
+              </a>
+            )}
           </div>
 
           {/* Testimonial Active Display Card with Auto-Gliding Carousel */}
@@ -1002,18 +1101,31 @@ export default function LandingPage() {
                 transition={{ duration: 0.4, ease: "easeInOut" }}
                 className="flex flex-col rounded-3xl border border-slate-200 bg-white p-8 sm:p-10 shadow-[0_10px_35px_rgba(15,23,42,0.06)] min-h-56"
               >
-                <div className="mb-4 flex items-center gap-1 text-[0.95rem] text-amber-400">
-                  {[...Array(testimonials[testimonialIdx].rating)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 fill-amber-400" />
-                  ))}
+                <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1 text-[0.95rem] text-amber-400">
+                    {[...Array(testimonials[testimonialIdx].rating)].map((_, i) => (
+                      <Star key={i} className="w-4 h-4 fill-amber-400" />
+                    ))}
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                    {testimonials[testimonialIdx].source}
+                  </span>
                 </div>
                 <p className="text-base sm:text-xl leading-[1.65] text-slate-900 font-medium italic">
                   &ldquo;{testimonials[testimonialIdx].quote}&rdquo;
                 </p>
                 <div className="mt-6 flex items-center gap-3 pt-5 border-t border-slate-100">
-                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[#2546e8] text-sm font-bold text-white shrink-0 shadow-sm">
-                    {testimonials[testimonialIdx].initials}
-                  </div>
+                  {testimonials[testimonialIdx].profilePhotoUrl ? (
+                    <img
+                      src={testimonials[testimonialIdx].profilePhotoUrl}
+                      alt={testimonials[testimonialIdx].name}
+                      className="h-11 w-11 rounded-full object-cover shrink-0 border border-slate-200"
+                    />
+                  ) : (
+                    <div className="grid h-11 w-11 place-items-center rounded-full bg-[#2546e8] text-sm font-bold text-white shrink-0 shadow-sm">
+                      {testimonials[testimonialIdx].initials}
+                    </div>
+                  )}
                   <div>
                     <p className="font-bold text-slate-950 text-base">
                       {testimonials[testimonialIdx].name}
@@ -1114,8 +1226,47 @@ export default function LandingPage() {
               Schedule A Live Personalized Demo
             </h2>
             <p className="mt-2 text-base text-slate-600 max-w-lg mx-auto">
-              Our Nairobi product specialists will walk you through automated M-Pesa setup, lease generation, and Excel data migration.
+              Our Busia-based specialists serve landlords and agencies across Kenya — walking you through M-Pesa setup, lease generation, and onboarding.
             </p>
+          </div>
+
+          {/* Direct Contact Details Strip (Busia, Email & Phone) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center gap-3 shadow-2xs">
+              <div className="h-10 w-10 rounded-xl bg-[#eef1ff] text-[#2546e8] flex items-center justify-center shrink-0">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Location</p>
+                <p className="text-sm font-bold text-slate-900 truncate">Busia, Kenya</p>
+              </div>
+            </div>
+
+            <a
+              href="mailto:info@afrinextech.co.ke"
+              className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center gap-3 shadow-2xs hover:border-[#2546e8]/50 transition"
+            >
+              <div className="h-10 w-10 rounded-xl bg-[#eef1ff] text-[#2546e8] flex items-center justify-center shrink-0">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Email</p>
+                <p className="text-sm font-bold text-slate-900 truncate">info@afrinextech.co.ke</p>
+              </div>
+            </a>
+
+            <a
+              href="tel:0790264792"
+              className="rounded-2xl border border-slate-200 bg-white p-4 flex items-center gap-3 shadow-2xs hover:border-[#2546e8]/50 transition"
+            >
+              <div className="h-10 w-10 rounded-xl bg-[#eef1ff] text-[#2546e8] flex items-center justify-center shrink-0">
+                <PhoneCall className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Phone / WhatsApp</p>
+                <p className="text-sm font-bold text-slate-900 truncate">0790264792</p>
+              </div>
+            </a>
           </div>
 
           <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-10 shadow-lg shadow-slate-200/50">

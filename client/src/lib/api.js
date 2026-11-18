@@ -947,5 +947,14 @@ export const api = {
       credentials: "include"
     });
     return await parseApiResponse(response, "Failed to load subscription audit logs");
+  },
+  getGoogleReviews: async () => {
+    try {
+      const response = await smartFetch(`${API_URL}/public/google-reviews`);
+      if (!response.ok) return { configured: false, rating: null, userRatingCount: 0, reviews: [] };
+      return await response.json();
+    } catch {
+      return { configured: false, rating: null, userRatingCount: 0, reviews: [] };
+    }
   }
 };

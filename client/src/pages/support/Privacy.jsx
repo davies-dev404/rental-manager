@@ -153,7 +153,7 @@ const sections = [
     content: [],
     contact: {
       company: "MakaziFlow",
-      address: "The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya",
+      address: "Busia, Kenya",
       phone: "0790264792",
       email: "info@afrinextech.co.ke"
     }

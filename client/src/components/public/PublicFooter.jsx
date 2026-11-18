@@ -122,7 +122,7 @@ export default function PublicFooter() {
                 </a>
               </li>
               <li className="leading-7 text-slate-400">
-                The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya
+                Busia, Kenya
               </li>
             </ul>
           </div>

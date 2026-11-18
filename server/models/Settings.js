@@ -5,7 +5,7 @@ const settingsSchema = new mongoose.Schema({
   orgName: { type: String, default: 'MakaziFlow' },
   orgEmail: { type: String, default: 'info@afrinextech.co.ke' },
   orgPhone: { type: String, default: '0790264792' },
-  orgAddress: { type: String, default: 'The Mirage Towers, 7th Floor, Chiromo Road, Westlands - Nairobi, Kenya' },
+  orgAddress: { type: String, default: 'Busia, Kenya' },
   taxId: { type: String, default: '' },
   
   // App Preferences
@@ -61,6 +61,11 @@ const settingsSchema = new mongoose.Schema({
       metaPixel: {
           pixelId: { type: String, default: '' },
           enabled: { type: Boolean, default: true }
+      },
+      googleReviews: {
+          enabled: { type: Boolean, default: true },
+          placeId: { type: String, default: '' },
+          writeReviewUrl: { type: String, default: '' }
       }
   },
 

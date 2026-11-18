@@ -242,7 +242,7 @@ const dbBootPromise = connectDB()
 
 // Middleware to ensure DB is connected before processing API requests
 app.use(async (req, res, next) => {
-    if (req.path === '/' || req.path === '/api/health') return next();
+    if (req.path === '/' || req.path === '/api/health' || req.path.startsWith('/api/public')) return next();
     try {
         if (!dbReady) await dbBootPromise; // wait for boot connection if still pending
         await connectDB();
@@ -280,6 +280,7 @@ app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
 app.use('/api/super-admin', require('./routes/superAdminRoutes'));
+app.use('/api/public', require('./routes/publicRoutes'));
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
