@@ -191,7 +191,7 @@ router.put('/:id', protect, async (req, res) => {
       }
     }
 
-    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, payload, { new: true });
+    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, payload, { returnDocument: 'after' });
     res.json(tenant);
   } catch (error) {
     res.status(400).json({ message: error.message || 'Failed to update tenant.' });

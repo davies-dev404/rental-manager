@@ -260,12 +260,12 @@ router.post('/login', async (req, res) => {
     let smsSent = false;
     if (user.phone) {
       try {
-        await sendSMS({
+        const smsRes = await sendSMS({
           phone: user.phone,
           message: `Your MakaziFlow login verification code is: ${loginOtp}. Expires in 3 minutes.`
         });
-        smsSent = true;
-        console.log(`📱 Login OTP SMS dispatched via Brevo to ${user.phone}`);
+        smsSent = Boolean(smsRes?.success);
+        if (smsSent) console.log(`📱 Login OTP SMS dispatched via Brevo to ${user.phone}`);
       } catch (smsErr) {
         console.warn('Login OTP SMS dispatch failed (non-fatal):', smsErr.message);
       }
@@ -343,12 +343,12 @@ router.post('/resend-login-otp', async (req, res) => {
     let smsSent = false;
     if (user.phone) {
       try {
-        await sendSMS({
+        const smsRes = await sendSMS({
           phone: user.phone,
           message: `Your MakaziFlow login verification code is: ${loginOtp}. Expires in 3 minutes.`
         });
-        smsSent = true;
-        console.log(`📱 Login OTP SMS resent via Brevo to ${user.phone}`);
+        smsSent = Boolean(smsRes?.success);
+        if (smsSent) console.log(`📱 Login OTP SMS resent via Brevo to ${user.phone}`);
       } catch (smsErr) {
         console.warn('Resend login OTP SMS failed (non-fatal):', smsErr.message);
       }
@@ -812,11 +812,11 @@ router.post('/forgot-password', async (req, res) => {
         let smsSent = false;
         if (user.phone) {
             try {
-                await sendSMS({
+                const smsRes = await sendSMS({
                     phone: user.phone,
                     message: `Your MakaziFlow password reset code is: ${resetCode}. Expires in 3 minutes.`
                 });
-                smsSent = true;
+                smsSent = Boolean(smsRes?.success);
             } catch (smsErr) {
                 console.warn('Password reset SMS failed (non-fatal):', smsErr.message);
             }

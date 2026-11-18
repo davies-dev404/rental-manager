@@ -129,7 +129,7 @@ router.put('/:id', protect, admin, async (req, res) => {
       }
     }
 
-    const updatedUnit = await Unit.findByIdAndUpdate(req.params.id, payload, { new: true });
+    const updatedUnit = await Unit.findByIdAndUpdate(req.params.id, payload, { returnDocument: 'after' });
     await logActivity(req.user, 'Update Unit', `Updated unit "${updatedUnit.unitNumber}"`, 'unit', 'success');
     res.json(updatedUnit);
   } catch (error) {

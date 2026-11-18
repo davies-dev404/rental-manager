@@ -53,7 +53,7 @@ router.post('/', protect, async (req, res) => {
 // @access  Private
 router.put('/:id', protect, async (req, res) => {
   try {
-    const property = await Property.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { new: true });
+    const property = await Property.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, req.body, { returnDocument: 'after' });
     if (!property) return res.status(404).json({ message: 'Property not found' });
     await logActivity(req.user, 'Update Property', `Updated property "${property.name}"`, 'property', 'success');
     res.json(property);

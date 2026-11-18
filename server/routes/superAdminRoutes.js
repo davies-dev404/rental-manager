@@ -153,7 +153,7 @@ router.put('/plans/:id', async (req, res) => {
     const updated = await SubscriptionPlan.findByIdAndUpdate(
       req.params.id,
       { ...req.body, updatedAt: new Date() },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     await logSubscriptionAudit({

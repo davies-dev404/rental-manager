@@ -83,7 +83,7 @@ class PaymentService {
       await PaymentProvider.findOneAndUpdate(
         { code: def.code },
         { $set: { ...def, updatedAt: new Date() } },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     }
     return await PaymentProvider.find().sort({ isPrimary: -1, code: 1 });
@@ -421,7 +421,7 @@ class PaymentService {
             currency: transaction.currency
           }
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     } else if (transaction.tenantId) {
       // Tenant Rent / Utility / Penalty Collection (Strictly separate from SaaS Subscription!)
@@ -476,7 +476,7 @@ class PaymentService {
             currency: transaction.currency
           }
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
 
       // Dispatch strict email PDF receipt to tenant

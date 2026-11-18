@@ -294,6 +294,10 @@ app.get('/api/health', async (req, res) => {
     }
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     const dbState = states[mongoose.connection.readyState] || 'unknown';
+    const rawKey = (process.env.BREVO_API_KEY || '').trim();
+    const keyFingerprint = rawKey
+        ? require('crypto').createHash('sha256').update(rawKey).digest('hex').slice(0, 8)
+        : null;
     res.json({
         status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),
@@ -302,6 +306,13 @@ app.get('/api/health', async (req, res) => {
             readyState: mongoose.connection.readyState,
             host: mongoose.connection.host || null,
             error: connectionError
+        },
+        messaging: {
+            provider: 'brevo',
+            apiKeyConfigured: Boolean(rawKey),
+            apiKeyFingerprint: keyFingerprint,
+            senderEmail: process.env.BREVO_SENDER_EMAIL || process.env.FROM_EMAIL || 'info@afrinextech.co.ke',
+            smtpUser: process.env.BREVO_SMTP_USER || process.env.SMTP_USER || null
         },
         env: process.env.NODE_ENV || 'development'
     });

@@ -155,7 +155,7 @@ async function seedDefaultPlans() {
     await SubscriptionPlan.findOneAndUpdate(
       { code: plan.code },
       { $setOnInsert: plan },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   }
   return await SubscriptionPlan.find({ isActive: true }).sort({ sortOrder: 1 });
@@ -316,7 +316,7 @@ async function ensureLandlordEntitlement(landlordId, { resyncCount = false } = {
             graceEndsAt: subscription?.graceEndDate || graceEndDate
           }
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     } catch (dupErr) {
       if (dupErr.code === 11000) {
@@ -331,7 +331,7 @@ async function ensureLandlordEntitlement(landlordId, { resyncCount = false } = {
       entitlement = await UnitEntitlement.findOneAndUpdate(
         { _id: entitlement._id },
         { $set: { activeUnitCount: actualUnits, updatedAt: new Date() } },
-        { new: true }
+        { returnDocument: 'after' }
       );
     }
   }
@@ -382,7 +382,7 @@ async function reserveUnitSlot(landlordId) {
   const updated = await UnitEntitlement.findOneAndUpdate(
     filter,
     { $inc: { activeUnitCount: 1 }, $set: { updatedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!updated) {
@@ -422,14 +422,14 @@ async function releaseUnitSlot(landlordId) {
     const ent = await UnitEntitlement.findOneAndUpdate(
       { landlordId, activeUnitCount: { $gt: 0 } },
       { $inc: { activeUnitCount: -1 }, $set: { updatedAt: new Date() } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!ent) return null;
     if (ent.status === 'restricted' && (ent.isUnlimited || ent.activeUnitCount <= ent.purchasedLimit)) {
       return await UnitEntitlement.findOneAndUpdate(
         { _id: ent._id },
         { $set: { status: 'active', updatedAt: new Date() } },
-        { new: true }
+        { returnDocument: 'after' }
       );
     }
     return ent;
@@ -556,7 +556,7 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
         updatedAt: now
       }
     },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 
   await User.findByIdAndUpdate(sub.landlordId, {
