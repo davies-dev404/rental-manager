@@ -38,7 +38,6 @@ import {
   PieChart,
   ShieldCheck,
   Search,
-  Sparkles,
   MapPin,
   Mail,
   ExternalLink
@@ -47,32 +46,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import PricingPlans from "@/components/public/PricingPlans";
 import CountryPhoneInput from "@/components/public/CountryPhoneInput";
 import { useToast } from "@/hooks/use-toast";
-
-/**
- * Signature 4-pointed sparkle icon matching Savannah Informatics style:
- * Central 4-pointed concave diamond with accent starlets in vivid orange (#ff5722 / #ea580c).
- */
-export function SavannahSparkle({ className = "w-3.5 h-3.5 text-[#ff5722]" }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-hidden="true"
-    >
-      <path
-        d="M12 2C12.4 7.2 16.8 11.6 22 12C16.8 12.4 12.4 16.8 12 22C11.6 16.8 7.2 12.4 2 12C7.2 11.6 11.6 7.2 12 2Z"
-        fill="currentColor"
-      />
-      <path
-        d="M19.5 3.5C19.7 5 21 6.3 22.5 6.5C21 6.7 19.7 8 19.5 9.5C19.3 8 18 6.7 16.5 6.5C18 6.3 19.3 5 19.5 3.5Z"
-        fill="currentColor"
-      />
-      <circle cx="4.5" cy="19.5" r="1.5" fill="currentColor" />
-    </svg>
-  );
-}
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
@@ -377,9 +350,14 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white text-slate-950 font-sans antialiased selection:bg-[#2546e8] selection:text-white">
       <SEO
-        title="MakaziFlow - Property Management Software in Kenya & Africa"
+        title="MakaziFlow - Property Management Software in Busia & Kenya"
         canonicalPath="/"
-        description="MakaziFlow is Kenya and Africa's premier automated property management software. Effortlessly manage tenants, automate M-Pesa rent reconciliation, track expenses, handle maintenance, and generate financial reports."
+        description="MakaziFlow is rental property management software built in Busia, Kenya. Automate M-Pesa & Pesaflow rent collection, invoicing, Kenyan PDF leases, and financial reporting. Contact: info@afrinextech.co.ke | 0790264792."
+        aggregateRating={
+          googleReviews.userRatingCount > 0 && googleReviews.rating
+            ? { ratingValue: googleReviews.rating, reviewCount: googleReviews.userRatingCount }
+            : null
+        }
       />
 
       {/* ────────────────── 1. HEADER (Shared PublicNavbar) ────────────────── */}
@@ -406,7 +384,7 @@ export default function LandingPage() {
                 
                 {/* 1. Solid Cobalt Blue Badge */}
                 <div className="inline-flex items-center gap-2 rounded-full bg-[#2546e8] px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:brightness-110 transition select-none">
-                  <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+                  <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
                   <span>MakaziFlow</span>
                 </div>
 
@@ -417,16 +395,15 @@ export default function LandingPage() {
                 </span>
               </div>
 
-              {/* Savannah-style Bold Typography */}
               <h1 className="text-[2.6rem] font-black tracking-[-0.04em] text-slate-950 sm:text-[3.3rem] sm:leading-[1.06] lg:text-[3.9rem] lg:leading-[1.03]">
                 <span className="block text-slate-950">Smart Property Operations.</span>
                 <span className="block bg-gradient-to-r from-[#2546e8] via-[#384ad3] to-[#00A99D] bg-clip-text text-transparent">
-                  Effortless Rental Flow.
+                  Built For Clear Cashflow.
                 </span>
               </h1>
 
               <p className="mt-5 max-w-2xl text-[1.05rem] leading-relaxed text-slate-600 sm:text-[1.15rem]">
-                No more chasing late rent or reconciling fake M-Pesa receipts. MakaziFlow automates Safaricom Paybill collections, dispatches legal Kenyan PDF leases, calculates water sub-meters, and keeps your property records audit-ready.
+                No more chasing late rent or verifying screenshots by hand. MakaziFlow reconciles Pesaflow M-Pesa, card, and bank payments, generates Kenyan PDF leases, calculates water sub-meters, and keeps tenant ledgers accurate.
               </p>
 
               {/* CTAs matching Savannah Informatics aesthetic */}
@@ -502,15 +479,15 @@ export default function LandingPage() {
           <div className="mx-auto max-w-3xl text-center mb-14">
             {/* Exact Pill Badge from Screenshot #2 */}
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>WHO WE ARE</span>
             </div>
 
             <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-950">
-              Powering Kenya&apos;s Next-Generation Property Infrastructure
+              Built For Kenyan Landlords &amp; Property Managers
             </h2>
             <p className="mt-4 text-base sm:text-lg leading-relaxed text-slate-600">
-              Just as modern digital healthcare and telecommunications transform everyday lives, MakaziFlow bridges property owners, property managers, and tenants with seamless financial rails and automated compliance across Kenya.
+              MakaziFlow replaces paper notebooks and scattered spreadsheets with reliable M-Pesa &amp; bank reconciliation, digital leases, and clear tenant ledgers.
             </p>
           </div>
 
@@ -593,14 +570,14 @@ export default function LandingPage() {
           
           <div className="mx-auto max-w-3xl text-center mb-16">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>OUR PLATFORM</span>
             </div>
             <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-950">
               An Integrated Operating System For Rental Properties
             </h2>
             <p className="mt-4 text-base sm:text-lg leading-relaxed text-slate-600">
-              Built ground-up for the Kenyan rental economy. Replace paper receipts and messy WhatsApp chats with six intelligent modules.
+              Built from the ground up for Kenyan rentals. Replace paper receipts and scattered WhatsApp chats with six practical management tools.
             </p>
           </div>
 
@@ -899,7 +876,7 @@ export default function LandingPage() {
           
           <div className="mx-auto max-w-3xl text-center mb-10">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>WHO WE SERVE</span>
             </div>
             <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-950">
@@ -986,7 +963,7 @@ export default function LandingPage() {
           
           <div className="mx-auto max-w-4xl text-center mb-12">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>TRANSPARENT PRICING</span>
             </div>
             <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-950">
@@ -1009,7 +986,7 @@ export default function LandingPage() {
           
           <div className="flex flex-col items-center gap-3 text-center mb-10">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>{liveGoogleItems.length > 0 ? "VERIFIED GOOGLE REVIEWS" : "EARLY ADOPTER FEEDBACK & GOOGLE RATINGS"}</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950">
@@ -1163,7 +1140,7 @@ export default function LandingPage() {
           
           <div className="mx-auto max-w-3xl text-center mb-12">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>FREQUENTLY ASKED QUESTIONS</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950">
@@ -1219,7 +1196,7 @@ export default function LandingPage() {
           
           <div className="text-center mb-10">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-[#eef1ff] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#2546e8] border border-[#d6defc] shadow-xs select-none">
-              <SavannahSparkle className="w-3.5 h-3.5 text-[#ff5722]" />
+              <span className="h-2 w-2 rounded-full bg-[#ff5722] shrink-0" />
               <span>GET IN TOUCH</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950">

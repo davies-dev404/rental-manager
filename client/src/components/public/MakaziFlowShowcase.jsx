@@ -9,7 +9,6 @@ import {
   Droplets,
   CreditCard,
   Maximize2,
-  Sparkles,
   ArrowRight,
   ShieldCheck,
   Volume2,
@@ -27,7 +26,7 @@ export default function MakaziFlowShowcase({ onGetStarted }) {
   const tabs = [
     {
       id: "mpesa",
-      label: "M-Pesa Daraja Sync",
+      label: "Pesaflow M-Pesa Sync",
       icon: <CreditCard className="w-4 h-4 text-emerald-400" />,
       tag: "Live Bank & Paybill Auto-Match",
       title: "Zero Manual Reconciliation",
@@ -172,7 +171,7 @@ export default function MakaziFlowShowcase({ onGetStarted }) {
           <div className="relative z-10 flex items-start justify-between gap-3">
             <div>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider border ${active.badgeColor}`}>
-                <Sparkles className="w-3.5 h-3.5" />
+                <CheckCircle2 className="w-3.5 h-3.5" />
                 {active.tag}
               </span>
               <h3 className="mt-2 text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow-md">

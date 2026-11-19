@@ -19,7 +19,6 @@ import {
   ArrowLeft,
   Send,
   Loader2,
-  Sparkles,
   FileSpreadsheet,
   X,
   CheckCircle2,

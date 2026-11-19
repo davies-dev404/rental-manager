@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 
 const BASE_URL = "https://makaziflow.afrinextech.co.ke";
-const DEFAULT_TITLE = "MakaziFlow - Property Management Software in Kenya & Africa";
-const DEFAULT_DESC = "MakaziFlow empowers African landlords and property managers with intelligent M-Pesa automated rent collection, digital leases, utility tracking, and real-time financial reporting.";
-const DEFAULT_KEYWORDS = "MakaziFlow, property management software Kenya, rental management Nairobi, M-Pesa automated rent collection, landlord software Kenya, tenant billing system, property managers Kenya, real estate software Africa, AfrinexTech";
+const DEFAULT_TITLE = "MakaziFlow - Property Management Software in Busia & Kenya";
+const DEFAULT_DESC = "MakaziFlow is rental property management software built in Busia, Kenya. Automate M-Pesa & Pesaflow rent collection, digital leases, utility billing, and financial reporting. Contact: info@afrinextech.co.ke | 0790264792.";
+const DEFAULT_KEYWORDS = "MakaziFlow, property management software Kenya, rental management Busia, rental management Kenya, Pesaflow M-Pesa rent collection, landlord software Kenya, tenant billing system, property managers Kenya, AfrinexTech";
 const DEFAULT_OG_IMAGE = `${BASE_URL}/opengraph.jpg`;
 
 function setMetaTag(attributeName, attributeValue, content) {
@@ -46,6 +46,7 @@ export default function SEO({
   ogType = "website",
   noIndex = false,
   structuredData = null,
+  aggregateRating = null,
 }) {
   useEffect(() => {
     // 1. Title
@@ -84,26 +85,60 @@ export default function SEO({
     // 6. Schema.org Structured Data (JSON-LD)
     const defaultSchema = {
       "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "MakaziFlow",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web, iOS, Android",
-      "url": BASE_URL,
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "KES"
-      },
-      "creator": {
-        "@type": "Organization",
-        "name": "AfrinexTech",
-        "url": "https://afrinextech.co.ke"
-      },
-      "description": description
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "name": "MakaziFlow",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, iOS, Android",
+          "url": BASE_URL,
+          "offers": {
+            "@type": "Offer",
+            "price": "1500",
+            "priceCurrency": "KES"
+          },
+          ...(aggregateRating && aggregateRating.reviewCount > 0
+            ? {
+                "aggregateRating": {
+                  "@type": "AggregateRating",
+                  "ratingValue": String(aggregateRating.ratingValue),
+                  "reviewCount": String(aggregateRating.reviewCount),
+                  "bestRating": "5",
+                  "worstRating": "1"
+                }
+              }
+            : {}),
+          "creator": {
+            "@id": "https://afrinextech.co.ke/#organization"
+          },
+          "description": description
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://afrinextech.co.ke/#organization",
+          "name": "MakaziFlow by AfrinexTech",
+          "url": BASE_URL,
+          "email": "info@afrinextech.co.ke",
+          "telephone": "+254790264792",
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Busia",
+            "addressRegion": "Busia County",
+            "addressCountry": "KE"
+          },
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "telephone": "+254790264792",
+            "email": "info@afrinextech.co.ke",
+            "contactType": "customer support",
+            "areaServed": "KE"
+          }
+        }
+      ]
     };
 
     setJsonLd(structuredData || defaultSchema);
-  }, [title, description, keywords, canonicalPath, ogImage, ogType, noIndex, structuredData]);
+  }, [title, description, keywords, canonicalPath, ogImage, ogType, noIndex, structuredData, aggregateRating]);
 
   return null;
 }

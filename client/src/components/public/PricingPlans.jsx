@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ArrowRight,
-  Sparkles,
   Zap,
   Building2,
   ShieldCheck,
@@ -257,7 +256,7 @@ export default function PricingPlans({ onSelectPlan }) {
               {/* Popular Badge */}
               {tier.popular && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-linear-to-r from-[#0069d4] to-[#007AFF] text-white text-[11px] font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full shadow-md flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                   Most Popular
                 </div>
               )}

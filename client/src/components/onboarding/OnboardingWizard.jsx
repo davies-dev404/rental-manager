@@ -9,7 +9,6 @@ import {
   Building2,
   Users,
   ShieldCheck,
-  Sparkles,
   ArrowRight,
   CheckCircle2,
   HelpCircle,
@@ -456,7 +455,7 @@ export default function OnboardingWizard({ onComplete }) {
                       </span>
                     ) : (
                       <span className="flex items-center justify-center gap-2">
-                        <Sparkles className="w-4 h-4" /> Start in Demo Mode (MakaziFlow)
+                        <PlayCircle className="w-4 h-4" /> Start in Demo Mode (MakaziFlow)
                       </span>
                     )}
                   </Button>

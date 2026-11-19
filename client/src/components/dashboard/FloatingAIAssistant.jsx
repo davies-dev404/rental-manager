@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
+import { MessageSquare, X, Send, Bot, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -240,7 +240,7 @@ export default function FloatingAIAssistant() {
 
             {isTyping && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground p-2">
-                <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
                 <span>Thinking...</span>
               </div>
             )}

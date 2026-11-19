@@ -282,10 +282,10 @@ export default function FeaturesPage() {
       <section className="bg-slate-50 border-t border-slate-200 py-16 text-center px-4">
         <div className="max-w-3xl mx-auto space-y-5">
           <h3 className="text-2xl sm:text-3xl font-bold text-slate-950">
-            Ready to experience effortless property management?
+            Ready to simplify your rental property management?
           </h3>
           <p className="text-base text-slate-600">
-            Join over 550+ landlords and property managers using MakaziFlow across Kenya and Africa.
+            Built in Busia for landlords and property managers across Kenya and East Africa.
           </p>
           <div className="pt-2">
             <button

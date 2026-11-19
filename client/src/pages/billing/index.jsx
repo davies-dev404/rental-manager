@@ -409,7 +409,7 @@ export default function BillingDashboardPage() {
             </div>
             <CardTitle className="text-lg mt-1">Need Higher Capacity?</CardTitle>
             <CardDescription className="text-slate-300 text-xs">
-              Upgrade seamlessly via M-Pesa STK Push, Paybill, Visa/Mastercard, Bank Transfer, or USSD through Pesaflow.
+              Upgrade directly via M-Pesa STK Push, Paybill, Visa/Mastercard, Bank Transfer, or USSD through Pesaflow.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

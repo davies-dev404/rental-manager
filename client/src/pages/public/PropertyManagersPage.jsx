@@ -10,7 +10,6 @@ import {
   Users,
   CheckCircle2,
   ArrowRight,
-  Sparkles,
   Building2,
   ShieldCheck
 } from "lucide-react";
@@ -41,7 +40,7 @@ export default function PropertyManagersPage() {
       <section className="bg-[#09152b] text-white py-16 sm:py-24 text-center px-4">
         <div className="max-w-4xl mx-auto space-y-4">
           <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/20 text-cyan-300 text-xs font-semibold uppercase tracking-wider border border-blue-400/20">
-            <Sparkles className="w-3.5 h-3.5" />
+            <Building2 className="w-3.5 h-3.5" />
             For Property Management Companies &amp; Agencies
           </span>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight">

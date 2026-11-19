@@ -11,8 +11,7 @@ import {
   ArrowRight,
   ShieldCheck,
   TrendingUp,
-  Clock,
-  Sparkles
+  Clock
 } from "lucide-react";
 
 export default function LandlordPage() {
@@ -41,7 +40,7 @@ export default function LandlordPage() {
       <section className="bg-[#09152b] text-white py-16 sm:py-24 text-center px-4">
         <div className="max-w-4xl mx-auto space-y-4">
           <span className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/20 text-cyan-300 text-xs font-semibold uppercase tracking-wider border border-blue-400/20">
-            <Sparkles className="w-3.5 h-3.5" />
+            <ShieldCheck className="w-3.5 h-3.5" />
             For Self-Managing Landlords
           </span>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight">

@@ -30,7 +30,6 @@ import {
   Layers,
   FolderTree,
   FileSpreadsheet,
-  Sparkles,
   Sliders,
   Database,
   Bell,
@@ -192,7 +191,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       hasSubmenu: true,
       subItems: [
         { label: "Statements", href: "/reports/statements", icon: FileSpreadsheet },
-        { label: "Insights (beta)", href: "/reports/insights", icon: Sparkles }
+        { label: "Insights", href: "/reports/insights", icon: TrendingUp }
       ]
     },
     {
@@ -690,7 +689,7 @@ export default function AppLayout({ children }) {
                 }}
                 className="bg-white text-teal-800 hover:bg-slate-100 font-bold px-3 py-1 rounded text-[11px] shadow-xs transition cursor-pointer flex items-center gap-1.5"
               >
-                <Sparkles className="w-3 h-3 text-teal-600" />
+                <Zap className="w-3 h-3 text-teal-600" />
                 <span>Switch to Live Mode (Clear Data)</span>
               </button>
             </div>

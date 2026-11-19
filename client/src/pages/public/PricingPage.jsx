@@ -4,7 +4,7 @@ import PublicNavbar from "@/components/public/PublicNavbar";
 import PublicFooter from "@/components/public/PublicFooter";
 import SEO from "@/components/SEO";
 import PricingPlans, { PRICING_TIERS } from "@/components/public/PricingPlans";
-import { Check, ShieldCheck, HelpCircle, PhoneCall, Sparkles } from "lucide-react";
+import { Check, ShieldCheck, HelpCircle, PhoneCall } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function PricingPage() {
@@ -48,7 +48,7 @@ export default function PricingPage() {
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
             <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-100 text-[#0069d4] text-xs font-bold uppercase tracking-wider mb-4">
-              <Sparkles className="w-3.5 h-3.5" />
+              <ShieldCheck className="w-3.5 h-3.5" />
               Simple, Transparent Kenyan Pricing
             </span>
             <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
