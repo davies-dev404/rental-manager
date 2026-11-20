@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -882,12 +882,12 @@ export default function Dashboard() {
                     </div>
 
                     <div>
-                      <button
-                        onClick={() => setLocation("/billing")}
-                        className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
+                      <Link
+                        href="/billing"
+                        className="inline-flex items-center justify-center px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
                       >
                         Manage Subscription
-                      </button>
+                      </Link>
                     </div>
                   </>
                 );

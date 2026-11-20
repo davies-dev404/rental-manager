@@ -70,7 +70,7 @@ const sendPaymentReceipt = async (paymentId) => {
         try {
             console.log(`Generating PDF receipt for ${tenant.email}...`);
             const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
-            const emailHtml = getReceiptEmailBody(payment, tenant.name, settings, propertyName);
+            const emailHtml = getReceiptEmailBody(payment, tenant.name, settings, propertyName, payment.unitId?.unitNumber || '');
 
             await sendEmail({
                 email: tenant.email,

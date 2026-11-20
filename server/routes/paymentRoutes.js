@@ -11,7 +11,7 @@ const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
-const { getReceiptEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
+const { getReceiptEmailBody, getEmailTemplate, renderDetailRow } = require('../utils/emailTemplates');
 
 const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
 const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
@@ -484,35 +484,39 @@ router.post('/send-invoice', protect, async (req, res) => {
         let emailError = null;
         let smsError = null;
 
-        // 1. Corporate Email Dispatch via Brevo with Official PDF Attachment
+        // 1. Email Dispatch with Official PDF Attachment (SHA Style)
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
                 const emailContent = `
-                    <div style="font-size: 15px; color: #334155; line-height: 1.6;">
-                        <p style="margin: 0 0 16px 0; font-size: 16px; font-weight: 700; color: #0f172a;">
-                            Dear ${recipientName},
-                        </p>
-                        <p style="margin: 0 0 16px 0;">
-                            An official invoice has been issued for <strong>Unit ${uNum}</strong> at <strong>${businessName}</strong>. Your PDF invoice is attached for your records.
-                        </p>
-                        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-                            <tr>
-                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #64748b;">Invoice Reference:</td>
-                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; text-align: right;">${invRef}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #64748b;">Due Date:</td>
-                                <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #0f172a; text-align: right;">${cleanDueDate}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 14px 16px; font-weight: 700; color: #0f172a; font-size: 16px;">Total Amount Due:</td>
-                                <td style="padding: 14px 16px; font-weight: 800; color: #0284c7; font-size: 18px; text-align: right;">KES ${totalAmt}</td>
-                            </tr>
-                        </table>
-                        ${notes ? `<p style="margin: 16px 0; font-size: 13px; color: #64748b; font-style: italic;">Note: ${notes}</p>` : ''}
-                        <p style="margin: 20px 0 0 0; font-size: 14px; color: #475569;">
-                            Please make payment on or before the due date. Thank you for your continued cooperation.
-                        </p>
+                    <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
+                        Dear ${recipientName},
+                    </p>
+                    <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
+                        An official rental invoice has been issued for <strong>${resolvedPropName ? `${resolvedPropName} — ` : ''}Unit ${uNum}</strong>. Please review the summary below.
+                    </p>
+
+                    <div style="background-color: #1c2331; border: 1px solid #2d3748; border-radius: 12px; padding: 24px 20px; text-align: center; margin-bottom: 24px;">
+                        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
+                            AMOUNT DUE
+                        </div>
+                        <div style="font-size: 32px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
+                            KES ${totalAmt}
+                        </div>
+                        <span style="display: inline-block; background-color: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
+                            Due: ${cleanDueDate}
+                        </span>
+                    </div>
+
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px;">
+                        INVOICE DETAILS
+                    </div>
+                    ${renderDetailRow('Invoice Reference', invRef)}
+                    ${renderDetailRow('Property / Unit', resolvedPropName ? `${resolvedPropName} — Unit ${uNum}` : `Unit ${uNum}`)}
+                    ${renderDetailRow('Organisation', businessName)}
+                    ${notes ? renderDetailRow('Notes', notes) : ''}
+
+                    <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
+                        A copy of your official PDF invoice is attached to this email. Please retain it for your records and remit payment by the due date.
                     </div>
                 `;
 
@@ -545,7 +549,12 @@ router.post('/send-invoice', protect, async (req, res) => {
                     fromName: businessName,
                     replyToEmail: settings?.orgEmail || undefined,
                     subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
-                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: resolvedPropName }),
+                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, {
+                        propertyName: resolvedPropName,
+                        heroTitle: 'Invoice Issued!',
+                        heroSubtitle: `Official invoice #${invRef} for Unit ${uNum}`,
+                        heroIcon: '!'
+                    }),
                     attachments: [
                         {
                             filename: `Invoice-${invRef.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,

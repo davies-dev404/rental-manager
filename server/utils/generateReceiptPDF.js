@@ -2,17 +2,20 @@ const PDFDocument = require('pdfkit');
 const { decodeLogoDataUrl } = require('./getUserBusinessProfile');
 
 /**
- * Generates a professional, corporate-branded PDF Receipt for a payment
- * @param {Object} payment - Populated payment object (tenantId, unitId populated)
- * @param {Object} settings - System settings for business info
- * @param {String} propertyName - Property name (optional, for branding)
- * @returns {Promise<Buffer>} - PDF Buffer
+ * Generates an official, SHA-style corporate PDF Receipt for a payment:
+ * - Top full-width green-to-blue gradient accent bar
+ * - Top-right organization logo & property/landlord branding
+ * - Centered bold "PAYMENT RECEIPT" title
+ * - 3-column metadata block with green left bars (TENANT DETAILS | RECEIPT DETAILS | PAYMENT DETAILS)
+ * - Full-width bold green PAID banner bar
+ * - PAYMENT SUMMARY section with royal-blue table header & itemized breakdown
+ * - Centered footer with business name & receipt reference
  */
 const generateReceiptPDF = (payment, settings, propertyName) => {
     return new Promise((resolve, reject) => {
         try {
             console.log("Generating PDF for payment:", payment._id);
-            const doc = new PDFDocument({ size: 'A4', margin: 50, autoFirstPage: true });
+            const doc = new PDFDocument({ size: 'A4', margin: 36, autoFirstPage: true });
             const buffers = [];
 
             doc.on('data', buffers.push.bind(buffers));
@@ -20,254 +23,231 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
                 const pdfData = Buffer.concat(buffers);
                 resolve(pdfData);
             });
-            
+
             doc.on('error', (err) => {
                 console.error("PDFKit Error:", err);
                 reject(err);
             });
 
-            // --- Brand Colors ---
-            const primaryColor = '#0f172a';
-            const secondaryColor = '#64748b';
-            const accentColor = '#10b981';
+            // --- Brand Palette (SHA Style) ---
+            const greenAccent = '#15803d';
+            const paidBannerGreen = '#038a0c';
+            const royalBlue = '#0b5394';
+            const labelBlue = '#1e40af';
+            const darkText = '#1e293b';
+            const mutedText = '#475569';
             const borderColor = '#e2e8f0';
-            const lightBg = '#f8fafc';
-            const successBg = '#f0fdf4';
 
-            // --- Business & Property Info (Show company/management if set, else Property Name; Landlord listed separately) ---
+            // --- Business & Property Info ---
             const companyName = (settings?.companyName || settings?.orgName || "").trim();
             const landlordName = (settings?.landlordName || "").trim();
             const businessName = companyName || propertyName || landlordName || "Property Management";
             const businessEmail = (settings?.orgEmail || "").trim();
             const businessPhone = (settings?.orgPhone || "").trim();
-            const businessAddress = (settings?.orgAddress || "").trim();
             const taxId = (settings?.taxId || "").trim();
             const currency = settings?.currency || "KES";
             const customLogoBuffer = decodeLogoDataUrl(settings?.orgLogo);
 
-            // --- Watermark ---
-            doc.save();
-            doc.rotate(-45, { origin: [300, 400] });
-            doc.fontSize(70).font('Helvetica-Bold').fillColor('#f1f5f9').opacity(0.35)
-               .text(businessName.toUpperCase(), 0, 400, { align: 'center', width: 600 });
-            doc.restore();
+            const receiptRef = payment.reference || (payment._id ? payment._id.toString().substring(0, 8).toUpperCase() : 'REF-000000');
+            const dt = new Date(payment.date || Date.now());
+            const pad = (n) => String(n).padStart(2, '0');
+            const formattedDateTime = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+            const billingPeriod = payment.monthCovered || `${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+            const formattedAmount = Number(payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const tenantName = payment.tenantId?.name || "Tenant";
+            const unitInfo = typeof payment.unitId === 'object'
+                ? (payment.unitId?.unitNumber || 'N/A')
+                : (payment.unitId || 'N/A');
 
             // =====================================================
-            // HEADER SECTION
+            // 1. TOP GRADIENT BAR (Green -> Teal -> Royal Blue)
             // =====================================================
-            let yPos = 50;
+            const grad = doc.linearGradient(24, 24, 571, 24);
+            grad.stop(0, '#4ade80')
+                .stop(0.35, '#0ea5e9')
+                .stop(0.75, '#1d4ed8')
+                .stop(1, '#1e3a8a');
+            doc.rect(24, 24, 547, 10).fill(grad);
 
-            // Company / Management Logo if uploaded, else crisp brand emblem
+            // =====================================================
+            // 2. TOP-RIGHT BRAND LOGO & PROPERTY / COMPANY HEADER
+            // =====================================================
+            let headerY = 42;
+            const rightBlockX = 290;
+            const rightBlockW = 269;
+
             if (customLogoBuffer) {
                 try {
-                    doc.image(customLogoBuffer, 50, yPos, { fit: [120, 55] });
-                } catch (e) {
-                    doc.fontSize(22).font('Helvetica-Bold').fillColor(accentColor).text('●', 50, yPos + 5);
-                    doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 68, yPos + 8, { width: 200 });
+                    doc.image(customLogoBuffer, 505, headerY, { fit: [54, 34] });
+                    doc.fontSize(11).font('Helvetica-Bold').fillColor(royalBlue)
+                       .text(businessName, rightBlockX, headerY + 2, { align: 'right', width: 206 });
+                    headerY += 16;
+                    if (companyName && propertyName && propertyName.toLowerCase() !== companyName.toLowerCase()) {
+                        doc.fontSize(8).font('Helvetica').fillColor(mutedText)
+                           .text(`Property: ${propertyName}`, rightBlockX, headerY, { align: 'right', width: 206 });
+                        headerY += 11;
+                    }
+                } catch {
+                    doc.fontSize(12).font('Helvetica-Bold').fillColor(royalBlue)
+                       .text(businessName, rightBlockX, headerY, { align: 'right', width: rightBlockW });
+                    headerY += 16;
                 }
             } else {
-                doc.fontSize(22).font('Helvetica-Bold').fillColor(accentColor).text('●', 50, yPos + 5);
-                doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 68, yPos + 8, { width: 200 });
+                doc.fontSize(12).font('Helvetica-Bold').fillColor(royalBlue)
+                   .text(businessName, rightBlockX, headerY, { align: 'right', width: rightBlockW });
+                headerY += 16;
+                if (companyName && propertyName && propertyName.toLowerCase() !== companyName.toLowerCase()) {
+                    doc.fontSize(8).font('Helvetica-Bold').fillColor(mutedText)
+                       .text(`Property: ${propertyName}`, rightBlockX, headerY, { align: 'right', width: rightBlockW });
+                    headerY += 11;
+                }
             }
 
-            // Company / Property / Landlord Info (Right Aligned)
-            doc.fontSize(14).font('Helvetica-Bold').fillColor(primaryColor)
-               .text(businessName, 280, yPos, { align: 'right', width: 265 });
-            yPos += 19;
-            if (companyName && propertyName && propertyName.toLowerCase() !== companyName.toLowerCase()) {
-                doc.fontSize(9).font('Helvetica-Bold').fillColor(secondaryColor)
-                   .text(`Property: ${propertyName}`, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
-            }
             if (landlordName && landlordName.toLowerCase() !== businessName.toLowerCase()) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(`Landlord: ${landlordName}`, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
+                doc.fontSize(8).font('Helvetica').fillColor(mutedText)
+                   .text(`Landlord: ${landlordName}`, rightBlockX, headerY, { align: 'right', width: customLogoBuffer ? 206 : rightBlockW });
+                headerY += 11;
             }
-            if (businessEmail) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(businessEmail, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
-            }
-            if (businessPhone) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(businessPhone, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
-            }
-            if (businessAddress) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(businessAddress, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
-            }
-            if (taxId) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(`Tax ID: ${taxId}`, 280, yPos, { align: 'right', width: 265 });
-                yPos += 13;
+            if (businessPhone || businessEmail) {
+                const contactLine = [businessPhone, businessEmail].filter(Boolean).join(' | ');
+                doc.fontSize(7.5).font('Helvetica').fillColor('#64748b')
+                   .text(contactLine, rightBlockX, headerY, { align: 'right', width: customLogoBuffer ? 206 : rightBlockW });
+                headerY += 11;
             }
 
             // =====================================================
-            // ACCENT STRIPE
+            // 3. CENTERED "PAYMENT RECEIPT" TITLE
             // =====================================================
-            yPos = Math.max(135, yPos + 10);
-            doc.rect(50, yPos, 495, 4).fill(accentColor);
-            yPos += 15;
+            let yPos = Math.max(96, headerY + 12);
+            doc.fontSize(14).font('Helvetica-Bold').fillColor(darkText)
+               .text('PAYMENT RECEIPT', 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
+            yPos += 34;
 
             // =====================================================
-            // RECEIPT TITLE & RECEIPT NUMBER
+            // 4. THREE-COLUMN METADATA GRID (with Green Left Bars)
             // =====================================================
-            doc.fontSize(22).font('Helvetica-Bold').fillColor(primaryColor)
-               .text('PAYMENT RECEIPT', 50, yPos, { characterSpacing: 1.5 });
-            
-            const receiptNo = payment._id ? `#${payment._id.toString().substring(0, 8).toUpperCase()}` : '#--------';
-            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor)
-               .text(`Receipt No: ${receiptNo}`, 350, yPos + 5, { align: 'right', width: 195 });
-            
-            const receiptDate = new Date(payment.date || Date.now()).toLocaleDateString('en-US', {
-                year: 'numeric', month: 'long', day: 'numeric'
-            });
-            doc.fontSize(10).font('Helvetica').fillColor(secondaryColor)
-               .text(`Date: ${receiptDate}`, 350, yPos + 20, { align: 'right', width: 195 });
+            const drawColHeader = (x, y, titleText) => {
+                doc.rect(x, y, 2.5, 11).fill(greenAccent);
+                doc.fontSize(8.5).font('Helvetica-Bold').fillColor(greenAccent)
+                   .text(titleText, x + 7, y + 1);
+            };
 
-            yPos += 50;
+            const drawColField = (x, y, colWidth, label, value) => {
+                doc.fontSize(8).font('Helvetica-Bold').fillColor(labelBlue)
+                   .text(label, x, y, { width: colWidth });
+                const valStr = String(value || 'N/A');
+                const valY = y + 10;
+                doc.fontSize(8.5).font('Helvetica').fillColor(darkText)
+                   .text(valStr, x, valY, { width: colWidth });
+                const valHeight = doc.heightOfString(valStr, { width: colWidth });
+                return valY + Math.max(12, valHeight) + 6;
+            };
 
-            // Thin divider
-            doc.strokeColor(borderColor).lineWidth(1).moveTo(50, yPos).lineTo(545, yPos).stroke();
-            yPos += 20;
+            const col1X = 36;
+            const col2X = 216;
+            const col3X = 396;
+            const colW = 164;
 
-            // =====================================================
-            // TWO-COLUMN INFO GRID
-            // =====================================================
-            const col1X = 50;
-            const col2X = 320;
-
-            // ── Left Column: BILLED TO ──
-            doc.fontSize(9).font('Helvetica-Bold').fillColor(accentColor).text('BILLED TO', col1X, yPos);
-            let leftY = yPos + 16;
-            doc.fontSize(13).font('Helvetica-Bold').fillColor(primaryColor)
-               .text(payment.tenantId?.name || "Unknown Tenant", col1X, leftY);
-            leftY += 18;
+            // Col 1: TENANT DETAILS
+            drawColHeader(col1X, yPos, 'TENANT DETAILS');
+            let c1Y = yPos + 18;
+            c1Y = drawColField(col1X, c1Y, colW, 'NAME:', tenantName.toUpperCase());
+            c1Y = drawColField(col1X, c1Y, colW, 'PROPERTY / UNIT:', propertyName ? `${propertyName} — Unit ${unitInfo}` : `Unit ${unitInfo}`);
             if (payment.tenantId?.email) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(payment.tenantId.email, col1X, leftY);
-                leftY += 13;
+                c1Y = drawColField(col1X, c1Y, colW, 'EMAIL:', payment.tenantId.email);
             }
-            const unitInfo = typeof payment.unitId === 'object' 
-                ? (payment.unitId?.unitNumber || 'N/A') 
-                : (payment.unitId || 'N/A');
-            doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-               .text(`Unit: ${unitInfo}`, col1X, leftY);
-            leftY += 13;
-            if (propertyName) {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-                   .text(`Property: ${propertyName}`, col1X, leftY);
-                leftY += 13;
+            if (payment.tenantId?.phone) {
+                c1Y = drawColField(col1X, c1Y, colW, 'PHONE:', payment.tenantId.phone);
             }
 
-            // ── Right Column: PAYMENT DETAILS ──
-            doc.fontSize(9).font('Helvetica-Bold').fillColor(accentColor).text('PAYMENT DETAILS', col2X, yPos);
-            let rightY = yPos + 16;
+            // Col 2: RECEIPT DETAILS
+            drawColHeader(col2X, yPos, 'RECEIPT DETAILS');
+            let c2Y = yPos + 18;
+            c2Y = drawColField(col2X, c2Y, colW, 'Receipt Number:', receiptRef);
+            c2Y = drawColField(col2X, c2Y, colW, 'Period Covered:', billingPeriod);
+            c2Y = drawColField(col2X, c2Y, colW, 'Total Amount:', `${currency}. ${formattedAmount}`);
+            c2Y = drawColField(col2X, c2Y, colW, 'Date Generated:', formattedDateTime);
 
-            const drawDetailRow = (label, value, color = primaryColor) => {
-                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(label, col2X, rightY);
-                doc.fontSize(9).font('Helvetica-Bold').fillColor(color).text(value, col2X + 90, rightY);
-                rightY += 16;
-            };
-
-            drawDetailRow('Date:', receiptDate);
-            drawDetailRow('Time:', new Date(payment.date || Date.now()).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
-            drawDetailRow('Method:', payment.method ? payment.method.replace('_', ' ').toUpperCase() : 'CASH');
-            if (payment.reference) {
-                drawDetailRow('Reference:', payment.reference);
+            // Col 3: PAYMENT DETAILS
+            drawColHeader(col3X, yPos, 'PAYMENT DETAILS');
+            let c3Y = yPos + 18;
+            c3Y = drawColField(col3X, c3Y, colW, 'Organisation:', businessName);
+            c3Y = drawColField(col3X, c3Y, colW, 'Payment Mode:', String(payment.method || 'CASH').replace(/_/g, ' ').toUpperCase());
+            c3Y = drawColField(col3X, c3Y, colW, 'Payer:', tenantName);
+            c3Y = drawColField(col3X, c3Y, colW, 'Amount Paid:', `${currency} ${formattedAmount}`);
+            if (taxId) {
+                c3Y = drawColField(col3X, c3Y, colW, 'KRA / Tax PIN:', taxId);
             }
-            if (payment.monthCovered) {
-                drawDetailRow('Month:', payment.monthCovered);
-            }
-            const status = payment.status ? payment.status.toUpperCase() : 'UNKNOWN';
-            const statusColor = ['PAID', 'COMPLETED'].includes(status) ? accentColor : '#f59e0b';
-            drawDetailRow('Status:', status, statusColor);
 
             // =====================================================
-            // PAYMENT BREAKDOWN TABLE
+            // 5. FULL-WIDTH BOLD STATUS BANNER BAR (PAID / PENDING)
             // =====================================================
-            yPos = Math.max(leftY, rightY) + 30;
+            yPos = Math.max(c1Y, c2Y, c3Y) + 10;
+            const rawStatus = String(payment.status || 'PAID').toUpperCase();
+            const isPaid = ['PAID', 'COMPLETED', 'CONFIRMED'].includes(rawStatus);
+            const bannerText = isPaid ? 'PAID' : rawStatus;
+            const bannerColor = isPaid ? paidBannerGreen : (rawStatus === 'PARTIAL' ? '#d97706' : '#dc2626');
 
-            // Table header background
-            doc.rect(50, yPos, 495, 30).fill('#f1f5f9');
-            doc.fontSize(9).font('Helvetica-Bold').fillColor('#475569')
-               .text('DESCRIPTION', 70, yPos + 10)
-               .text('AMOUNT', 430, yPos + 10, { align: 'right', width: 80 });
-            yPos += 30;
+            doc.rect(36, yPos, 523, 32).fill(bannerColor);
+            doc.fontSize(12).font('Helvetica-Bold').fillColor('#ffffff')
+               .text(bannerText, 36, yPos + 10, { align: 'center', width: 523, characterSpacing: 1.5 });
+            yPos += 48;
 
-            // Table rows
-            const drawTableRow = (description, amount, isBold = false) => {
-                doc.strokeColor(borderColor).lineWidth(0.5)
-                   .moveTo(50, yPos).lineTo(545, yPos).stroke();
-                
-                doc.fontSize(10).font(isBold ? 'Helvetica-Bold' : 'Helvetica')
-                   .fillColor(isBold ? primaryColor : '#475569')
-                   .text(description, 70, yPos + 8);
-                doc.fontSize(10).font(isBold ? 'Helvetica-Bold' : 'Helvetica')
-                   .fillColor(isBold ? accentColor : primaryColor)
-                   .text(`${currency} ${Number(amount).toLocaleString()}`, 430, yPos + 8, { align: 'right', width: 80 });
-                yPos += 28;
-            };
+            // =====================================================
+            // 6. PAYMENT SUMMARY SECTION & ROYAL-BLUE TABLE
+            // =====================================================
+            drawColHeader(36, yPos, 'PAYMENT SUMMARY');
+            yPos += 18;
 
+            // Royal-Blue Header Bar
+            doc.rect(36, yPos, 523, 24).fill(royalBlue);
+            doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff')
+               .text('BILLING PERIOD', 46, yPos + 8, { width: 95 })
+               .text('DESCRIPTION', 148, yPos + 8, { width: 170 })
+               .text('TOTAL PAID', 325, yPos + 8, { width: 105, align: 'right' })
+               .text('DATE GENERATED', 440, yPos + 8, { width: 110, align: 'right' });
+            yPos += 24;
+
+            const rows = [];
             if (payment.rentAmount > 0) {
-                drawTableRow('Rent Payment', payment.rentAmount);
+                rows.push({ desc: `Rent Payment (Unit ${unitInfo})`, amt: payment.rentAmount });
             }
             if (payment.depositAmount > 0) {
-                drawTableRow('Security Deposit', payment.depositAmount);
+                rows.push({ desc: 'Security Deposit', amt: payment.depositAmount });
             }
-            // Individual utility breakdown
             if (payment.utilities && Array.isArray(payment.utilities) && payment.utilities.length > 0) {
                 payment.utilities.forEach(u => {
-                    if (u.amount > 0) {
-                        drawTableRow(`Utility - ${u.name || 'Other'}`, u.amount);
+                    if (Number(u.amount) > 0) {
+                        rows.push({ desc: `Utility - ${u.name || 'Other'}`, amt: u.amount });
                     }
                 });
             } else if (payment.utilityAmount > 0) {
-                drawTableRow('Utilities', payment.utilityAmount);
+                rows.push({ desc: 'Utility Charges', amt: payment.utilityAmount });
+            }
+            if (rows.length === 0) {
+                rows.push({ desc: `${payment.type || 'Rental Payment'} (Unit ${unitInfo})`, amt: payment.amount });
             }
 
-            // If only total amount available and no breakdown rows were drawn
-            if ((!payment.rentAmount || payment.rentAmount <= 0) && 
-                (!payment.depositAmount || payment.depositAmount <= 0) && 
-                (!payment.utilityAmount || payment.utilityAmount <= 0)) {
-                drawTableRow(payment.type || 'Payment', payment.amount);
-            }
+            rows.forEach((r) => {
+                const rowAmt = Number(r.amt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                doc.rect(36, yPos, 523, 24).fill('#ffffff');
+                doc.strokeColor(borderColor).lineWidth(0.5)
+                   .moveTo(36, yPos + 24).lineTo(559, yPos + 24).stroke();
 
-            // Total row
-            yPos += 5;
-            doc.rect(50, yPos, 495, 40).fill(successBg);
-            doc.rect(50, yPos, 495, 40).strokeColor(accentColor).lineWidth(1).stroke();
-            doc.fontSize(12).font('Helvetica-Bold').fillColor(primaryColor)
-               .text('TOTAL PAID', 70, yPos + 13);
-            const amount = typeof payment.amount === 'number' ? payment.amount.toLocaleString() : '0';
-            doc.fontSize(18).font('Helvetica-Bold').fillColor(accentColor)
-               .text(`${currency} ${amount}`, 380, yPos + 10, { align: 'right', width: 130 });
+                doc.fontSize(8.5).font('Helvetica').fillColor(darkText)
+                   .text(billingPeriod, 46, yPos + 8, { width: 95 })
+                   .text(r.desc, 148, yPos + 8, { width: 170 })
+                   .text(`${currency} ${rowAmt}`, 325, yPos + 8, { width: 105, align: 'right' })
+                   .text(formattedDateTime, 440, yPos + 8, { width: 110, align: 'right' });
+                yPos += 24;
+            });
 
             // =====================================================
-            // AMOUNT IN WORDS (optional nice touch)
+            // 7. CLEAN CENTERED FOOTER
             // =====================================================
-            yPos += 55;
-            doc.fontSize(8).font('Helvetica').fillColor(secondaryColor)
-               .text(`Amount: ${currency} ${amount}`, 50, yPos);
-
-            // =====================================================
-            // FOOTER
-            // =====================================================
-            const footerY = 720;
-            
-            // Footer divider
-            doc.strokeColor(borderColor).lineWidth(1)
-               .moveTo(50, footerY - 15).lineTo(545, footerY - 15).stroke();
-
-            doc.fontSize(10).font('Helvetica-Bold').fillColor(primaryColor)
-               .text(`Thank you for choosing ${businessName}!`, 50, footerY, { align: 'center', width: 495 });
-            doc.fontSize(8).font('Helvetica').fillColor(secondaryColor)
-               .text('This is a computer-generated receipt. No signature is required.', 50, footerY + 16, { align: 'center', width: 495 });
-            doc.fontSize(7).font('Helvetica').fillColor('#cbd5e1')
-               .text(`Generated on ${new Date().toLocaleString()} | ${businessName}`, 50, footerY + 32, { align: 'center', width: 495 });
+            const footerY = Math.max(yPos + 34, 480);
+            doc.fontSize(8).font('Helvetica').fillColor(mutedText)
+               .text(`Thank you for your business | ${businessName} | Ref # ${receiptRef}`, 36, footerY, { align: 'center', width: 523 });
 
             doc.end();
         } catch (error) {

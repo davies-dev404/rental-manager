@@ -1,6 +1,7 @@
 /**
  * Corporate Email Templates for MakaziFlow
- * Professional, brandable, mobile-responsive HTML templates for receipts and rent reminders.
+ * Modern SHA-inspired card layout: royal-blue hero banner, highlighted amount card,
+ * rounded detail rows, green confirmation box, and mobile-responsive dark-slate styling.
  */
 
 const BUSINESS_CONFIG = require('../config/businessConfig');
@@ -11,33 +12,36 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
     const propName = (options.propertyName || "").trim();
     const orgName = companyName || propName || landlordName || "Property Management";
     const orgLogo = (settings?.orgLogo || "").trim();
-    const orgEmail = settings?.orgEmail || "";
-    const orgPhone = settings?.orgPhone || "";
+    const orgEmail = (settings?.orgEmail || "").trim();
+    const orgPhone = (settings?.orgPhone || "").trim();
 
     const subtitleParts = [];
     if (companyName && propName && propName.toLowerCase() !== companyName.toLowerCase()) {
-      subtitleParts.push(`Property: ${propName}`);
+      subtitleParts.push(propName);
     }
     if (landlordName && landlordName.toLowerCase() !== orgName.toLowerCase()) {
       subtitleParts.push(`Landlord: ${landlordName}`);
     }
-    const subtitle = options.subtitle || (subtitleParts.length > 0 ? subtitleParts.join(" • ") : "Official Property Notice");
-    const primaryColor = "#0f172a"; // Deep slate / obsidian
+    const defaultSubtitle = subtitleParts.length > 0 ? subtitleParts.join(" • ") : "Official Property Notice";
+
+    const heroTitle = options.heroTitle || title || "Official Notice";
+    const heroSubtitle = options.heroSubtitle || defaultSubtitle;
+    const heroIcon = options.heroIcon || "✓";
 
     const logoHtml = orgLogo && orgLogo.startsWith("data:image/")
-      ? `<img src="${orgLogo}" alt="${orgName}" style="max-height: 44px; max-width: 140px; display: block; margin-bottom: 10px; border-radius: 6px; background: #ffffff; padding: 4px;" />`
+      ? `<img src="${orgLogo}" alt="${orgName}" style="max-height: 36px; max-width: 110px; border-radius: 6px; background: #ffffff; padding: 3px; vertical-align: middle; margin-right: 10px;" />`
       : "";
 
-    const contactParts = [];
+    const supportLinks = [];
     if (orgEmail) {
-      contactParts.push(`Inquiries: <a href="mailto:${orgEmail}" style="color: #0284c7; text-decoration: none;">${orgEmail}</a>`);
+      supportLinks.push(`<a href="mailto:${orgEmail}" style="color: #60a5fa; text-decoration: none; font-weight: 600;">${orgEmail}</a>`);
     }
     if (orgPhone) {
-      contactParts.push(`Tel: <a href="tel:${orgPhone}" style="color: #0284c7; text-decoration: none;">${orgPhone}</a>`);
+      supportLinks.push(`<a href="tel:${orgPhone}" style="color: #60a5fa; text-decoration: none; font-weight: 600;">${orgPhone}</a>`);
     }
-    const contactHtml = contactParts.length > 0
-      ? `<p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">${contactParts.join(' &nbsp;|&nbsp; ')}</p>`
-      : '';
+    const supportHtml = supportLinks.length > 0
+      ? `<p style="margin: 22px 0 4px 0; color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">Questions? Reach us at ${supportLinks.join(' &nbsp;|&nbsp; ')}.<br/>We're happy to help.</p>`
+      : `<p style="margin: 22px 0 4px 0; color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">We're happy to help with any questions regarding your tenancy.</p>`;
 
     return `
 <!DOCTYPE html>
@@ -48,52 +52,50 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>${title}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f1f5f9; padding: 30px 10px;">
+<body style="margin: 0; padding: 0; background-color: #0b1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0b1120; padding: 24px 10px;">
         <tr>
             <td align="center">
                 <!-- Main Container -->
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04); border: 1px solid #e2e8f0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #131823; border-radius: 16px; overflow: hidden; border: 1px solid #263042; box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5);">
                     
-                    <!-- Header -->
+                    <!-- Royal Blue Gradient Hero Banner -->
                     <tr>
-                        <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px 40px; text-align: left;">
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                                <tr>
-                                    <td>
-                                        ${logoHtml}
-                                        <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; margin: 0;">
-                                            ${orgName}
-                                        </div>
-                                        <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-top: 4px;">
-                                            ${subtitle}
-                                        </div>
-                                    </td>
-                                    <td align="right" style="vertical-align: middle;">
-                                        <span style="display: inline-block; background-color: rgba(255,255,255,0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 6px 14px; border-radius: 9999px;">
-                                            Official Notice
-                                        </span>
-                                    </td>
-                                </tr>
-                            </table>
+                        <td style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #1e40af 100%); padding: 26px 32px 32px 32px; text-align: center;">
+                            <!-- Top Brand Row -->
+                            <div style="margin-bottom: 20px; text-align: center;">
+                                ${logoHtml}<span style="font-size: 13px; font-weight: 700; color: #e0e7ff; letter-spacing: 0.4px; vertical-align: middle;">${orgName}</span>
+                                ${subtitleParts.length > 0 ? `<div style="font-size: 11px; color: #bfdbfe; margin-top: 4px; font-weight: 500;">${defaultSubtitle}</div>` : ''}
+                            </div>
+                            <!-- Circular Emblem -->
+                            <div style="width: 52px; height: 52px; line-height: 52px; border-radius: 50%; background-color: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.25); color: #ffffff; font-size: 22px; font-weight: 800; margin: 0 auto 14px auto; text-align: center;">
+                                ${heroIcon}
+                            </div>
+                            <!-- Hero Headline & Subtitle -->
+                            <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">
+                                ${heroTitle}
+                            </h1>
+                            <p style="margin: 0; font-size: 13px; color: #dbeafe; line-height: 1.4;">
+                                ${heroSubtitle}
+                            </p>
                         </td>
                     </tr>
 
                     <!-- Body Content -->
                     <tr>
-                        <td style="padding: 36px 40px; background-color: #ffffff;">
+                        <td style="padding: 30px 32px 24px 32px; background-color: #131823; color: #e2e8f0;">
                             ${content}
+                            ${supportHtml}
                         </td>
                     </tr>
 
-                    <!-- Footer -->
+                    <!-- Footer Strip -->
                     <tr>
-                        <td style="background-color: #f8fafc; padding: 28px 40px; border-top: 1px solid #e2e8f0; text-align: center;">
-                            <p style="margin: 0 0 6px 0; color: #475569; font-size: 13px; font-weight: 600;">
-                                ${orgName}
+                        <td style="background-color: #171d29; padding: 20px 32px; border-top: 1px solid #263042; text-align: center;">
+                            <p style="margin: 0 0 4px 0; color: #cbd5e1; font-size: 12.5px; font-weight: 700;">
+                                The ${orgName} Team
                             </p>
-                            ${contactHtml}
-                            <p style="margin: 0; color: #cbd5e1; font-size: 11px;">
+                            <p style="margin: 0; color: #64748b; font-size: 11px;">
                                 &copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.
                             </p>
                         </td>
@@ -106,6 +108,17 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
 </html>
     `;
 };
+
+const renderDetailRow = (label, value) => `
+    <div style="background-color: #171e2b; border: 1px solid #273244; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+            <tr>
+                <td style="color: #94a3b8; font-size: 12.5px; font-weight: 500; text-align: left;">${label}</td>
+                <td style="color: #f8fafc; font-size: 13px; font-weight: 700; text-align: right;">${value}</td>
+            </tr>
+        </table>
+    </div>
+`;
 
 /**
  * Corporate Rent Reminder Email Body
@@ -120,181 +133,129 @@ const getCorporateReminderEmailBody = ({
     propertyName,
     dueDate
 }) => {
-    const formattedDueDate = dueDate ? new Date(dueDate).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Immediate / Upon Receipt';
+    const formattedDueDate = dueDate ? new Date(dueDate).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Upon Receipt';
     const totalDue = calculation?.totalDue !== undefined ? calculation.totalDue : 0;
     const rentDue = calculation?.rentDue !== undefined ? calculation.rentDue : totalDue;
     const utilities = calculation?.unpaidUtilities || calculation?.breakdown?.utilities || [];
+    const companyName = (settings?.companyName || settings?.orgName || "").trim();
+    const landlordName = (settings?.landlordName || "").trim();
+    const orgName = companyName || propertyName || landlordName || 'Property Management';
+    const currency = settings?.currency || 'KES';
 
-    const utilityRows = utilities.map(u => `
-        <tr>
-            <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #475569; font-size: 14px;">${u.name}</td>
-            <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 600; text-align: right;">KES ${Number(u.amount).toLocaleString()}</td>
-        </tr>
-    `).join('');
+    const utilityRows = utilities.map(u =>
+        renderDetailRow(u.name || 'Utility', `${currency} ${Number(u.amount || 0).toLocaleString()}`)
+    ).join('');
 
     const content = `
-        <!-- Title Badge -->
-        <div style="margin-bottom: 24px;">
-            <span style="background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 4px 10px; border-radius: 6px;">
-                Payment Statement
-            </span>
-            <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 12px 0 6px 0; letter-spacing: -0.5px;">
-                ${reminderTitle || 'Rent & Utilities Payment Reminder'}
-            </h1>
-            <p style="color: #64748b; font-size: 14px; margin: 0;">
-                Notice issued for <strong>Unit ${unitNumber || 'Assigned Unit'}</strong>
-            </p>
-        </div>
-
-        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-            Dear <strong>${tenantName}</strong>,
+        <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
+            Dear ${tenantName},
         </p>
 
-        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
-            ${reminderDescription || `This is a friendly reminder that your balance for <strong>Unit ${unitNumber || ''}</strong> is scheduled for payment. Please review the itemized breakdown below.`}
+        <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
+            ${reminderDescription || `This is a friendly reminder regarding your outstanding balance for <strong>${propertyName ? `${propertyName} — ` : ''}Unit ${unitNumber || 'Assigned Unit'}</strong>. Please review the details below.`}
         </p>
 
-        <!-- Balance Card -->
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 12px; padding: 24px; color: #ffffff; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                <tr>
-                    <td>
-                        <span style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; font-weight: 600;">Total Balance Outstanding</span>
-                        <div style="font-size: 32px; font-weight: 800; color: #38bdf8; margin-top: 4px; letter-spacing: -1px;">
-                            KES ${Number(totalDue).toLocaleString()}
-                        </div>
-                    </td>
-                    <td align="right" style="vertical-align: middle;">
-                        <span style="display: inline-block; background-color: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;">
-                            Due: ${formattedDueDate}
-                        </span>
-                    </td>
-                </tr>
-            </table>
-        </div>
-
-        <!-- Breakdown Table -->
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 24px;">
-            <thead>
-                <tr style="background-color: #f8fafc;">
-                    <th style="padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0;">Item Description</th>
-                    <th style="padding: 12px 16px; text-align: right; font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0;">Amount Due</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rentDue > 0 ? `
-                <tr>
-                    <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #475569; font-size: 14px;">House Rent (Unit ${unitNumber || ''})</td>
-                    <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-size: 14px; font-weight: 600; text-align: right;">KES ${Number(rentDue).toLocaleString()}</td>
-                </tr>
-                ` : ''}
-                ${utilityRows}
-                <tr style="background-color: #f8fafc;">
-                    <td style="padding: 14px 16px; color: #0f172a; font-size: 15px; font-weight: 700;">Total Payable</td>
-                    <td style="padding: 14px 16px; color: #0f172a; font-size: 16px; font-weight: 800; text-align: right;">KES ${Number(totalDue).toLocaleString()}</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <!-- Payment Channel / Instructions Box -->
-        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 18px 20px; margin-bottom: 24px;">
-            <div style="font-size: 13px; font-weight: 700; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
-                Payment Instructions
+        <!-- Highlighted Hero Amount Card -->
+        <div style="background-color: #1c2331; border: 1px solid #2d3748; border-radius: 12px; padding: 24px 20px; text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
+                AMOUNT DUE
             </div>
-            <p style="margin: 0; font-size: 13.5px; color: #15803d; line-height: 1.5;">
-                Kindly settle via your designated property M-Pesa Paybill, Bank Account, or mobile payment channel using <strong>Unit ${unitNumber || ''}</strong> as your reference.
-            </p>
+            <div style="font-size: 32px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
+                ${currency} ${Number(totalDue).toLocaleString()}
+            </div>
+            <span style="display: inline-block; background-color: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
+                Due: ${formattedDueDate}
+            </span>
         </div>
 
-        <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0 0 8px 0; font-style: italic;">
-            Note: If you have already made this payment within the last 24 hours, thank you! Please disregard this reminder.
-        </p>
+        <!-- Payment Details Rows -->
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px;">
+            PAYMENT DETAILS
+        </div>
+        ${propertyName || unitNumber ? renderDetailRow('Property / Unit', `${propertyName || orgName}${unitNumber ? ` — Unit ${unitNumber}` : ''}`) : ''}
+        ${rentDue > 0 ? renderDetailRow(`House Rent (Unit ${unitNumber || 'Assigned'})`, `${currency} ${Number(rentDue).toLocaleString()}`) : ''}
+        ${utilityRows}
+        ${renderDetailRow('Organisation', orgName)}
+        ${landlordName && landlordName.toLowerCase() !== orgName.toLowerCase() ? renderDetailRow('Landlord', landlordName) : ''}
 
-        <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0; padding-top: 16px; border-top: 1px solid #f1f5f9;">
-            Warm regards,<br>
-            <strong>${settings?.orgName || propertyName || 'Property Management Team'}</strong>
-        </p>
+        <!-- Soft Green Instructions Box -->
+        <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
+            Kindly settle via your designated M-Pesa Paybill, Bank Account, or payment channel using <strong>Unit ${unitNumber || 'Assigned'}</strong> as your reference. If already paid, thank you and please disregard this notice.
+        </div>
     `;
 
-    return getEmailTemplate(reminderTitle || 'Payment Reminder', content, settings, { propertyName });
+    return getEmailTemplate(reminderTitle || 'Payment Reminder', content, settings, {
+        propertyName,
+        heroTitle: reminderTitle || 'Payment Reminder!',
+        heroSubtitle: `Statement notice for ${propertyName ? `${propertyName} — ` : ''}Unit ${unitNumber || 'Assigned Unit'}`,
+        heroIcon: '!'
+    });
 };
 
 /**
- * Corporate Payment Receipt Email Body
+ * Corporate Payment Receipt Email Body (SHA Style)
  */
-const getReceiptEmailBody = (payment, tenantName, settings, propertyName) => {
+const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNumber = '') => {
     const amount = Number(payment.amount || 0).toLocaleString();
     const date = new Date(payment.date || Date.now()).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
-    const time = new Date(payment.date || Date.now()).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-    const businessName = settings?.companyName || settings?.orgName || propertyName || settings?.landlordName || 'Property Management';
+    const companyName = (settings?.companyName || settings?.orgName || "").trim();
+    const landlordName = (settings?.landlordName || "").trim();
+    const businessName = companyName || propertyName || landlordName || 'Property Management';
     const reference = payment.reference || payment._id?.toString().substring(0, 8).toUpperCase();
+    const currency = settings?.currency || 'KES';
+    const resolvedUnit = unitNumber || (typeof payment.unitId === 'object' ? payment.unitId?.unitNumber : '') || '';
+    const propertyUnitText = propertyName
+        ? `${propertyName}${resolvedUnit ? ` (Unit ${resolvedUnit})` : ''}`
+        : (resolvedUnit ? `Unit ${resolvedUnit}` : businessName);
 
     const content = `
-        <!-- Title Badge -->
-        <div style="margin-bottom: 20px;">
-            <span style="background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; padding: 4px 10px; border-radius: 6px;">
-                Payment Confirmed
+        <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
+            Dear ${tenantName},
+        </p>
+        <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
+            Great news — we have successfully received and processed your payment. Thank you for keeping your rental account up to date.
+        </p>
+
+        <!-- Highlighted Hero Amount Card -->
+        <div style="background-color: #1c2331; border: 1px solid #2d3748; border-radius: 12px; padding: 24px 20px; text-align: center; margin-bottom: 24px;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
+                AMOUNT PAID
+            </div>
+            <div style="font-size: 34px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
+                ${currency} ${amount}
+            </div>
+            <span style="display: inline-block; background-color: rgba(37, 99, 235, 0.22); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
+                ✓ Payment Successful
             </span>
-            <h1 style="color: #0f172a; font-size: 22px; font-weight: 700; margin: 12px 0 4px 0; letter-spacing: -0.5px;">
-                Official Payment Receipt
-            </h1>
-            <p style="color: #64748b; font-size: 14px; margin: 0;">
-                Receipt Ref: <span style="font-family: monospace; font-weight: 700; color: #0f172a;">#${reference}</span>
-            </p>
         </div>
 
-        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;">
-            Dear <strong>${tenantName}</strong>,
-        </p>
-        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
-            We confirm receipt of your payment. A detailed, official PDF receipt with complete tax & breakdown records is attached to this email.
-        </p>
-
-        <!-- Summary Card -->
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 22px; margin-bottom: 24px;">
-            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
-                <tr>
-                    <td style="padding-bottom: 12px; color: #64748b; font-size: 13px; text-transform: uppercase; font-weight: 600;">Amount Received</td>
-                    <td style="padding-bottom: 12px; color: #0f172a; font-size: 22px; font-weight: 800; text-align: right; color: #059669;">
-                        KES ${amount}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding-bottom: 8px; color: #64748b; font-size: 13px;">Payment Method</td>
-                    <td style="padding-bottom: 8px; color: #0f172a; font-size: 13px; font-weight: 600; text-align: right; text-transform: uppercase;">
-                        ${payment.method || 'M-Pesa'}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding-bottom: 8px; color: #64748b; font-size: 13px;">Date & Time</td>
-                    <td style="padding-bottom: 8px; color: #0f172a; font-size: 13px; font-weight: 600; text-align: right;">
-                        ${date} at ${time}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="color: #64748b; font-size: 13px;">Transaction / Receipt Reference</td>
-                    <td style="color: #0f172a; font-size: 13px; text-align: right; font-family: monospace; font-weight: 700;">
-                        ${reference}
-                    </td>
-                </tr>
-            </table>
+        <!-- Payment Details Rows -->
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px;">
+            PAYMENT DETAILS
         </div>
+        ${renderDetailRow('Receipt / Reference Number', reference)}
+        ${renderDetailRow('Property / Unit', propertyUnitText)}
+        ${renderDetailRow('Organisation', businessName)}
+        ${landlordName && landlordName.toLowerCase() !== businessName.toLowerCase() ? renderDetailRow('Landlord', landlordName) : ''}
+        ${renderDetailRow('Payment Mode & Date', `${String(payment.method || 'M-Pesa').toUpperCase()} &bull; ${date}`)}
 
-        <p style="color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0;">
-            Thank you for your prompt payment and continued partnership.
-        </p>
-
-        <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 0; padding-top: 16px; border-top: 1px solid #f1f5f9;">
-            Best regards,<br>
-            <strong>${businessName}</strong>
-        </p>
+        <!-- Soft Green Attached Receipt Callout Box -->
+        <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
+            A copy of your official payment receipt is attached to this email. Please retain it for your records or for any future reference.
+        </div>
     `;
 
-    return getEmailTemplate('Payment Receipt', content, settings, { propertyName: businessName });
+    return getEmailTemplate('Payment Confirmed!', content, settings, {
+        propertyName,
+        heroTitle: 'Payment Confirmed!',
+        heroSubtitle: 'Your payment has been successfully received',
+        heroIcon: '✓'
+    });
 };
 
 module.exports = {
     getEmailTemplate,
     getReceiptEmailBody,
-    getCorporateReminderEmailBody
+    getCorporateReminderEmailBody,
+    renderDetailRow
 };

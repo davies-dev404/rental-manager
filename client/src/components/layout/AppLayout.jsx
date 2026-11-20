@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -493,6 +493,13 @@ export default function AppLayout({ children }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const searchString = useSearch();
+  const mainRef = useRef(null);
+
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }, [location]);
 
   // Determine page title and icon for top bar
   const getHeaderInfo = () => {
@@ -685,7 +692,7 @@ export default function AppLayout({ children }) {
         )}
 
         {/* Scrollable Page Body */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#f4f6fa] dark:bg-slate-950 flex flex-col justify-between">
+        <main ref={mainRef} className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-[#f4f6fa] dark:bg-slate-950 flex flex-col justify-between">
           <div className="flex-1">
             {children}
           </div>
