@@ -7,6 +7,7 @@ const Unit = require('../models/Unit');
 const Property = require('../models/Property');
 const { protect } = require('../middleware/authMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
+const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
@@ -209,13 +210,18 @@ router.post('/:id/email', protect, async (req, res) => {
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
         try {
-            await sendReceiptEmail(req.params.id);
-            res.json({ message: 'Receipt email sent successfully' });
+            const result = await sendReceiptEmail(req.params.id);
+            if (!result || !result.emailSent) {
+                return res.status(422).json({
+                    message: result?.reason || 'Receipt email could not be sent via Brevo.',
+                    emailSent: false
+                });
+            }
+            res.json({ message: 'Receipt email sent successfully via Brevo', emailSent: true });
         } catch (emailError) {
              console.error("Inner Email/PDF Error:", emailError);
-             // Check if it's a timeout
              if (emailError.code === 'ETIMEDOUT') {
-                 return res.status(422).json({ message: 'Email connection timed out. Check SMTP settings.', error: emailError.message });
+                 return res.status(422).json({ message: 'Email connection timed out. Check Brevo settings.', error: emailError.message });
              }
              res.status(422).json({ message: `Failed to send email: ${emailError.message}`, error: emailError.message });
         }
@@ -232,7 +238,7 @@ router.post('/:id/email', protect, async (req, res) => {
 router.get('/:id/pdf', protect, async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
-            .populate('tenantId', 'name email')
+            .populate('tenantId', 'name email phone')
             .populate('unitId', 'unitNumber propertyId');
 
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
@@ -242,17 +248,107 @@ router.get('/:id/pdf', protect, async (req, res) => {
         const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
 
         const businessName = propertyName || settings?.orgName || 'MakaziFlow';
-        const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${payment._id}.pdf`;
+        const ref = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
+        const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${ref}.pdf`;
+        const disposition = req.query.download === '1' ? 'attachment' : 'inline';
 
         res.set({
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename="${filename}"`,
+            'Content-Disposition': `${disposition}; filename="${filename}"`,
             'Content-Length': pdfBuffer.length
         });
         res.send(pdfBuffer);
     } catch (error) {
         console.error("PDF Generation Error:", error);
         res.status(500).json({ message: 'Failed to generate PDF' });
+    }
+});
+
+// @desc    Generate & Download Rental Invoice PDF
+// @route   POST /api/payments/invoice-pdf
+// @access  Private
+router.post('/invoice-pdf', protect, async (req, res) => {
+    try {
+        const {
+            invoiceNumber,
+            invoiceId,
+            tenantId,
+            tenantName,
+            email,
+            phone,
+            propertyName,
+            unitNumber,
+            dueDate,
+            issuedAt,
+            amount,
+            items,
+            vatRate = 0,
+            notes
+        } = req.body || {};
+
+        let tenant = null;
+        if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+            tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId');
+        }
+        if (!tenant && tenantName) {
+            tenant = await Tenant.findOne({ name: new RegExp('^' + String(tenantName).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'), user: req.user.id }).populate('unitId');
+        }
+
+        const settings = await Settings.findOne() || {};
+        const invNum = invoiceNumber || invoiceId || `INV-${Date.now().toString().slice(-6)}`;
+        const resolvedName = tenant?.name || tenantName || 'Valued Tenant';
+        const resolvedEmail = tenant?.email || email || '';
+        const resolvedPhone = tenant?.phone || phone || '';
+        const uNum = unitNumber || tenant?.unitId?.unitNumber || '';
+        const pName = propertyName || settings?.orgName || 'MakaziFlow';
+
+        const numericAmt = Number(amount || 0);
+        const rate = Number(vatRate || 0);
+        const taxAmt = rate > 0 ? Math.round((numericAmt * rate) / (100 + rate)) : 0;
+        const subtotalAmt = numericAmt - taxAmt;
+
+        const normalizedItems = Array.isArray(items) && items.length > 0
+            ? items.map(it => ({
+                description: it.description || it.itemName || 'Monthly Rent & Utilities',
+                taxRate: Number(it.taxRate ?? rate),
+                taxAmount: Number(it.taxAmount ?? 0),
+                totalAmount: Number(it.totalAmount ?? it.amount ?? 0)
+            }))
+            : [{
+                description: `${pName}${uNum ? ` - Unit ${uNum}` : ''} (${notes || 'Rent & Utility Invoice'})`,
+                taxRate: rate,
+                taxAmount: taxAmt,
+                totalAmount: numericAmt
+            }];
+
+        const invoiceObj = {
+            invoiceCategory: 'rental',
+            invoiceNumber: invNum,
+            issuedAt: issuedAt || new Date(),
+            createdAt: issuedAt || new Date(),
+            dueDate: dueDate || new Date(),
+            customerName: resolvedName,
+            customerEmail: resolvedEmail,
+            customerPhone: resolvedPhone,
+            items: normalizedItems,
+            subtotal: subtotalAmt,
+            vatRate: rate,
+            taxAmount: taxAmt,
+            totalAmount: numericAmt
+        };
+
+        const pdfBuffer = await generateInvoicePDF(invoiceObj, settings);
+        const filename = `Invoice-${invNum.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': pdfBuffer.length
+        });
+        res.send(pdfBuffer);
+    } catch (error) {
+        console.error("Invoice PDF Error:", error);
+        res.status(500).json({ message: error.message || 'Failed to generate invoice PDF' });
     }
 });
 
@@ -284,8 +380,10 @@ router.post('/send-invoice', protect, async (req, res) => {
 
         let emailSent = false;
         let smsSent = false;
+        let emailError = null;
+        let smsError = null;
 
-        // 1. Corporate Email Dispatch
+        // 1. Corporate Email Dispatch via Brevo with Official PDF Attachment
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
                 const emailContent = `
@@ -294,7 +392,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                             Dear ${recipientName},
                         </p>
                         <p style="margin: 0 0 16px 0;">
-                            An official invoice has been issued for <strong>Unit ${uNum}</strong> at <strong>${businessName}</strong>.
+                            An official invoice has been issued for <strong>Unit ${uNum}</strong> at <strong>${businessName}</strong>. Your PDF invoice is attached for your records.
                         </p>
                         <table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                             <tr>
@@ -317,19 +415,51 @@ router.post('/send-invoice', protect, async (req, res) => {
                     </div>
                 `;
 
+                const numericAmount = Number(amount || 0);
+                const pdfBuffer = await generateInvoicePDF({
+                    invoiceCategory: 'rental',
+                    invoiceNumber: invRef,
+                    issuedAt: new Date(),
+                    createdAt: new Date(),
+                    dueDate: cleanDueDate,
+                    customerName: recipientName,
+                    customerEmail: recipientEmail,
+                    customerPhone: recipientPhone || '',
+                    items: [{
+                        description: `${businessName} - Unit ${uNum}${notes ? ` (${notes})` : ' (Rent & Utilities)'}`,
+                        taxRate: 0,
+                        taxAmount: 0,
+                        totalAmount: numericAmount
+                    }],
+                    subtotal: numericAmount,
+                    vatRate: 0,
+                    taxAmount: 0,
+                    totalAmount: numericAmount
+                }, settings);
+
                 await sendEmail({
                     email: recipientEmail,
                     subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
-                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: businessName })
+                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: businessName }),
+                    attachments: [
+                        {
+                            filename: `Invoice-${invRef.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
+                            content: pdfBuffer,
+                            contentType: 'application/pdf'
+                        }
+                    ]
                 });
                 emailSent = true;
-                console.log(`📧 Invoice #${invRef} emailed to ${recipientEmail}`);
+                console.log(`📧 Invoice #${invRef} emailed with PDF to ${recipientEmail}`);
             } catch (err) {
-                console.error(`❌ Failed to email invoice to ${recipientEmail}:`, err.message);
+                emailError = err.message || 'Brevo invoice email delivery failed';
+                console.error(`❌ Failed to email invoice to ${recipientEmail}:`, emailError);
             }
+        } else {
+            emailError = `Tenant "${recipientName}" has no valid email address`;
         }
 
-        // 2. Instant SMS Dispatch
+        // 2. Instant SMS Dispatch (best-effort if phone configured)
         if (recipientPhone) {
             try {
                 const smsMsg = `Invoice #${invRef}: KES ${totalAmt} due on ${cleanDueDate} for Unit ${uNum} (${businessName}). Please remit payment on time. Thank you.`;
@@ -337,7 +467,8 @@ router.post('/send-invoice', protect, async (req, res) => {
                 smsSent = true;
                 console.log(`📱 Instant SMS invoice dispatched to ${recipientPhone}`);
             } catch (smsErr) {
-                console.error(`❌ Failed to send SMS invoice to ${recipientPhone}:`, smsErr.message);
+                smsError = smsErr.message || 'SMS delivery failed';
+                console.error(`❌ Failed to send SMS invoice to ${recipientPhone}:`, smsError);
             }
         }
 
@@ -346,10 +477,23 @@ router.post('/send-invoice', protect, async (req, res) => {
             'Send Invoice',
             `Dispatched invoice #${invRef} of KES ${totalAmt} to ${recipientName} (Email: ${emailSent ? 'Yes' : 'No'}, SMS: ${smsSent ? 'Yes' : 'No'})`,
             'invoice',
-            'success'
+            emailSent || smsSent ? 'success' : 'error'
         );
 
-        res.json({ success: true, emailSent, smsSent, recipientName, invRef });
+        if (!emailSent && !smsSent) {
+            return res.status(422).json({
+                success: false,
+                emailSent: false,
+                smsSent: false,
+                emailError,
+                smsError,
+                recipientName,
+                invRef,
+                message: emailError || smsError || `Could not deliver invoice to ${recipientName}.`
+            });
+        }
+
+        res.json({ success: true, emailSent, smsSent, emailError, smsError, recipientName, invRef });
     } catch (error) {
         console.error("Invoice Dispatch Error:", error);
         res.status(500).json({ message: error.message || 'Failed to dispatch invoice' });

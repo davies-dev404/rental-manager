@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { downloadRowsAsCSV } from "@/lib/reports";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -697,12 +698,29 @@ export default function ExpensesPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    toast({
-                      title: "Expenses Exported",
-                      description: "Downloading expenses spreadsheet."
-                    })
-                  }
+                  onClick={() => {
+                    const rows = (filtered || expenses || []).map((ex) => ({
+                      Date: ex.date ? new Date(ex.date).toISOString().split("T")[0] : "",
+                      Category: ex.category || "",
+                      Property: ex.propertyName || ex.propertyId?.name || "",
+                      Description: ex.description || ex.title || "",
+                      Status: ex.status || "paid",
+                      Amount_KES: Number(ex.amount || 0)
+                    }));
+                    const res = downloadRowsAsCSV(rows, "expenses_report");
+                    if (res.success) {
+                      toast({
+                        title: "Expenses Exported",
+                        description: `Downloaded ${res.count} expense record(s) to CSV.`
+                      });
+                    } else {
+                      toast({
+                        variant: "destructive",
+                        title: "Nothing to Export",
+                        description: res.message
+                      });
+                    }
+                  }}
                   className="text-[11px] h-7 px-3 gap-1 border-slate-300 dark:border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3 h-3" />

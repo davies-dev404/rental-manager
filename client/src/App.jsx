@@ -14,7 +14,9 @@ import FaqsPage from "@/pages/public/FaqsPage";
 import LandlordPage from "@/pages/public/LandlordPage";
 import PropertyManagersPage from "@/pages/public/PropertyManagersPage";
 import AppLayout from "@/components/layout/AppLayout";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
+import { Loader2 } from "lucide-react";
 import { initMetaPixel, trackPageView } from "@/lib/metaPixel";
 import Dashboard from "@/pages/dashboard";
 import PropertiesPage from "@/pages/properties";
@@ -46,8 +48,14 @@ import SuperAdminDashboardPage from "@/pages/super-admin";
 function PrivateRoute({ component: Component, ...rest }) {
     const { user, isLoading } = useAuth();
 
-    if (isLoading)
-        return null;
+    if (isLoading) {
+      return (
+        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#f4f6fa] dark:bg-slate-950 text-slate-600 dark:text-slate-300 gap-3">
+          <Loader2 className="w-7 h-7 animate-spin text-[#2546e8]" />
+          <p className="text-sm font-medium">Loading workspace...</p>
+        </div>
+      );
+    }
 
     if (!user) {
         return <Redirect to="/login" />;
@@ -56,17 +64,23 @@ function PrivateRoute({ component: Component, ...rest }) {
     // Block full user interface until onboarding questions are answered
     if (user.hasCompletedOnboarding === false) {
       return (
-        <OnboardingWizard
-          onComplete={() => {
-            queryClient.invalidateQueries();
-          }}
-        />
+        <ErrorBoundary>
+          <OnboardingWizard
+            onComplete={() => {
+              queryClient.invalidateQueries();
+            }}
+          />
+        </ErrorBoundary>
       );
     }
     
-    return (<AppLayout>
-      <Component />
-    </AppLayout>);
+    return (
+      <AppLayout>
+        <ErrorBoundary>
+          <Component />
+        </ErrorBoundary>
+      </AppLayout>
+    );
 }
 function Router() {
     const [location] = useLocation();
@@ -172,13 +186,15 @@ function App() {
       initMetaPixel();
     }, []);
 
-    return (<QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AuthProvider>
-          <Router />
-          <Toaster />
-        </AuthProvider>
-      </TooltipProvider>
-    </QueryClientProvider>);
+    return (<ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AuthProvider>
+            <Router />
+            <Toaster />
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>);
 }
 export default App;

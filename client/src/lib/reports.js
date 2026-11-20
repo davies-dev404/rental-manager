@@ -1,6 +1,37 @@
 import { api } from "./api";
 
 /**
+ * Downloads an arbitrary array of flat/plain objects as a CSV file.
+ */
+export const downloadRowsAsCSV = (rows = [], filenamePrefix = 'export') => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return { success: false, message: "No records available to export." };
+    }
+    const headers = Object.keys(rows[0]);
+    const csvContent = [
+        headers.join(','),
+        ...rows.map(row => headers.map(h => {
+            const val = row[h];
+            return JSON.stringify(val === null || val === undefined ? '' : val);
+        }).join(','))
+    ].join('\n');
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = `${filenamePrefix}_${dateStr}.csv`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { success: true, count: rows.length, filename };
+};
+
+/**
  * Generates and downloads a CSV report for the given entity type.
  */
 export const generateCSVReport = async (type) => {
@@ -18,6 +49,9 @@ export const generateCSVReport = async (type) => {
                 break;
             case 'payments':
                 data = await api.getPayments();
+                break;
+            case 'expenses':
+                data = await api.getExpenses();
                 break;
             case 'activity-logs':
                 data = await api.getActivityLogs();

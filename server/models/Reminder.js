@@ -39,7 +39,7 @@ const reminderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'sent', 'overdue'],
+    enum: ['pending', 'sent', 'failed', 'overdue'],
     default: 'pending'
   },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

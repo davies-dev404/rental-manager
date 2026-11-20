@@ -161,25 +161,49 @@ router.post('/', protect, async (req, res) => {
 router.put('/:id', protect, async (req, res) => {
   try {
     const payload = { ...req.body };
+    delete payload._id;
+    delete payload.id;
+    delete payload.user;
 
-    if (payload.unitId === "" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
+    if (payload.unitId === "" || payload.unitId === "no_unit" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
       payload.unitId = null;
     } else if (payload.unitId && !mongoose.Types.ObjectId.isValid(payload.unitId)) {
       payload.unitId = null;
+    }
+
+    if (typeof payload.email === 'string') {
+      payload.email = payload.email.trim();
+    }
+    if (typeof payload.nationalId === 'string') {
+      payload.nationalId = payload.nationalId.trim();
+    }
+    if (payload.leaseStart === "" || payload.leaseStart === null) {
+      delete payload.leaseStart;
+    }
+    if (payload.rentAmount !== undefined && payload.rentAmount !== "") {
+      const parsedRent = Number(payload.rentAmount);
+      if (!Number.isNaN(parsedRent) && parsedRent >= 0) {
+        payload.rentAmount = parsedRent;
+      } else {
+        delete payload.rentAmount;
+      }
     }
 
     const originalTenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!originalTenant) return res.status(404).json({ message: 'Tenant not found' });
 
     // Handle unit swap/removal logic
-    if (payload.unitId !== undefined && payload.unitId !== (originalTenant.unitId?.toString() || null)) {
+    if (payload.unitId !== undefined && String(payload.unitId || '') !== String(originalTenant.unitId || '')) {
       // Vacate old unit if it existed
       if (originalTenant.unitId) {
         await Unit.findByIdAndUpdate(originalTenant.unitId, { status: 'vacant' });
       }
       // Occupy new unit if assigned
       if (payload.unitId) {
-        await Unit.findByIdAndUpdate(payload.unitId, { status: 'occupied' });
+        const assignedUnit = await Unit.findByIdAndUpdate(payload.unitId, { status: 'occupied' }, { returnDocument: 'after' });
+        if (assignedUnit && payload.rentAmount === undefined) {
+          payload.rentAmount = assignedUnit.rentAmount;
+        }
       }
     }
 
@@ -191,7 +215,11 @@ router.put('/:id', protect, async (req, res) => {
       }
     }
 
-    const tenant = await Tenant.findOneAndUpdate({ _id: req.params.id, user: req.user.id }, payload, { returnDocument: 'after' });
+    const tenant = await Tenant.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.id },
+      { $set: payload },
+      { returnDocument: 'after', runValidators: true }
+    ).populate('unitId');
     res.json(tenant);
   } catch (error) {
     res.status(400).json({ message: error.message || 'Failed to update tenant.' });

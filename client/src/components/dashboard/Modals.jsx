@@ -165,14 +165,38 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         queryClient.invalidateQueries({ queryKey: ["expenses"] });
         queryClient.invalidateQueries({ queryKey: ["stats"] });
       } else if (modalType === "send_reminders" || modalType === "remind_tenant") {
-        await api.addReminder({
+        const dispatchMethod = formData.reminderChannel || "email";
+        const reminderRes = await api.addReminder({
           tenantId: modalType === "remind_tenant" && initialData.id ? initialData.id : "all_debtors",
           type: "rent_due",
-          method: "sms",
+          method: dispatchMethod,
           customNote: formData.message,
           sendImmediately: true
         });
         queryClient.invalidateQueries({ queryKey: ["reminders"] });
+        queryClient.invalidateQueries({ queryKey: ["debtors"] });
+
+        const sentTotal = (reminderRes?.emailsSent || 0) + (reminderRes?.smsSent || 0) + (reminderRes?.emailSent ? 1 : 0);
+        if (reminderRes?.count === 0) {
+          toast({
+            title: "No Outstanding Balances",
+            description: reminderRes.message || "All tenants are fully paid."
+          });
+          onClose();
+          return;
+        }
+        if (sentTotal === 0 && reminderRes?.lastError) {
+          throw new Error(reminderRes.lastError);
+        }
+        toast({
+          title: "Reminders Dispatched",
+          description: reminderRes?.message || `Sent ${sentTotal} reminder(s) via ${dispatchMethod === "sms" ? "SMS" : "Brevo Email"}.`
+        });
+        if (customEvent) {
+          window.dispatchEvent(new CustomEvent(customEvent, { detail: customData }));
+        }
+        onClose();
+        return;
       }
 
       toast({
@@ -303,29 +327,35 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               </DialogTitle>
               <DialogDescription>
                 {modalType === "remind_tenant"
-                  ? `Dispatch automated rent reminder to Unit ${formData.unit}.`
-                  : "Send automated SMS reminders to all 13 tenants with outstanding arrears."}
+                  ? `Dispatch rent balance reminder to Unit ${formData.unit || "assigned unit"}.`
+                  : "Send personalized balance reminders via Brevo Email (or SMS) to tenants with outstanding balances."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 text-sm">
               <div className="space-y-1.5">
-                <Label>Destination Phone / Channel</Label>
-                <Input
-                  value={modalType === "remind_tenant" ? formData.phone : "All 13 Debtors (SMS Gateway)"}
-                  disabled={modalType !== "remind_tenant"}
-                  onChange={(e) => handleChange("phone", e.target.value)}
-                />
+                <Label>Delivery Channel</Label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={formData.reminderChannel || "email"}
+                  onChange={(e) => handleChange("reminderChannel", e.target.value)}
+                >
+                  <option value="email">Email via Brevo (Recommended)</option>
+                  <option value="sms">SMS Gateway</option>
+                </select>
               </div>
               <div className="space-y-1.5">
-                <Label>SMS Message Content</Label>
+                <Label>Message Content (Optional custom note)</Label>
                 <textarea
                   rows={4}
                   className="w-full rounded-md border border-input bg-background p-3 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  value={formData.message}
+                  placeholder="Leave blank to send itemized rent + utility breakdown automatically."
+                  value={formData.message || ""}
                   onChange={(e) => handleChange("message", e.target.value)}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Estimated SMS count: {modalType === "remind_tenant" ? "1 SMS" : "13 SMS credits"}
+                  {formData.reminderChannel === "sms"
+                    ? "SMS requires active SMS credits."
+                    : "Emails include itemized rent/utility balances and are sent through Brevo."}
                 </p>
               </div>
             </div>
@@ -338,10 +368,8 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 disabled={loading}
                 onClick={() =>
                   handleSubmit(
-                    "Reminders Sent",
-                    modalType === "remind_tenant"
-                      ? `Reminder dispatched to ${formData.tenant} (${formData.phone}).`
-                      : "Successfully queued 13 SMS reminders to all overdue tenants."
+                    "Reminders Dispatched",
+                    "Dispatching reminders..."
                   )
                 }
               >

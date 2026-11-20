@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { downloadRowsAsCSV } from "@/lib/reports";
 import { useToast } from "@/hooks/use-toast";
 import { usePreferences } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
@@ -799,13 +800,63 @@ export default function PaymentsPage() {
     }
   };
 
-  const handleSendReceipts = () => {
-    const count =
-      selectedPayments.length > 0 ? selectedPayments.length : filtered.length;
+  const [isSendingReceipts, setIsSendingReceipts] = useState(false);
+
+  const handleSendReceipts = async () => {
+    const targets =
+      selectedPayments.length > 0
+        ? allPayments.filter((p) => selectedPayments.includes(p._id))
+        : filtered;
+
+    if (targets.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Payments Selected",
+        description: "No payment records available to send receipts."
+      });
+      return;
+    }
+
+    setIsSendingReceipts(true);
     toast({
-      title: "Receipt(s) Sent",
-      description: `Payment receipts dispatched to ${count} tenant(s) via Email and SMS.`
+      title: "Sending Receipts...",
+      description: `Emailing ${targets.length} PDF receipt(s) via Brevo.`
     });
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let lastError = "";
+
+    for (const p of targets) {
+      if (!p._id || !/^[a-f\d]{24}$/i.test(String(p._id))) {
+        failedCount++;
+        lastError = "Unsaved/local payment record must be synced before emailing.";
+        continue;
+      }
+      try {
+        await api.emailReceipt(p._id);
+        sentCount++;
+      } catch (err) {
+        failedCount++;
+        lastError = err.message || "Email failed";
+      }
+    }
+
+    setIsSendingReceipts(false);
+    if (sentCount === 0) {
+      toast({
+        variant: "destructive",
+        title: "Receipt Email Failed",
+        description: lastError || "Could not send payment receipts via Brevo."
+      });
+    } else {
+      toast({
+        title: "Receipts Sent via Brevo",
+        description: failedCount > 0
+          ? `Emailed ${sentCount} PDF receipt(s) (${failedCount} failed: ${lastError}).`
+          : `Successfully emailed ${sentCount} PDF receipt(s) via Brevo.`
+      });
+    }
   };
 
   const handleDeleteSelected = () => {
@@ -1075,12 +1126,32 @@ export default function PaymentsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    toast({
-                      title: "Payments Downloaded",
-                      description: "Downloading payments CSV report."
-                    })
-                  }
+                  onClick={() => {
+                    const rows = filtered.map((p) => ({
+                      Receipt: p.reference || String(p._id || "").slice(-8).toUpperCase(),
+                      Date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
+                      Tenant: p.tenantId || "",
+                      Property: p.property || "",
+                      Unit: typeof p.unitId === "object" ? (p.unitId?.unitNumber || "") : (p.unitId || ""),
+                      Item: p.item || p.type || "Rent",
+                      Method: p.method || "",
+                      Status: p.status || "",
+                      Amount_KES: Number(p.amount || 0)
+                    }));
+                    const res = downloadRowsAsCSV(rows, "payments_report");
+                    if (res.success) {
+                      toast({
+                        title: "Payments Downloaded",
+                        description: `Downloaded ${res.count} payment record(s) to CSV.`
+                      });
+                    } else {
+                      toast({
+                        variant: "destructive",
+                        title: "Nothing to Export",
+                        description: res.message
+                      });
+                    }
+                  }}
                   className="text-[11px] h-7 px-3 gap-1 border-slate-300 dark:border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3 h-3" /> Download Payments
@@ -1194,15 +1265,25 @@ export default function PaymentsPage() {
                         </td>
                         <td className="py-3 px-3">
                           <button
-                            onClick={() =>
-                              toast({
-                                title: `Payment #${String(p._id).slice(-6)}`,
-                                description: `Tenant: ${p.tenantId} | Amount: KES ${Number(p.amount).toLocaleString()}`
-                              })
-                            }
-                            className="text-[11px] text-blue-600 hover:underline cursor-pointer"
+                            onClick={async () => {
+                              try {
+                                const ref = p.reference || String(p._id).slice(-6).toUpperCase();
+                                await api.downloadReceiptPdf(p._id, `Receipt-${ref}.pdf`);
+                                toast({
+                                  title: "Receipt Downloaded",
+                                  description: `Saved PDF receipt #${ref} for ${p.tenantId}.`
+                                });
+                              } catch (err) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "Download Failed",
+                                  description: err.message || "Could not generate receipt PDF."
+                                });
+                              }
+                            }}
+                            className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
                           >
-                            View
+                            <Download className="w-3 h-3" /> PDF
                           </button>
                         </td>
                       </tr>

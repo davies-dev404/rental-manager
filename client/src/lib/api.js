@@ -435,13 +435,12 @@ export const api = {
     return await response.json();
   },
   updateTenant: async (tenant) => {
-     const response = await smartFetch(`${API_URL}/tenants/${tenant._id || tenant.id}`, { // Handle mongo _id
+     const response = await smartFetch(`${API_URL}/tenants/${tenant._id || tenant.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(tenant)
     });
-    if (!response.ok) throw new Error("Failed to update tenant");
-    return await response.json();
+    return await parseApiResponse(response, "Failed to update tenant");
   },
   deleteTenant: async (id) => {
      const response = await smartFetch(`${API_URL}/tenants/${id}`, {
@@ -490,11 +489,53 @@ export const api = {
           method: 'POST',
           headers: getAuthHeaders(), credentials: 'include'
       });
+      return await parseApiResponse(response, "Failed to send receipt email");
+  },
+
+  downloadReceiptPdf: async (paymentId, filename) => {
+      const response = await smartFetch(`${API_URL}/payments/${paymentId}/pdf?download=1`, {
+          method: 'GET',
+          headers: getAuthHeaders(),
+          credentials: 'include'
+      });
       if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || "Failed to send email");
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to download receipt PDF");
       }
-      return await response.json();
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename || `Receipt-${paymentId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+  },
+
+  downloadInvoicePdf: async (invoiceData, filename) => {
+      const response = await smartFetch(`${API_URL}/payments/invoice-pdf`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(invoiceData)
+      });
+      if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || "Failed to generate invoice PDF");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeRef = String(invoiceData?.invoiceNumber || invoiceData?.invoiceId || 'Invoice').replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.download = filename || `Invoice-${safeRef}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
   },
 
   sendInvoice: async (invoiceData) => {
@@ -504,11 +545,7 @@ export const api = {
       credentials: 'include',
       body: JSON.stringify(invoiceData)
     });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || "Failed to dispatch invoice");
-    }
-    return await response.json();
+    return await parseApiResponse(response, "Failed to dispatch invoice");
   },
   
   initiateSTKPush: async (paymentData) => {

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { downloadRowsAsCSV } from "@/lib/reports";
 import { useToast } from "@/hooks/use-toast";
 import { usePreferences } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
@@ -891,21 +892,8 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
 
           <div className="flex items-center justify-center gap-3 pt-2">
             <Button
-              onClick={() => {
-                toast({
-                  title: "Invoices Dispatched",
-                  description: `Sent SMS & Email notifications for ${generatedCount} invoice(s).`,
-                });
-                onBack();
-              }}
-              className="bg-[#5850ec] hover:bg-[#4338ca] text-white text-xs h-9 px-5 font-semibold flex items-center gap-2 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" /> Dispatch via SMS & Email
-            </Button>
-            <Button
-              variant="outline"
               onClick={onBack}
-              className="text-xs h-9 px-5 border-slate-300 cursor-pointer"
+              className="bg-[#5850ec] hover:bg-[#4338ca] text-white text-xs h-9 px-5 font-semibold flex items-center gap-2 cursor-pointer"
             >
               View Invoices List
             </Button>
@@ -2129,10 +2117,12 @@ export default function InvoicesPage() {
     setIsSendingInvoices(true);
     toast({
       title: "Dispatching Invoices...",
-      description: `Delivering ${invoicesToSend.length} invoice(s) via Corporate Email and Instant SMS.`
+      description: `Sending ${invoicesToSend.length} invoice(s) with PDF via Brevo Email.`
     });
 
     let sentSuccess = 0;
+    let failedCount = 0;
+    let lastError = "";
     for (const inv of invoicesToSend) {
       try {
         const tenant = tenants.find(
@@ -2141,7 +2131,7 @@ export default function InvoicesPage() {
             (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
         );
 
-        await api.sendInvoice({
+        const res = await api.sendInvoice({
           tenantId: tenant?._id || tenant?.id || inv.rawTenantId,
           tenantName: tenant?.name || inv.tenantId,
           email: tenant?.email,
@@ -2150,20 +2140,37 @@ export default function InvoicesPage() {
           amount: inv.amount,
           dueDate: inv.date,
           propertyName: inv.property,
-          unitNumber: inv.unitId,
+          unitNumber: typeof inv.unitId === "object" ? inv.unitId?.unitNumber : inv.unitId,
           notes: inv.notes || inv.item
         });
-        sentSuccess++;
+        if (res?.emailSent || res?.smsSent) {
+          sentSuccess++;
+        } else {
+          failedCount++;
+          lastError = res?.emailError || res?.message || "No valid email or SMS channel";
+        }
       } catch (err) {
-        console.warn("Invoice dispatch notice:", err.message);
+        failedCount++;
+        lastError = err.message || "Dispatch failed";
+        console.warn("Invoice dispatch error:", err.message);
       }
     }
 
     setIsSendingInvoices(false);
-    toast({
-      title: "Invoices Dispatched 🎉",
-      description: `Successfully sent ${sentSuccess} of ${invoicesToSend.length} invoice notification(s) via Corporate Email and SMS.`
-    });
+    if (sentSuccess === 0) {
+      toast({
+        variant: "destructive",
+        title: "Invoice Delivery Failed",
+        description: lastError || "Could not send invoice emails via Brevo."
+      });
+    } else {
+      toast({
+        title: "Invoices Dispatched via Brevo",
+        description: failedCount > 0
+          ? `Emailed ${sentSuccess} invoice(s) with PDF (${failedCount} failed: ${lastError}).`
+          : `Successfully emailed ${sentSuccess} invoice(s) with PDF attachment via Brevo.`
+      });
+    }
   };
 
   const handleDeleteSelected = () => {
@@ -2544,12 +2551,31 @@ export default function InvoicesPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    toast({
-                      title: "Invoices Exported",
-                      description: "Downloading invoices report."
-                    })
-                  }
+                  onClick={() => {
+                    const rows = filtered.map((inv) => ({
+                      InvoiceRef: String(inv._id || "").slice(-8).toUpperCase(),
+                      Date: inv.date ? new Date(inv.date).toISOString().split("T")[0] : "",
+                      Tenant: inv.tenantId || "",
+                      Property: inv.property || "",
+                      Unit: typeof inv.unitId === "object" ? (inv.unitId?.unitNumber || "") : (inv.unitId || ""),
+                      Item: inv.item || inv.type || "Rent",
+                      Status: inv.status || "open",
+                      Amount_KES: Number(inv.amount || 0)
+                    }));
+                    const res = downloadRowsAsCSV(rows, "invoices_report");
+                    if (res.success) {
+                      toast({
+                        title: "Invoices Exported",
+                        description: `Downloaded ${res.count} invoice(s) to CSV.`
+                      });
+                    } else {
+                      toast({
+                        variant: "destructive",
+                        title: "Nothing to Export",
+                        description: res.message
+                      });
+                    }
+                  }}
                   className="text-[11px] h-7 px-3 gap-1 border-slate-300 dark:border-slate-700 cursor-pointer"
                 >
                   <Download className="w-3 h-3" />
@@ -2665,15 +2691,44 @@ export default function InvoicesPage() {
                         </td>
                         <td className="py-3 px-3">
                           <button
-                            onClick={() =>
-                              toast({
-                                title: `Invoice #${String(p._id).slice(-6)}`,
-                                description: `Tenant: ${p.tenantId} | Amount: KES ${Number(p.amount).toLocaleString()}`
-                              })
-                            }
-                            className="text-[11px] text-blue-600 hover:underline cursor-pointer"
+                            onClick={async () => {
+                              try {
+                                const tenant = tenants.find(
+                                  (t) =>
+                                    (t._id || t.id) === p.rawTenantId ||
+                                    (t.name && String(t.name).toLowerCase() === String(p.tenantId || "").toLowerCase())
+                                );
+                                const invRef = `INV-${String(p._id || Date.now()).slice(-6).toUpperCase()}`;
+                                await api.downloadInvoicePdf(
+                                  {
+                                    invoiceNumber: invRef,
+                                    tenantId: tenant?._id || tenant?.id || p.rawTenantId,
+                                    tenantName: tenant?.name || p.tenantId || "Valued Tenant",
+                                    email: tenant?.email || "",
+                                    phone: tenant?.phone || "",
+                                    propertyName: p.property || "MakaziFlow",
+                                    unitNumber: typeof p.unitId === "object" ? (p.unitId?.unitNumber || "") : (p.unitId || ""),
+                                    dueDate: p.date || new Date().toISOString().split("T")[0],
+                                    amount: Number(p.amount || 0),
+                                    notes: p.notes || p.item || "Rent & Utility Invoice"
+                                  },
+                                  `Invoice-${invRef}.pdf`
+                                );
+                                toast({
+                                  title: "Invoice Downloaded",
+                                  description: `Saved ${invRef}.pdf for ${tenant?.name || p.tenantId}.`
+                                });
+                              } catch (err) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "Download Failed",
+                                  description: err.message || "Could not generate invoice PDF."
+                                });
+                              }
+                            }}
+                            className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
                           >
-                            View
+                            <Download className="w-3 h-3" /> PDF
                           </button>
                         </td>
                       </tr>

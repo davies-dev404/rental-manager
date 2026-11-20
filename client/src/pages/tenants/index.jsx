@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Protect, PERMISSIONS } from "@/lib/access-control";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { generateCSVReport } from "@/lib/reports";
+import { generateCSVReport, exportToPDF } from "@/lib/reports";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Filter, Phone, Mail, FileText, MoreHorizontal, Loader2, Save, Download, Send, ChevronDown, UserX, MessageSquare, FileSpreadsheet, DollarSign, ArrowLeftRight, ArrowLeft, ArrowUpDown, Check, X, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -24,38 +24,77 @@ import { Copy, Printer } from "lucide-react";
 
 import { AddTenantDialog } from "@/components/dialogs/AddTenantDialog";
 
-// Define schema for Edit Tenant as well
+// Helpers for safe tenant date & ID normalization
+const safeDateInput = (val) => {
+    if (!val) return "";
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+};
+
+const normalizeIdType = (val) => {
+    if (["national_id", "passport", "driving_license"].includes(val)) return val;
+    return "national_id";
+};
+
+// Define schema for Edit Tenant
 const tenantSchema = z.object({
-    name: z.string().min(2, "Name is required"),
-    email: z.string().email(),
-    phone: z.string().min(10, "Phone is required"),
-    idType: z.enum(["national_id", "passport", "driving_license"]),
-    nationalId: z.string().min(5, "ID is required"),
-    unitId: z.string(), // Can be optional or string in edit
-    leaseStart: z.string(),
+    name: z.string().trim().min(2, "Name is required"),
+    email: z.string().trim().email("Enter a valid email address").or(z.literal("")).optional(),
+    phone: z.string().trim().min(7, "Phone number is required"),
+    idType: z.enum(["national_id", "passport", "driving_license"]).default("national_id"),
+    nationalId: z.string().trim().optional().default(""),
+    unitId: z.string().optional().default("no_unit"),
+    rentAmount: z.coerce.number().min(0).optional(),
+    leaseStart: z.string().optional().default(""),
 });
 
 // --- View Lease Dialog ---
 function ViewLeaseDialog({ tenant, open, onOpenChange }) {
     const { t } = useTranslation();
     if (!tenant) return null;
+    const unitNum = (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A');
+    const propName = tenant.unitId?.propertyId?.name || tenant.property || 'MakaziFlow Property';
+    const handleExportLease = () => {
+        exportToPDF({
+            title: `Lease Agreement - ${tenant.name}`,
+            subtitle: `${propName} • Unit ${unitNum}`,
+            dateRange: `Lease Start: ${safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}`,
+            summary: [
+                { label: "Tenant", value: tenant.name },
+                { label: "Unit", value: `Unit ${unitNum}` },
+                { label: "Monthly Rent", value: `KES ${Number(tenant.rentAmount || tenant.unitId?.rentAmount || 0).toLocaleString()}` },
+                { label: "Status", value: tenant.status || "active" }
+            ],
+            columns: [
+                { key: "section", label: "Clause" },
+                { key: "details", label: "Agreement Terms" }
+            ],
+            records: [
+                { section: "Parties", details: `Landlord / Manager (${propName}) & Tenant (${tenant.name}, ${tenant.phone || ''})` },
+                { section: t('lease_prop_title'), details: t('lease_prop_text', { unit: unitNum }) },
+                { section: t('lease_term_title'), details: t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' }) },
+                { section: t('lease_rent_title'), details: t('lease_rent_text') },
+                { section: "Verification", details: t('digital_sig_verified') }
+            ]
+        });
+    };
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-150 h-[80vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>{t('lease_details')}</DialogTitle>
-                    <DialogDescription>{t('signed')} {tenant.leaseStart}</DialogDescription>
+                    <DialogDescription>{t('signed')} {safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}</DialogDescription>
                 </DialogHeader>
                 <div className="flex-1 bg-muted/20 border border-border/50 rounded-lg p-8 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
                     <div className="text-center mb-6">
                         <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg uppercase tracking-widest border-b pb-4">{t('lease_agreement')}</h3>
                     </div>
-                    {`${t('landlord')}: MakaaziHub Inc.\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A') })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: tenant.leaseStart })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
+                    {`${t('landlord')}: ${propName}\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: unitNum })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
                 </div>
                 <DialogFooter className="gap-2">
-                     <Button variant="outline" size="sm"><Printer className="w-4 h-4 mr-2"/> {t('print')}</Button>
-                     <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-2"/> {t('download_pdf')}</Button>
-                     <Button size="sm" onClick={() => onOpenChange(false)}>{t('close')}</Button>
+                     <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Printer className="w-4 h-4 mr-2"/> {t('print')}</Button>
+                     <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Download className="w-4 h-4 mr-2"/> {t('download_pdf')}</Button>
+                     <Button type="button" size="sm" onClick={() => onOpenChange(false)}>{t('close')}</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -79,15 +118,46 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
     const form = useForm({
         resolver: zodResolver(tenantSchema),
         defaultValues: {
-            name: tenant?.name || "",
-            email: tenant?.email || "",
-            phone: tenant?.phone || "",
-            idType: tenant?.idType || "national_id",
-            nationalId: tenant?.nationalId || "",
-            unitId: currentUnitId || "no_unit",
-            leaseStart: tenant?.leaseStart ? new Date(tenant.leaseStart).toISOString().split('T')[0] : ""
+            name: "",
+            email: "",
+            phone: "",
+            idType: "national_id",
+            nationalId: "",
+            unitId: "no_unit",
+            rentAmount: 0,
+            leaseStart: ""
         }
     });
+
+    const [editUtilities, setEditUtilities] = useState([]);
+
+    useEffect(() => {
+        if (tenant && open) {
+            const resolvedUnitId = (tenant.unitId && typeof tenant.unitId === 'object')
+                ? (tenant.unitId._id || tenant.unitId.id)
+                : tenant.unitId;
+            form.reset({
+                name: tenant.name || "",
+                email: tenant.email || "",
+                phone: tenant.phone || "",
+                idType: normalizeIdType(tenant.idType),
+                nationalId: tenant.nationalId || "",
+                unitId: resolvedUnitId || "no_unit",
+                rentAmount: tenant.rentAmount ?? tenant.unitId?.rentAmount ?? 0,
+                leaseStart: safeDateInput(tenant.leaseStart)
+            });
+            setEditUtilities(
+                Array.isArray(tenant.utilities)
+                    ? tenant.utilities.map(u => ({
+                        name: u.name || "Utility",
+                        amount: Number(u.amount) || 0,
+                        billingType: u.billingType || "fixed",
+                        isIncluded: Boolean(u.isIncluded)
+                    }))
+                    : []
+            );
+        }
+    }, [tenant, open, form]);
 
     const mutation = useMutation({
         mutationFn: api.updateTenant,
@@ -95,33 +165,32 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
             queryClient.invalidateQueries({ queryKey: ["tenants"] });
             queryClient.invalidateQueries({ queryKey: ["units"] });
             queryClient.invalidateQueries({ queryKey: ["stats"] });
+            queryClient.invalidateQueries({ queryKey: ["debtors"] });
             onOpenChange(false);
-            toast({ title: t('tenant_updated'), description: t('tenant_updated_desc') });
+            toast({ title: t('tenant_updated') || "Tenant Updated", description: t('tenant_updated_desc') || "Tenant details updated successfully." });
         },
-        onError: () => {
-            toast({ variant: "destructive", title: t('error'), description: t('tenant_update_failed') });
+        onError: (err) => {
+            toast({
+                variant: "destructive",
+                title: t('error') || "Error",
+                description: err?.message || t('tenant_update_failed') || "Failed to update tenant."
+            });
         }
     });
 
-    const [editUtilities, setEditUtilities] = useState(
-        Array.isArray(tenant?.utilities) && tenant.utilities.length > 0
-            ? tenant.utilities
-            : [
-                { name: "Water Bill", amount: 500, billingType: "fixed", isIncluded: false },
-                { name: "Garbage Collection", amount: 300, billingType: "fixed", isIncluded: false },
-                { name: "Parking Fee", amount: 0, billingType: "fixed", isIncluded: false },
-                { name: "Electricity (Post-pay)", amount: 0, billingType: "postpay_metered", isIncluded: false }
-            ]
-    );
-
     function onSubmit(values) {
-        const payload = { ...values, utilities: editUtilities, id: tenant._id || tenant.id };
+        if (!tenant) return;
+        const payload = {
+            ...values,
+            utilities: editUtilities,
+            id: tenant._id || tenant.id
+        };
         if (payload.unitId === "no_unit") payload.unitId = "";
         mutation.mutate(payload);
     }
 
     return (<Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-106.25">
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{t('edit_tenant')}</DialogTitle>
                 </DialogHeader>
@@ -138,7 +207,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                         <div className="grid grid-cols-2 gap-4">
                              <FormField control={form.control} name="idType" render={({ field }) => (<FormItem>
                                 <FormLabel>{t('id_type')}</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || "national_id"}>
                                     <FormControl>
                                     <SelectTrigger>
                                         <SelectValue placeholder={t('select_id_type')}/>
@@ -181,7 +250,7 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                         <FormField control={form.control} name="unitId" render={({ field }) => (
                             <FormItem>
                                 <FormLabel>{t('assign_unit')}</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <Select onValueChange={field.onChange} value={field.value || "no_unit"}>
                                     <FormControl>
                                         <SelectTrigger>
                                             <SelectValue placeholder={t('select_unit_placeholder') || "Select a unit"}/>
@@ -199,6 +268,27 @@ function EditTenantDialog({ tenant, open, onOpenChange }) {
                                 <FormMessage />
                             </FormItem>
                         )}/>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <FormField control={form.control} name="rentAmount" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Monthly Rent (KES)</FormLabel>
+                                    <FormControl>
+                                        <Input type="number" min="0" placeholder="15000" {...field} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                            <FormField control={form.control} name="leaseStart" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>Lease Start</FormLabel>
+                                    <FormControl>
+                                        <Input type="date" {...field} />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )} />
+                        </div>
 
                         {/* Edit Utility Bills */}
                         <div className="space-y-2 p-3 rounded-lg border border-border/60 bg-muted/20">
@@ -1242,7 +1332,7 @@ function SendMessageFormView({ properties = [], onBack }) {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!selectAllProperties && !selectedProperty) {
       toast({ variant: "destructive", title: "Select Property", description: "Please select a property or choose 'Select all properties'." });
       return;
@@ -1252,11 +1342,46 @@ function SendMessageFormView({ properties = [], onBack }) {
       return;
     }
     setIsSending(true);
-    setTimeout(() => {
+    try {
+      const res = await api.addReminder({
+        method: "email",
+        type: "custom",
+        sendImmediately: true,
+        sendToAll: true,
+        propertyIds: selectAllProperties ? [] : [selectedProperty],
+        customNote: message.trim(),
+        subject: "MakaziFlow Tenant Notice"
+      });
+
+      const emailed = res?.emailsSent ?? (res?.emailSent ? 1 : 0);
+      const failed = res?.emailsFailed ?? 0;
+
+      if (res?.count === 0) {
+        toast({ title: "No Tenants Found", description: res?.message || "No active tenants match the selected property." });
+      } else if (emailed === 0) {
+        toast({
+          variant: "destructive",
+          title: "Email Delivery Failed",
+          description: res?.lastError || "Could not send emails via Brevo."
+        });
+      } else {
+        toast({
+          title: "Emails Sent via Brevo",
+          description: failed > 0
+            ? `Delivered to ${emailed} tenant(s) (${failed} skipped/failed).`
+            : `Successfully emailed ${emailed} tenant(s) via Brevo.`
+        });
+        onBack();
+      }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Send Failed",
+        description: err.message || "Failed to dispatch message via Brevo."
+      });
+    } finally {
       setIsSending(false);
-      toast({ title: "Message Sent", description: "Your message has been queued and dispatched to tenants." });
-      onBack();
-    }, 600);
+    }
   };
 
   return (
@@ -2431,16 +2556,51 @@ export default function TenantsPage() {
     const [reminderSelectAll, setReminderSelectAll] = useState(false);
     const [sendingReminders, setSendingReminders] = useState(false);
 
-    const handleSendRemindersSubmit = () => {
+    const handleSendRemindersSubmit = async () => {
       setSendingReminders(true);
-      setTimeout(() => {
-        setSendingReminders(false);
-        setSendRemindersOpen(false);
-        toast({
-          title: "Reminders Sent",
-          description: "Balance reminders successfully dispatched to all tenants with outstanding balances."
+      try {
+        const res = await api.addReminder({
+          method: "email",
+          type: "rent_due",
+          sendImmediately: true,
+          propertyIds: reminderSelectAll ? [] : reminderSelectedProperties
         });
-      }, 500);
+
+        queryClient.invalidateQueries({ queryKey: ["reminders"] });
+        queryClient.invalidateQueries({ queryKey: ["debtors"] });
+        setSendRemindersOpen(false);
+
+        const emailed = res?.emailsSent ?? (res?.emailSent ? 1 : 0);
+        const failed = res?.emailsFailed ?? 0;
+
+        if (res?.count === 0) {
+          toast({
+            title: "No Outstanding Balances",
+            description: res.message || "All matching tenants are fully paid."
+          });
+        } else if (failed > 0 && emailed === 0) {
+          toast({
+            variant: "destructive",
+            title: "Reminder Delivery Failed",
+            description: res?.lastError || `Could not deliver email reminders via Brevo (${failed} failed).`
+          });
+        } else {
+          toast({
+            title: "Email Reminders Dispatched",
+            description: failed > 0
+              ? `Sent ${emailed} balance reminder email(s) via Brevo (${failed} failed or missing email).`
+              : `Successfully sent ${emailed || res?.count || 1} balance reminder email(s) via Brevo.`
+          });
+        }
+      } catch (err) {
+        toast({
+          variant: "destructive",
+          title: "Reminder Dispatch Failed",
+          description: err.message || "Could not dispatch reminders via Brevo."
+        });
+      } finally {
+        setSendingReminders(false);
+      }
     };
 
     // Filters State matching Screenshot 2
@@ -2966,14 +3126,21 @@ export default function TenantsPage() {
                     size="sm"
                     variant="outline"
                     className="text-[11px] h-7 px-3 gap-1 cursor-pointer"
-                    onClick={() => generateCSVReport('tenants')}
+                    onClick={async () => {
+                      const res = await generateCSVReport('tenants');
+                      if (res?.success) {
+                        toast({ title: 'Tenants Exported', description: `Downloaded ${res.count} tenant record(s) as CSV.` });
+                      } else {
+                        toast({ variant: 'destructive', title: 'Export Failed', description: res?.message || 'No tenant data available.' });
+                      }
+                    }}
                   >
-                    <Download className="w-3 h-3" /> Download PDF
+                    <Download className="w-3 h-3" /> Export CSV
                   </Button>
                   <Button
                     size="sm"
                     className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-[11px] h-7 px-3 gap-1 cursor-pointer"
-                    onClick={() => toast({ title: 'Balance Reminders Dispatched', description: 'Reminders have been sent to tenants with unpaid balances.' })}
+                    onClick={() => setSendRemindersOpen(true)}
                   >
                     <Send className="w-3 h-3" />
                     Send Balance Reminders
@@ -3290,7 +3457,7 @@ export default function TenantsPage() {
 
               {/* Note text directly from Screenshot 4 */}
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                Note that reminders will be sent to all tenants who have balances. Please ensure you have adequate sms balance before sending the reminders.
+                Reminders are emailed immediately via Brevo to tenants with outstanding rent or utility balances.
               </p>
             </div>
           </DialogContent>

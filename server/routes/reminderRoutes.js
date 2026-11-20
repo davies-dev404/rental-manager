@@ -24,7 +24,7 @@ router.get('/', protect, async (req, res) => {
 
 // Helper: Calculate outstanding balances (rent + utilities) for active tenants
 async function getTenantsWithBalances(userId) {
-  const tenants = await Tenant.find({ user: userId, status: 'active' }).populate('unitId', 'unitNumber rentAmount');
+  const tenants = await Tenant.find({ user: userId, status: 'active' }).populate('unitId', 'unitNumber rentAmount propertyId');
   
   // Current month payment window
   const now = new Date();
@@ -125,11 +125,25 @@ function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
 // Add / Send Personalized Reminder
 router.post('/', protect, async (req, res) => {
   try {
-    const { tenantId, type, method, frequency, dueDate, customNote, sendImmediately } = req.body;
+    const {
+      tenantId,
+      type,
+      method,
+      frequency,
+      dueDate,
+      customNote,
+      subject,
+      sendImmediately,
+      propertyIds,
+      sendToAll
+    } = req.body || {};
+
+    const dispatchMethod = method || 'email';
+    const shouldSendNow = sendImmediately !== false;
 
     // Case 1: Specific tenant selected
     if (tenantId && tenantId !== 'all_debtors') {
-      const tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId', 'unitNumber rentAmount');
+      const tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId', 'unitNumber rentAmount propertyId');
       if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
       const all = await getTenantsWithBalances(req.user.id);
@@ -143,11 +157,52 @@ router.post('/', protect, async (req, res) => {
       };
 
       const description = customNote || generatePersonalizedMessage(tenant, calculation);
+      let emailSent = false;
+      let smsSent = false;
+      let deliveryError = null;
+
+      if (shouldSendNow) {
+        if (dispatchMethod === 'email') {
+          if (tenant.email && String(tenant.email).includes('@')) {
+            try {
+              await sendEmail({
+                email: tenant.email,
+                subject: subject || `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                message: generatePersonalizedEmailHtml(tenant, calculation, {
+                  title: subject,
+                  description: customNote || undefined,
+                  dueDate
+                })
+              });
+              emailSent = true;
+            } catch (e) {
+              deliveryError = e.message;
+              console.error('Email send failed for reminder:', e.message);
+            }
+          } else {
+            deliveryError = `Tenant "${tenant.name}" has no email address configured.`;
+          }
+        } else if (dispatchMethod === 'sms') {
+          if (tenant.phone) {
+            try {
+              await sendSMS({ phone: tenant.phone, message: description });
+              smsSent = true;
+            } catch (e) {
+              deliveryError = e.message;
+              console.error('SMS send failed for reminder:', e.message);
+            }
+          } else {
+            deliveryError = `Tenant "${tenant.name}" has no phone number configured.`;
+          }
+        }
+      }
+
+      const finalStatus = shouldSendNow ? ((emailSent || smsSent) ? 'sent' : 'failed') : 'pending';
 
       const reminder = await Reminder.create({
-        title: `Payment Reminder - ${tenant.name} (Unit ${tenant.unitId?.unitNumber || ''})`,
+        title: subject || `Payment Reminder - ${tenant.name} (Unit ${tenant.unitId?.unitNumber || ''})`,
         type: type || 'rent_due',
-        method: method || 'email',
+        method: dispatchMethod,
         frequency: frequency || 'immediate',
         dueDate: dueDate || new Date(),
         tenantId: tenant._id,
@@ -160,61 +215,119 @@ router.post('/', protect, async (req, res) => {
           utilities: calculation.unpaidUtilities.map(u => ({ name: u.name, amount: Number(u.amount) || 0 }))
         },
         description,
-        status: sendImmediately ? 'sent' : 'pending',
+        status: finalStatus,
         user: req.user.id
       });
-
-      if (sendImmediately) {
-        if (method === 'email' && tenant.email) {
-          try {
-            await sendEmail({
-              email: tenant.email,
-              subject: `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
-              message: generatePersonalizedEmailHtml(tenant, calculation)
-            });
-          } catch (e) {
-            console.error('Email send failed for reminder:', e.message);
-          }
-        } else if (method === 'sms' && tenant.phone) {
-          try {
-            await sendSMS({
-              phone: tenant.phone,
-              message: description
-            });
-          } catch (e) {
-            console.error('SMS send failed for reminder:', e.message);
-          }
-        }
-      }
 
       await logActivity(
         req.user,
         'Send Reminder',
-        `Personalized reminder ${sendImmediately ? 'dispatched' : 'scheduled'} for ${tenant.name} (KES ${calculation.totalDue})`,
+        `Reminder ${shouldSendNow ? (emailSent || smsSent ? 'dispatched' : 'failed') : 'scheduled'} for ${tenant.name} (KES ${calculation.totalDue})`,
         'reminder',
-        'success'
+        emailSent || smsSent || !shouldSendNow ? 'success' : 'error'
       );
 
-      return res.status(201).json(reminder);
+      return res.status(201).json({
+        ...reminder.toObject(),
+        emailSent,
+        smsSent,
+        emailsSent: emailSent ? 1 : 0,
+        emailsFailed: shouldSendNow && dispatchMethod === 'email' && !emailSent ? 1 : 0,
+        lastError: deliveryError
+      });
     }
 
-    // Case 2: Bulk send ONLY to tenants who have NOT paid (debtors)
+    // Case 2: Bulk send to unpaid debtors (or all active tenants when sendToAll is true)
     const all = await getTenantsWithBalances(req.user.id);
-    const debtors = all.filter(item => item.totalDue > 0);
+    const propertyFilterSet = Array.isArray(propertyIds) && propertyIds.length > 0
+      ? new Set(propertyIds.map(id => String(id)))
+      : null;
 
-    if (debtors.length === 0) {
-      return res.status(200).json({ message: 'All tenants are fully paid! No reminders needed.' });
+    const recipients = all.filter(item => {
+      if (!sendToAll && item.totalDue <= 0) return false;
+      if (propertyFilterSet) {
+        const unitPropId = item.tenant.unitId?.propertyId ? String(item.tenant.unitId.propertyId) : null;
+        return unitPropId && propertyFilterSet.has(unitPropId);
+      }
+      return true;
+    });
+
+    if (recipients.length === 0) {
+      return res.status(200).json({
+        message: sendToAll
+          ? 'No active tenants found for the selected property.'
+          : 'All matching tenants are fully paid! No reminders needed.',
+        count: 0,
+        emailsSent: 0,
+        emailsFailed: 0,
+        smsSent: 0,
+        reminders: []
+      });
     }
 
     const createdReminders = [];
-    for (const item of debtors) {
+    let emailsSent = 0;
+    let emailsFailed = 0;
+    let smsSentCount = 0;
+    let smsFailed = 0;
+    let lastError = null;
+
+    for (const item of recipients) {
       const { tenant } = item;
       const description = customNote || generatePersonalizedMessage(tenant, item);
+      let emailDelivered = false;
+      let smsDelivered = false;
+
+      if (shouldSendNow) {
+        if (dispatchMethod === 'email') {
+          if (tenant.email && String(tenant.email).includes('@')) {
+            try {
+              await sendEmail({
+                email: tenant.email,
+                subject: subject || `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                message: generatePersonalizedEmailHtml(tenant, item, {
+                  title: subject,
+                  description: customNote || undefined,
+                  dueDate
+                })
+              });
+              emailDelivered = true;
+              emailsSent++;
+            } catch (e) {
+              emailsFailed++;
+              lastError = e.message;
+              console.error('Email send failed for bulk reminder:', e.message);
+            }
+          } else {
+            emailsFailed++;
+            lastError = `Missing email address for ${tenant.name}`;
+          }
+        } else if (dispatchMethod === 'sms') {
+          if (tenant.phone) {
+            try {
+              await sendSMS({ phone: tenant.phone, message: description });
+              smsDelivered = true;
+              smsSentCount++;
+            } catch (e) {
+              smsFailed++;
+              lastError = e.message;
+              console.error('SMS send failed for bulk reminder:', e.message);
+            }
+          } else {
+            smsFailed++;
+            lastError = `Missing phone number for ${tenant.name}`;
+          }
+        }
+      }
+
+      const remStatus = shouldSendNow
+        ? ((emailDelivered || smsDelivered) ? 'sent' : 'failed')
+        : 'pending';
 
       const rem = await Reminder.create({
-        title: `Payment Reminder - ${tenant.name} (Unit ${tenant.unitId?.unitNumber || ''})`,
+        title: subject || `Payment Reminder - ${tenant.name} (Unit ${tenant.unitId?.unitNumber || ''})`,
         type: type || 'rent_due',
-        method: method || 'email',
+        method: dispatchMethod,
         frequency: frequency || 'immediate',
         dueDate: dueDate || new Date(),
         tenantId: tenant._id,
@@ -227,46 +340,30 @@ router.post('/', protect, async (req, res) => {
           utilities: item.unpaidUtilities.map(u => ({ name: u.name, amount: Number(u.amount) || 0 }))
         },
         description,
-        status: sendImmediately ? 'sent' : 'pending',
+        status: remStatus,
         user: req.user.id
       });
       createdReminders.push(rem);
-
-      if (sendImmediately) {
-        if (method === 'email' && tenant.email) {
-          try {
-            await sendEmail({
-              email: tenant.email,
-              subject: `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
-              message: generatePersonalizedEmailHtml(tenant, item)
-            });
-          } catch (e) {
-            console.error('Email send failed for bulk reminder:', e.message);
-          }
-        } else if (method === 'sms' && tenant.phone) {
-          try {
-            await sendSMS({
-              phone: tenant.phone,
-              message: description
-            });
-          } catch (e) {
-            console.error('SMS send failed for bulk reminder:', e.message);
-          }
-        }
-      }
     }
 
     await logActivity(
       req.user,
       'Bulk Personalized Reminders',
-      `Sent personalized reminders to ${debtors.length} unpaid tenant(s)`,
+      `Dispatched reminders via ${dispatchMethod}: ${emailsSent} email(s) sent, ${emailsFailed} failed`,
       'reminder',
-      'success'
+      emailsSent > 0 || smsSentCount > 0 ? 'success' : 'error'
     );
 
     res.status(201).json({
-      message: `Personalized reminders sent to ${debtors.length} tenant(s) with unpaid balances.`,
-      count: debtors.length,
+      message: emailsSent > 0
+        ? `Sent ${emailsSent} email reminder(s) via Brevo${emailsFailed ? ` (${emailsFailed} failed or missing email)` : ''}.`
+        : (lastError || `Processed ${recipients.length} reminder(s), 0 delivered.`),
+      count: recipients.length,
+      emailsSent,
+      emailsFailed,
+      smsSent: smsSentCount,
+      smsFailed,
+      lastError,
       reminders: createdReminders
     });
 
@@ -279,10 +376,17 @@ router.post('/', protect, async (req, res) => {
 // Send single reminder immediately by ID
 router.post('/:id/send', protect, async (req, res) => {
   try {
-    const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user.id }).populate('tenantId');
+    const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user.id })
+      .populate({ path: 'tenantId', populate: { path: 'unitId', select: 'unitNumber' } });
     if (!reminder) return res.status(404).json({ message: 'Reminder not found' });
 
-    if (reminder.method === 'email' && reminder.recipientEmail) {
+    const recipientEmail = reminder.recipientEmail || reminder.tenantId?.email;
+    const recipientPhone = reminder.recipientPhone || reminder.tenantId?.phone;
+
+    if (reminder.method === 'email' || (!reminder.method && recipientEmail)) {
+      if (!recipientEmail || !String(recipientEmail).includes('@')) {
+        return res.status(422).json({ message: `No valid email address for ${reminder.recipientName || 'this tenant'}.` });
+      }
       const emailHtml = getCorporateReminderEmailBody({
         tenantName: reminder.recipientName || reminder.tenantId?.name || 'Valued Resident',
         unitNumber: reminder.tenantId?.unitId?.unitNumber || '',
@@ -297,13 +401,16 @@ router.post('/:id/send', protect, async (req, res) => {
       });
 
       await sendEmail({
-        email: reminder.recipientEmail,
+        email: recipientEmail,
         subject: reminder.title,
         message: emailHtml
       });
-    } else if (reminder.method === 'sms' && reminder.recipientPhone) {
+    } else if (reminder.method === 'sms') {
+      if (!recipientPhone) {
+        return res.status(422).json({ message: `No valid phone number for ${reminder.recipientName || 'this tenant'}.` });
+      }
       await sendSMS({
-        phone: reminder.recipientPhone,
+        phone: recipientPhone,
         message: reminder.description
       });
     }
@@ -314,14 +421,14 @@ router.post('/:id/send', protect, async (req, res) => {
     await logActivity(
       req.user,
       'Send Reminder',
-      `Reminder dispatched to ${reminder.recipientName || 'tenant'} via ${reminder.method}`,
+      `Reminder dispatched to ${reminder.recipientName || 'tenant'} via ${reminder.method || 'email'}`,
       'reminder',
       'success'
     );
 
-    res.json({ message: 'Reminder sent successfully', reminder });
+    res.json({ message: 'Reminder emailed successfully via Brevo', emailSent: reminder.method !== 'sms', reminder });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: error.message || 'Failed to send reminder' });
   }
 });
 

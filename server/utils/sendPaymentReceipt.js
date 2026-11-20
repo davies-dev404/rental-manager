@@ -58,36 +58,46 @@ const sendPaymentReceipt = async (paymentId) => {
         const amountFormatted = Number(payment.amount || 0).toLocaleString();
 
         let emailSent = false;
-        let smsSent = false;
+        let emailError = null;
 
-        // 1. Send Corporate Email Receipt with Attached PDF (Strictly via Email)
-        if (tenant.email) {
-            try {
-                console.log(`Generating PDF receipt for ${tenant.email}...`);
-                const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
-                const emailHtml = getReceiptEmailBody(payment, tenant.name, settings, propertyName);
-
-                await sendEmail({
-                    email: tenant.email,
-                    subject: `Official Payment Receipt - ${businessName} - #${reference}`,
-                    message: emailHtml,
-                    attachments: [
-                        {
-                            filename: `Receipt-${businessName.replace(/\s+/g, '_')}-${reference}.pdf`,
-                            content: pdfBuffer,
-                            contentType: 'application/pdf'
-                        }
-                    ]
-                });
-                emailSent = true;
-                console.log(`📧 Receipt PDF emailed strictly to ${tenant.email}`);
-            } catch (err) {
-                console.error(`❌ Failed to email receipt to ${tenant.email}:`, err.message);
-            }
+        // 1. Send Corporate Email Receipt with Attached PDF (Strictly via Brevo Email)
+        if (!tenant.email || !String(tenant.email).includes('@')) {
+            emailError = `Tenant "${tenant.name}" does not have a valid email address.`;
+            console.warn(`⚠️ ${emailError}`);
+            return { success: false, emailSent: false, smsSent: false, reason: emailError };
         }
 
-        // Receipts are configured to be sent strictly via email (no SMS per configuration)
-        return { success: true, emailSent, smsSent: false };
+        try {
+            console.log(`Generating PDF receipt for ${tenant.email}...`);
+            const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
+            const emailHtml = getReceiptEmailBody(payment, tenant.name, settings, propertyName);
+
+            await sendEmail({
+                email: tenant.email,
+                subject: `Official Payment Receipt - ${businessName} - #${reference}`,
+                message: emailHtml,
+                attachments: [
+                    {
+                        filename: `Receipt-${businessName.replace(/\s+/g, '_')}-${reference}.pdf`,
+                        content: pdfBuffer,
+                        contentType: 'application/pdf'
+                    }
+                ]
+            });
+            emailSent = true;
+            console.log(`📧 Receipt PDF emailed strictly to ${tenant.email}`);
+        } catch (err) {
+            emailError = err.message || 'Brevo email delivery failed';
+            console.error(`❌ Failed to email receipt to ${tenant.email}:`, emailError);
+        }
+
+        // Receipts are configured to be sent strictly via email
+        return {
+            success: emailSent,
+            emailSent,
+            smsSent: false,
+            reason: emailError
+        };
     } catch (error) {
         console.error("Critical error in sendPaymentReceipt:", error);
         throw error;

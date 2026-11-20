@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { ActionModals } from "@/components/dashboard/Modals";
 
 export default function CommunicationPage() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Filters State
   const [startDate, setStartDate] = useState("");
@@ -63,28 +64,56 @@ export default function CommunicationPage() {
     queryFn: api.getProperties
   });
 
-  // Messages list state
-  const [messagesData, setMessagesData] = useState([]);
+  const { data: apiReminders = [] } = useQuery({
+    queryKey: ["reminders"],
+    queryFn: api.getReminders
+  });
+
+  // Live local messages dispatched during current session
+  const [liveMessages, setLiveMessages] = useState([]);
+  const [isResending, setIsResending] = useState(false);
 
   // Listen for sent messages across app
   useEffect(() => {
     const handleNewMessage = (e) => {
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
       if (e.detail) {
-        setMessagesData((prev) => [e.detail, ...prev]);
+        setLiveMessages((prev) => [e.detail, ...prev]);
       }
     };
     window.addEventListener("dwello_message_sent", handleNewMessage);
     return () => {
       window.removeEventListener("dwello_message_sent", handleNewMessage);
     };
-  }, []);
+  }, [queryClient]);
+
+  const messagesData = useMemo(() => {
+    const mappedReminders = (Array.isArray(apiReminders) ? apiReminders : []).map((r) => {
+      const normalizedStatus =
+        r.status === "sent" ? "delivered" : r.status === "failed" ? "failed" : "pending";
+      const d = r.createdAt || r.dueDate;
+      return {
+        _id: r._id,
+        type: (r.method || "email").toUpperCase(),
+        date: d ? new Date(d).toLocaleString("en-KE", { dateStyle: "short", timeStyle: "short" }) : "—",
+        recipient: r.recipientName || r.tenantId?.name || r.recipientEmail || "—",
+        recipientEmail: r.recipientEmail || r.tenantId?.email || "",
+        propertyUnit: r.tenantId?.unitId?.unitNumber ? `Unit ${r.tenantId.unitId.unitNumber}` : (r.title || "—"),
+        text: r.description || r.title || "—",
+        charge: r.method === "sms" ? "0.80 KES" : "Free (Brevo)",
+        status: normalizedStatus,
+        propertyId: r.tenantId?.unitId?.propertyId ? String(r.tenantId.unitId.propertyId) : undefined
+      };
+    });
+    return [...liveMessages, ...mappedReminders];
+  }, [apiReminders, liveMessages]);
 
   const totalSent = messagesData.length;
   const totalDelivered = messagesData.filter((m) => m.status === "delivered").length;
   const totalFailed = messagesData.filter((m) => m.status === "failed").length;
 
   const filteredMessages = messagesData.filter((m) => {
-    if (selectedProperty !== "all" && m.propertyId !== selectedProperty) return false;
+    if (selectedProperty !== "all" && m.propertyId && m.propertyId !== selectedProperty) return false;
     return true;
   });
 
@@ -110,11 +139,29 @@ export default function CommunicationPage() {
     }
   };
 
-  const handleResend = (msg) => {
-    toast({
-      title: "Resending Message",
-      description: `Re-dispatching message to ${msg.recipient || "recipient"}.`
-    });
+  const handleResend = async (msg) => {
+    if (!msg?._id) {
+      toast({
+        variant: "destructive",
+        title: "Cannot Resend",
+        description: "This log entry does not have a reminder ID to resend."
+      });
+      return;
+    }
+    try {
+      await api.sendReminderNow(msg._id);
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
+      toast({
+        title: "Reminder Sent via Brevo",
+        description: `Dispatched to ${msg.recipientEmail || msg.recipient || "tenant"}.`
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Resend Failed",
+        description: err.message || "Could not send reminder via Brevo."
+      });
+    }
   };
 
   return (
@@ -397,7 +444,8 @@ export default function CommunicationPage() {
                 {/* Action Toolbar */}
                 <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/40 dark:bg-slate-800/20">
                   <Button
-                    onClick={() => {
+                    disabled={isResending}
+                    onClick={async () => {
                       if (selectedRows.length === 0) {
                         toast({
                           title: "No Messages Selected",
@@ -405,17 +453,48 @@ export default function CommunicationPage() {
                         });
                         return;
                       }
-                      toast({
-                        title: "Resending Messages",
-                        description: `Re-dispatching ${selectedRows.length} messages.`
-                      });
+                      const targets = selectedRows.map((i) => paginated[i]).filter(Boolean);
+                      setIsResending(true);
+                      let sentCount = 0;
+                      let failedCount = 0;
+                      let lastErr = "";
+                      for (const msg of targets) {
+                        if (!msg._id) {
+                          failedCount++;
+                          lastErr = "Missing reminder ID";
+                          continue;
+                        }
+                        try {
+                          await api.sendReminderNow(msg._id);
+                          sentCount++;
+                        } catch (err) {
+                          failedCount++;
+                          lastErr = err.message || "Send failed";
+                        }
+                      }
+                      setIsResending(false);
                       setSelectedRows([]);
+                      queryClient.invalidateQueries({ queryKey: ["reminders"] });
+                      if (sentCount === 0) {
+                        toast({
+                          variant: "destructive",
+                          title: "Resend Failed",
+                          description: lastErr || "Could not resend messages via Brevo."
+                        });
+                      } else {
+                        toast({
+                          title: "Messages Resent via Brevo",
+                          description: failedCount > 0
+                            ? `Sent ${sentCount} reminder(s) (${failedCount} failed: ${lastErr}).`
+                            : `Successfully resent ${sentCount} reminder(s) via Brevo.`
+                        });
+                      }
                     }}
                     variant="outline"
                     className="text-xs h-7.5 px-3.5 gap-1.5 font-medium text-[#0b1065] border-slate-300 hover:bg-slate-100 cursor-pointer"
                   >
                     <Send className="w-3.5 h-3.5 text-[#0b1065]" />
-                    <span>Resend Messages</span>
+                    <span>{isResending ? "Resending..." : "Resend Messages"}</span>
                   </Button>
                 </div>
 
@@ -495,7 +574,15 @@ export default function CommunicationPage() {
                               {msg.charge || "0.80 KES"}
                             </td>
                             <td className="py-2.5 px-4 text-center">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-700 capitalize">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] capitalize ${
+                                  msg.status === "failed"
+                                    ? "bg-rose-100 text-rose-700"
+                                    : msg.status === "pending"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-emerald-100 text-emerald-700"
+                                }`}
+                              >
                                 {msg.status || "delivered"}
                               </span>
                             </td>
