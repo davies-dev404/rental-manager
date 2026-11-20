@@ -361,7 +361,7 @@ router.post('/resend-login-otp', async (req, res) => {
     return res.json({
       success: true,
       message: (emailSent || smsSent)
-        ? 'A new verification code has been sent via Brevo.'
+        ? 'A new verification code has been sent.'
         : 'Verification code delivery failed. Your verification code is provided below.',
       emailSent,
       smsSent,

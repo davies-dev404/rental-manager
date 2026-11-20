@@ -556,7 +556,7 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center gap-2 font-black text-slate-800 text-sm sm:text-base">
                 <span className="h-3 w-3 rounded-full bg-indigo-600" />
-                Brevo Email &amp; Alerts
+                Automated Email &amp; Alerts
               </div>
             </div>
           </div>

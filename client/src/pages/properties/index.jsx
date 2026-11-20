@@ -37,6 +37,13 @@ const unitSchema = z.object({
     tenantId: z.string().optional()
 });
 
+const propertySchema = z.object({
+    name: z.string().min(1, "Property Name is required"),
+    location: z.string().min(1, "Location is required"),
+    type: z.string().optional().default("Apartment"),
+    image: z.string().optional().default("")
+});
+
 
 
 function ManageUnitsDialog({ property }) {
@@ -384,9 +391,10 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
     const form = useForm({
         resolver: zodResolver(propertySchema),
         defaultValues: {
-            name: property.name,
-            location: property.location,
-            image: property.image
+            name: property.name || "",
+            location: property.location || "",
+            type: property.type || "Apartment",
+            image: property.image || ""
         }
     });
 
@@ -394,6 +402,8 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
         mutationFn: api.updateProperty,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["properties"] });
+            queryClient.invalidateQueries({ queryKey: ["units"] });
+            queryClient.invalidateQueries({ queryKey: ["stats"] });
             onOpenChange(false);
             toast({ title: "Property Updated", description: "Property details saved successfully." });
         },
@@ -426,6 +436,24 @@ function EditPropertyDialog({ property, open, onOpenChange }) {
                             <FormItem>
                                 <FormLabel>{t('address')}</FormLabel>
                                 <FormControl><Input {...field}/></FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}/>
+                        <FormField control={form.control} name="type" render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Property Type</FormLabel>
+                                <Select value={field.value || "Apartment"} onValueChange={field.onChange}>
+                                    <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select type" />
+                                        </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                        {["Apartment", "Residential", "Commercial", "Maisonette", "Bungalow", "Bedsitter", "Hostel", "Mixed Use"].map((opt) => (
+                                            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                                 <FormMessage />
                             </FormItem>
                         )}/>

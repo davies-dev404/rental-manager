@@ -190,7 +190,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         }
         toast({
           title: "Reminders Dispatched",
-          description: reminderRes?.message || `Sent ${sentTotal} reminder(s) via ${dispatchMethod === "sms" ? "SMS" : "Brevo Email"}.`
+          description: reminderRes?.message || `Sent ${sentTotal} reminder(s) via ${dispatchMethod === "sms" ? "SMS" : "Email"}.`
         });
         if (customEvent) {
           window.dispatchEvent(new CustomEvent(customEvent, { detail: customData }));
@@ -328,7 +328,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <DialogDescription>
                 {modalType === "remind_tenant"
                   ? `Dispatch rent balance reminder to Unit ${formData.unit || "assigned unit"}.`
-                  : "Send personalized balance reminders via Brevo Email (or SMS) to tenants with outstanding balances."}
+                  : "Send personalized balance reminders via Email (or SMS) to tenants with outstanding balances."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 text-sm">
@@ -339,7 +339,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                   value={formData.reminderChannel || "email"}
                   onChange={(e) => handleChange("reminderChannel", e.target.value)}
                 >
-                  <option value="email">Email via Brevo (Recommended)</option>
+                  <option value="email">Email (Recommended)</option>
                   <option value="sms">SMS Gateway</option>
                 </select>
               </div>
@@ -355,7 +355,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 <p className="text-[11px] text-muted-foreground">
                   {formData.reminderChannel === "sms"
                     ? "SMS requires active SMS credits."
-                    : "Emails include itemized rent/utility balances and are sent through Brevo."}
+                    : "Emails include itemized rent/utility balances and are sent automatically."}
                 </p>
               </div>
             </div>

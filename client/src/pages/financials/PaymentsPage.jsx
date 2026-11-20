@@ -867,7 +867,7 @@ export default function PaymentsPage() {
     setIsSendingReceipts(true);
     toast({
       title: "Sending Receipts...",
-      description: `Emailing ${targets.length} PDF receipt(s) via Brevo.`
+      description: `Sending ${targets.length} PDF receipt(s) via Email.`
     });
 
     let sentCount = 0;
@@ -894,14 +894,14 @@ export default function PaymentsPage() {
       toast({
         variant: "destructive",
         title: "Receipt Email Failed",
-        description: lastError || "Could not send payment receipts via Brevo."
+        description: lastError || "Could not send payment receipts via Email."
       });
     } else {
       toast({
-        title: "Receipts Sent via Brevo",
+        title: "Receipts Sent via Email",
         description: failedCount > 0
-          ? `Emailed ${sentCount} PDF receipt(s) (${failedCount} failed: ${lastError}).`
-          : `Successfully emailed ${sentCount} PDF receipt(s) via Brevo.`
+          ? `Sent ${sentCount} PDF receipt(s) via Email (${failedCount} failed: ${lastError}).`
+          : `Successfully sent ${sentCount} PDF receipt(s) via Email.`
       });
     }
   };
@@ -946,7 +946,7 @@ export default function PaymentsPage() {
         title: "Payment Marked as Paid",
         description: markPaidSendReceipt && isMongoId
           ? (receiptEmailed
-              ? `Updated to Paid and emailed PDF receipt for ${markPaidTarget.tenantId} via Brevo.`
+              ? `Updated to Paid and sent PDF receipt for ${markPaidTarget.tenantId} via Email.`
               : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
           : `Updated payment for ${markPaidTarget.tenantId} to Paid.`
       });
@@ -1624,7 +1624,7 @@ export default function PaymentsPage() {
                   className="rounded accent-emerald-600 w-3.5 h-3.5"
                 />
                 <span className="text-slate-600 dark:text-slate-300">
-                  Email official PDF receipt to tenant via Brevo
+                  Send official PDF receipt to tenant via Email
                 </span>
               </label>
             </div>

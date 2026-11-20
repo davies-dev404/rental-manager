@@ -383,13 +383,8 @@ export const api = {
   
   // Properties
   getProperties: async () => {
-    try {
-      const response = await smartFetch(`${API_URL}/properties`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
-    } catch {
-      return [];
-    }
+    const response = await smartFetch(`${API_URL}/properties`, { headers: getAuthHeaders(), credentials: 'include' });
+    return await parseApiResponse(response, "Failed to load properties");
   },
   addProperty: async (prop) => {
     const response = await smartFetch(`${API_URL}/properties`, {
@@ -401,7 +396,8 @@ export const api = {
     return await response.json();
   },
   updateProperty: async (updatedProp) => {
-    const response = await smartFetch(`${API_URL}/properties/${updatedProp.id}`, { // Assuming id is reachable
+    const propId = updatedProp._id || updatedProp.id;
+    const response = await smartFetch(`${API_URL}/properties/${propId}`, {
         method: 'PUT',
         headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(updatedProp)
@@ -419,21 +415,16 @@ export const api = {
   
   // Units (Real)
   getUnits: async (propertyId) => {
-    try {
-      let url = `${API_URL}/units`;
-      let id = propertyId;
-      if (id && typeof id === 'object') {
-        id = id._id || id.id || null;
-      }
-      if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
-        url += `?propertyId=${encodeURIComponent(id)}`;
-      }
-      const response = await smartFetch(url, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
-    } catch {
-      return [];
+    let url = `${API_URL}/units`;
+    let id = propertyId;
+    if (id && typeof id === 'object') {
+      id = id._id || id.id || null;
     }
+    if (id && typeof id === 'string' && id !== '[object Object]' && id.trim()) {
+      url += `?propertyId=${encodeURIComponent(id)}`;
+    }
+    const response = await smartFetch(url, { headers: getAuthHeaders(), credentials: 'include' });
+    return await parseApiResponse(response, "Failed to load units");
   },
   addUnit: async (unit) => {
     const response = await smartFetch(`${API_URL}/units`, {
@@ -486,13 +477,8 @@ export const api = {
 
   // Tenants - REAL
   getTenants: async () => {
-    try {
-      const response = await smartFetch(`${API_URL}/tenants`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
-    } catch {
-      return [];
-    }
+    const response = await smartFetch(`${API_URL}/tenants`, { headers: getAuthHeaders(), credentials: 'include' });
+    return await parseApiResponse(response, "Failed to load tenants");
   },
   addTenant: async (tenant) => {
     const response = await smartFetch(`${API_URL}/tenants`, {
@@ -522,8 +508,8 @@ export const api = {
   // Payments (Real)
   getPayments: async () => {
     const response = await smartFetch(`${API_URL}/payments`, { headers: getAuthHeaders(), credentials: 'include' });
-    if (!response.ok) return [];
-    const data = await response.json();
+    const data = await parseApiResponse(response, "Failed to load payments");
+    if (!Array.isArray(data)) return [];
     // Transform to match frontend expectation (tenantId as name string for display)
     return data.map(p => ({
         ...p,
@@ -649,17 +635,11 @@ export const api = {
   getNotifications: async () => [],
   getStats: async () => {
     const response = await smartFetch(`${API_URL}/dashboard/stats`, { headers: getAuthHeaders(), credentials: 'include' });
-    if (!response.ok) return {}; 
-    return await response.json();
+    return await parseApiResponse(response, "Failed to load stats");
   },
   getActivityLogs: async () => {
-    try {
-      const response = await smartFetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
-    } catch {
-      return [];
-    }
+    const response = await smartFetch(`${API_URL}/activity-logs`, { headers: getAuthHeaders(), credentials: 'include' });
+    return await parseApiResponse(response, "Failed to load activity logs");
   },
   logActivity: async (action, description, type = 'info', status = 'success') => {
     try {
@@ -676,13 +656,11 @@ export const api = {
   addDocument: async () => {},
   getReminders: async () => {
       const response = await smartFetch(`${API_URL}/reminders`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
+      return await parseApiResponse(response, "Failed to load reminders");
   },
   getDebtors: async () => {
       const response = await smartFetch(`${API_URL}/reminders/debtors`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return [];
-      return await response.json();
+      return await parseApiResponse(response, "Failed to load debtors");
   },
   addReminder: async (reminderData) => {
       const response = await smartFetch(`${API_URL}/reminders`, {
@@ -720,12 +698,11 @@ export const api = {
           credentials: 'include',
           body: JSON.stringify(campaignData)
       });
-      return await parseApiResponse(response, 'Failed to create Brevo email campaign');
+      return await parseApiResponse(response, 'Failed to create email campaign');
   },
   getExpenses: async () => {
     const response = await smartFetch(`${API_URL}/expenses`, { headers: getAuthHeaders(), credentials: 'include' });
-    if (!response.ok) return [];
-    return await response.json();
+    return await parseApiResponse(response, "Failed to load expenses");
   },
   addExpense: async (expense) => {
     const payload = {
@@ -753,15 +730,8 @@ export const api = {
     return response.ok;
   },
   getSettings: async () => {
-    try {
-      const response = await smartFetch(`${API_URL}/settings`, { headers: getAuthHeaders(), credentials: 'include' });
-      if (!response.ok) return {};
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) return {};
-      return await response.json();
-    } catch {
-      return {};
-    }
+    const response = await smartFetch(`${API_URL}/settings`, { headers: getAuthHeaders(), credentials: 'include' });
+    return await parseApiResponse(response, "Failed to load settings");
   },
   updateSettings: async (settings) => {
     const response = await smartFetch(`${API_URL}/settings`, {

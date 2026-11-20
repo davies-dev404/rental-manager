@@ -1371,14 +1371,14 @@ function SendMessageFormView({ properties = [], onBack }) {
         toast({
           variant: "destructive",
           title: "Email Delivery Failed",
-          description: res?.lastError || "Could not send emails via Brevo."
+          description: res?.lastError || "Could not send emails."
         });
       } else {
         toast({
-          title: "Emails Sent via Brevo",
+          title: "Sent via Email",
           description: failed > 0
             ? `Delivered to ${emailed} tenant(s) (${failed} skipped/failed).`
-            : `Successfully emailed ${emailed} tenant(s) via Brevo.`
+            : `Successfully sent to ${emailed} tenant(s) via Email.`
         });
         onBack();
       }
@@ -1386,7 +1386,7 @@ function SendMessageFormView({ properties = [], onBack }) {
       toast({
         variant: "destructive",
         title: "Send Failed",
-        description: err.message || "Failed to dispatch message via Brevo."
+        description: err.message || "Failed to send email."
       });
     } finally {
       setIsSending(false);
@@ -2591,21 +2591,21 @@ export default function TenantsPage() {
           toast({
             variant: "destructive",
             title: "Reminder Delivery Failed",
-            description: res?.lastError || `Could not deliver email reminders via Brevo (${failed} failed).`
+            description: res?.lastError || `Could not deliver email reminders (${failed} failed).`
           });
         } else {
           toast({
             title: "Email Reminders Dispatched",
             description: failed > 0
-              ? `Sent ${emailed} balance reminder email(s) via Brevo (${failed} failed or missing email).`
-              : `Successfully sent ${emailed || res?.count || 1} balance reminder email(s) via Brevo.`
+              ? `Sent ${emailed} balance reminder(s) via Email (${failed} failed or missing email).`
+              : `Successfully sent ${emailed || res?.count || 1} balance reminder(s) via Email.`
           });
         }
       } catch (err) {
         toast({
           variant: "destructive",
           title: "Reminder Dispatch Failed",
-          description: err.message || "Could not dispatch reminders via Brevo."
+          description: err.message || "Could not send reminders via Email."
         });
       } finally {
         setSendingReminders(false);
@@ -3466,7 +3466,7 @@ export default function TenantsPage() {
 
               {/* Note text directly from Screenshot 4 */}
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                Reminders are emailed immediately via Brevo to tenants with outstanding rent or utility balances.
+                Reminders are sent immediately via Email to tenants with outstanding rent or utility balances.
               </p>
             </div>
           </DialogContent>

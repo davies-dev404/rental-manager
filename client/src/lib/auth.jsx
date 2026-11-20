@@ -1,55 +1,72 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { api, refreshAuthSession } from "./api";
+import { hydrateQueryCacheForUser, clearPersistedQueryCache } from "./queryClient";
 import { useToast } from "@/hooks/use-toast";
 const AuthContext = createContext(undefined);
+
+function readInitialAuthState() {
+    if (typeof window === "undefined") {
+        return { user: null, needsRefresh: false };
+    }
+    const storedUser = localStorage.getItem("rental_user");
+    if (!storedUser) {
+        return { user: null, needsRefresh: false };
+    }
+    try {
+        const parsed = JSON.parse(storedUser);
+        if (!parsed || !parsed.token) {
+            localStorage.removeItem("rental_user");
+            return { user: null, needsRefresh: false };
+        }
+        let isExpired = false;
+        const tokenParts = parsed.token.split('.');
+        if (tokenParts.length === 3) {
+            try {
+                const payload = JSON.parse(atob(tokenParts[1]));
+                if (payload.exp && Date.now() >= payload.exp * 1000) {
+                    isExpired = true;
+                }
+            } catch (e) {}
+        }
+        if (isExpired) {
+            return { user: null, needsRefresh: true };
+        }
+        return { user: parsed, needsRefresh: false };
+    } catch {
+        localStorage.removeItem("rental_user");
+        return { user: null, needsRefresh: false };
+    }
+}
+
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const initialAuth = readInitialAuthState();
+    const [user, setUser] = useState(initialAuth.user);
+    const [isLoading, setIsLoading] = useState(initialAuth.needsRefresh);
     const { toast } = useToast();
     useEffect(() => {
         let isMounted = true;
         const initAuth = async () => {
-            const storedUser = localStorage.getItem("rental_user");
-            if (storedUser) {
-                try {
-                    const parsed = JSON.parse(storedUser);
-                    if (parsed && parsed.token) {
-                        let isExpired = false;
-                        const tokenParts = parsed.token.split('.');
-                        if (tokenParts.length === 3) {
-                            try {
-                                const payload = JSON.parse(atob(tokenParts[1]));
-                                if (payload.exp && Date.now() >= payload.exp * 1000) {
-                                    isExpired = true;
-                                }
-                            } catch (e) {}
-                        }
-
-                        if (isExpired) {
-                            const refreshed = await refreshAuthSession();
-                            if (!isMounted) return;
-                            if (refreshed?.token) {
-                                setUser(refreshed);
-                            } else {
-                                console.log("Session token expired, clearing stored session.");
-                                localStorage.removeItem("rental_user");
-                                setUser(null);
-                            }
-                            setIsLoading(false);
-                            return;
-                        }
-
-                        if (isMounted) setUser(parsed);
-                    } else {
-                        localStorage.removeItem("rental_user");
-                        if (isMounted) setUser(null);
-                    }
-                } catch {
-                    localStorage.removeItem("rental_user");
-                    if (isMounted) setUser(null);
+            if (!initialAuth.needsRefresh) {
+                if (initialAuth.user) {
+                    hydrateQueryCacheForUser(initialAuth.user);
                 }
+                return;
             }
-            if (isMounted) setIsLoading(false);
+            try {
+                const refreshed = await refreshAuthSession();
+                if (!isMounted) return;
+                if (refreshed?.token) {
+                    hydrateQueryCacheForUser(refreshed);
+                    setUser(refreshed);
+                } else {
+                    console.log("Session token expired, clearing stored session.");
+                    localStorage.removeItem("rental_user");
+                    clearPersistedQueryCache();
+                    setUser(null);
+                }
+            } finally {
+                if (isMounted) setIsLoading(false);
+            }
         };
 
         initAuth();
@@ -57,6 +74,7 @@ export function AuthProvider({ children }) {
         const handleLogoutEvent = () => {
             setUser(null);
             localStorage.removeItem("rental_user");
+            clearPersistedQueryCache();
         };
         window.addEventListener("auth:logout", handleLogoutEvent);
         return () => {
@@ -72,16 +90,18 @@ export function AuthProvider({ children }) {
         if (result.requiresOTP) {
             return result;
         }
-        setUser(result);
         localStorage.setItem("rental_user", JSON.stringify(result));
+        hydrateQueryCacheForUser(result);
+        setUser(result);
         return result;
     };
 
     // Step 2: submit the login OTP and finalise the session.
     const verifyLoginOtp = async (email, otp) => {
         const result = await api.verifyLoginOtp(email, otp);
-        setUser(result);
         localStorage.setItem("rental_user", JSON.stringify(result));
+        hydrateQueryCacheForUser(result);
+        setUser(result);
         return result;
     };
 
@@ -93,8 +113,9 @@ export function AuthProvider({ children }) {
         try {
             const authFn = provider === 'apple' ? api.appleAuth : api.googleAuth;
             const resUser = await authFn(payload);
-            setUser(resUser);
             localStorage.setItem("rental_user", JSON.stringify(resUser));
+            hydrateQueryCacheForUser(resUser);
+            setUser(resUser);
             toast({ 
               title: "Welcome! 🎉", 
               description: `Signed in as ${resUser.name} (${resUser.role})` 
@@ -116,6 +137,7 @@ export function AuthProvider({ children }) {
         } catch (e) {}
         setUser(null);
         localStorage.removeItem("rental_user");
+        clearPersistedQueryCache();
         toast({ title: "Logged out successfully" });
         window.location.href = "/login";
     };

@@ -119,7 +119,7 @@ export default function CommunicationPage() {
         recipientEmail: r.recipientEmail || r.tenantId?.email || "",
         propertyUnit,
         text: r.description || r.title || "—",
-        charge: r.method === "sms" ? "0.80 KES" : "Free (Brevo)",
+        charge: r.method === "sms" ? "0.80 KES" : "Email",
         status: normalizedStatus,
         propertyId
       };
@@ -182,14 +182,14 @@ export default function CommunicationPage() {
       await api.sendReminderNow(msg._id);
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
       toast({
-        title: "Reminder Sent via Brevo",
+        title: "Reminder Sent via Email",
         description: `Dispatched to ${msg.recipientEmail || msg.recipient || "tenant"}.`
       });
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Resend Failed",
-        description: err.message || "Could not send reminder via Brevo."
+        description: err.message || "Could not send reminder via Email."
       });
     }
   };
@@ -507,14 +507,14 @@ export default function CommunicationPage() {
                         toast({
                           variant: "destructive",
                           title: "Resend Failed",
-                          description: lastErr || "Could not resend messages via Brevo."
+                          description: lastErr || "Could not resend messages via Email."
                         });
                       } else {
                         toast({
-                          title: "Messages Resent via Brevo",
+                          title: "Messages Resent via Email",
                           description: failedCount > 0
                             ? `Sent ${sentCount} reminder(s) (${failedCount} failed: ${lastErr}).`
-                            : `Successfully resent ${sentCount} reminder(s) via Brevo.`
+                            : `Successfully resent ${sentCount} reminder(s) via Email.`
                         });
                       }
                     }}

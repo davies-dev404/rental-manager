@@ -2342,7 +2342,7 @@ export default function InvoicesPage() {
     setIsSendingInvoices(true);
     toast({
       title: "Dispatching Invoices...",
-      description: `Sending ${invoicesToSend.length} invoice(s) with PDF via Brevo Email.`
+      description: `Sending ${invoicesToSend.length} invoice(s) with PDF via Email.`
     });
 
     let sentSuccess = 0;
@@ -2386,14 +2386,14 @@ export default function InvoicesPage() {
       toast({
         variant: "destructive",
         title: "Invoice Delivery Failed",
-        description: lastError || "Could not send invoice emails via Brevo."
+        description: lastError || "Could not send invoice emails."
       });
     } else {
       toast({
-        title: "Invoices Dispatched via Brevo",
+        title: "Invoices Sent via Email",
         description: failedCount > 0
           ? `Emailed ${sentSuccess} invoice(s) with PDF (${failedCount} failed: ${lastError}).`
-          : `Successfully emailed ${sentSuccess} invoice(s) with PDF attachment via Brevo.`
+          : `Successfully sent ${sentSuccess} invoice(s) with PDF attachment via Email.`
       });
     }
   };
@@ -2458,7 +2458,7 @@ export default function InvoicesPage() {
         title: "Invoice Marked as Paid",
         description: markPaidSendReceipt && isMongoId
           ? (receiptEmailed
-              ? `Updated to Paid and emailed PDF receipt to ${markPaidTarget.tenantId} via Brevo.`
+              ? `Updated to Paid and sent PDF receipt to ${markPaidTarget.tenantId} via Email.`
               : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
           : `Updated invoice for ${markPaidTarget.tenantId} to Paid.`
       });
@@ -3309,7 +3309,7 @@ export default function InvoicesPage() {
                   className="rounded accent-emerald-600 w-3.5 h-3.5"
                 />
                 <span className="text-slate-600 dark:text-slate-300">
-                  Email official PDF receipt to tenant via Brevo
+                  Send official PDF receipt to tenant via Email
                 </span>
               </label>
             </div>

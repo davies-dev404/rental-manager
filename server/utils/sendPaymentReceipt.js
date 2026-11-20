@@ -90,7 +90,7 @@ const sendPaymentReceipt = async (paymentId) => {
             emailSent = true;
             console.log(`📧 Receipt PDF emailed strictly to ${tenant.email}`);
         } catch (err) {
-            emailError = err.message || 'Brevo email delivery failed';
+            emailError = err.message || 'Email delivery failed';
             console.error(`❌ Failed to email receipt to ${tenant.email}:`, emailError);
         }
 

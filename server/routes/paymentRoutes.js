@@ -312,15 +312,15 @@ router.post('/:id/email', protect, async (req, res) => {
             const result = await sendReceiptEmail(req.params.id);
             if (!result || !result.emailSent) {
                 return res.status(422).json({
-                    message: result?.reason || 'Receipt email could not be sent via Brevo.',
+                    message: result?.reason || 'Receipt could not be sent via Email.',
                     emailSent: false
                 });
             }
-            res.json({ message: 'Receipt email sent successfully via Brevo', emailSent: true });
+            res.json({ message: 'Receipt sent via Email', emailSent: true });
         } catch (emailError) {
              console.error("Inner Email/PDF Error:", emailError);
              if (emailError.code === 'ETIMEDOUT') {
-                 return res.status(422).json({ message: 'Email connection timed out. Check Brevo settings.', error: emailError.message });
+                 return res.status(422).json({ message: 'Email connection timed out. Check email configuration.', error: emailError.message });
              }
              res.status(422).json({ message: `Failed to send email: ${emailError.message}`, error: emailError.message });
         }
@@ -557,7 +557,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                 emailSent = true;
                 console.log(`📧 Invoice #${invRef} emailed with PDF to ${recipientEmail}`);
             } catch (err) {
-                emailError = err.message || 'Brevo invoice email delivery failed';
+                emailError = err.message || 'Invoice email delivery failed';
                 console.error(`❌ Failed to email invoice to ${recipientEmail}:`, emailError);
             }
         } else {

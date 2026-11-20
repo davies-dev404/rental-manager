@@ -193,7 +193,7 @@ router.post('/test-smtp', protect, async (req, res) => {
     const pass = body.pass || process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS;
 
     if (!user || !pass) {
-        return res.status(400).json({ message: 'SMTP Test Failed: Brevo SMTP credentials are missing.' });
+        return res.status(400).json({ message: 'SMTP Test Failed: Email SMTP credentials are missing.' });
     }
 
     try {

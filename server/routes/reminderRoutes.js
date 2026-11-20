@@ -399,7 +399,7 @@ router.post('/', protect, async (req, res) => {
 
     res.status(201).json({
       message: emailsSent > 0
-        ? `Sent ${emailsSent} email reminder(s) via Brevo${emailsFailed ? ` (${emailsFailed} failed or missing email)` : ''}.`
+        ? `Sent ${emailsSent} reminder(s) via Email${emailsFailed ? ` (${emailsFailed} failed or missing email)` : ''}.`
         : (lastError || `Processed ${recipients.length} reminder(s), 0 delivered.`),
       count: recipients.length,
       emailsSent,
@@ -475,7 +475,7 @@ router.post('/:id/send', protect, async (req, res) => {
       'success'
     );
 
-    res.json({ message: 'Reminder emailed successfully via Brevo', emailSent: reminder.method !== 'sms', reminder });
+    res.json({ message: 'Reminder sent via Email', emailSent: reminder.method !== 'sms', reminder });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to send reminder' });
   }
