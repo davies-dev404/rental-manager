@@ -8,8 +8,12 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
+const { validateSecurityConfig, sanitizeRequest } = require('./middleware/securityMiddleware');
+
+validateSecurityConfig();
 
 const app = express();
+app.disable('x-powered-by');
 const PORT = process.env.PORT || 5000;
 
 // Render / reverse-proxy IP resolution for rate limiting & cookies
@@ -55,29 +59,28 @@ app.options(/.*/, cors(corsOptions));
 // Security Middleware: Helmet with Cloudflare Turnstile & API friendly CSP
 app.use(
   helmet({
+    hsts: process.env.NODE_ENV === 'production'
+      ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+      : false,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'"],
         scriptSrc: [
           "'self'",
           "'unsafe-inline'",
-          "'unsafe-eval'",
           "https://challenges.cloudflare.com",
           "https://*.cloudflare.com",
-          "https://static.cloudflareinsights.com",
-          "https://accounts.google.com",
-          "https://apis.google.com",
-          "https://connect.facebook.net",
-          "https://cdn.brevo.com",
-          "https://*.brevo.com"
+          "https://static.cloudflareinsights.com"
         ],
         frameSrc: [
           "'self'",
           "https://challenges.cloudflare.com",
           "https://*.challenges.cloudflare.com",
           "https://*.cloudflare.com",
-          "https://accounts.google.com",
-          "https://appleid.apple.com",
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com"
@@ -97,9 +100,6 @@ app.use(
           "https://afrinextech.co.ke",
           "https://rental-manager-1-7jmg.onrender.com",
           "https://rental-manager-gold.vercel.app",
-          "https://api.brevo.com",
-          "https://cdn.brevo.com",
-          "https://*.brevo.com",
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com",
@@ -110,8 +110,7 @@ app.use(
           "'self'",
           "data:",
           "blob:",
-          "https:",
-          "http:"
+          "https:"
         ],
         styleSrc: [
           "'self'",
@@ -144,7 +143,9 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: false, limit: '2mb' }));
+app.use(sanitizeRequest);
 
 // Lightweight Cookie Parser Middleware (Senior Standard for httpOnly JWT Cookies)
 app.use((req, res, next) => {
@@ -164,7 +165,7 @@ app.use((req, res, next) => {
 });
 app.use(morgan('dev'));
 
-// Global bufferCommands setting: fail fast if disconnected instead of buffering and timing out after 10s
+// Global bufferCommands setting: fail fast when disconnected (NoSQL operator injection is stripped at Express layer via sanitizeRequest)
 mongoose.set('bufferCommands', false);
 
 // Database Connection with serverless-safe caching
@@ -213,12 +214,15 @@ const connectDB = async () => {
         throw new Error('MONGODB_URI environment variable is missing. Please configure MONGODB_URI in your environment or hosting dashboard.');
     }
 
+    const isRemoteTlsUri = uri.startsWith('mongodb+srv://') || /[?&](tls|ssl)=true/i.test(uri);
     const opts = {
         serverSelectionTimeoutMS: isServerless ? 8000 : 30000,
         connectTimeoutMS: isServerless ? 8000 : 30000,
         socketTimeoutMS: 45000,
         maxPoolSize: isServerless ? 5 : 10,
+        minPoolSize: isServerless ? 1 : 2,
         heartbeatFrequencyMS: 10000,
+        ...(isRemoteTlsUri ? { tls: true } : {})
     };
 
     cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
@@ -275,9 +279,9 @@ app.use(async (req, res, next) => {
         await connectDB();
         next();
     } catch (err) {
-        return res.status(500).json({ 
-            message: 'Database connection failed. In MongoDB Atlas Network Access, ensure 0.0.0.0/0 (Allow Access from Anywhere) is whitelisted, as Vercel serverless functions use dynamic IP addresses.',
-            error: err.message 
+        console.error('Database middleware connection error:', err.message);
+        return res.status(503).json({
+            message: 'Database service temporarily unavailable. Please try again shortly.'
         });
     }
 });
@@ -328,33 +332,33 @@ app.get('/api/health', async (req, res) => {
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     const dbState = states[mongoose.connection.readyState] || 'unknown';
     const rawKey = (process.env.BREVO_API_KEY || '').trim();
-    const keyFingerprint = rawKey
-        ? require('crypto').createHash('sha256').update(rawKey).digest('hex').slice(0, 8)
-        : null;
     res.json({
         status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),
         database: {
             status: dbState,
-            readyState: mongoose.connection.readyState,
-            host: mongoose.connection.host || null,
-            error: connectionError
+            readyState: mongoose.connection.readyState
         },
         messaging: {
-            provider: 'brevo',
-            apiKeyConfigured: Boolean(rawKey),
-            apiKeyFingerprint: keyFingerprint,
-            senderEmail: process.env.BREVO_SENDER_EMAIL || process.env.FROM_EMAIL || 'info@afrinextech.co.ke',
-            smtpUser: process.env.BREVO_SMTP_USER || process.env.SMTP_USER || null
+            configured: Boolean(rawKey)
         },
         env: process.env.NODE_ENV || 'development'
     });
 });
 
-// Error Handling Middleware
+// Error Handling Middleware (never expose stack traces or raw internals in production)
 app.use((err, req, res, next) => {
     console.error('Unhandled Server Error:', err.stack || err.message);
-    res.status(500).json({ message: 'Internal Server Error', error: err.message });
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({ message: 'Request payload exceeds maximum allowed size (2MB).' });
+    }
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+        return res.status(400).json({ message: 'Malformed JSON request body.' });
+    }
+    const isProd = process.env.NODE_ENV === 'production';
+    res.status(err.status || 500).json({
+        message: isProd ? 'Internal Server Error' : (err.message || 'Internal Server Error')
+    });
 });
 
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {

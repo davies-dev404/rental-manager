@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { getSubscriptionLockState } = require('../services/subscriptionService');
+const { getJwtSecret } = require('./securityMiddleware');
 
 /**
  * Middleware: locks workspace actions once the 14-day trial or paid subscription
@@ -17,8 +18,17 @@ async function requireActiveSubscription(req, res, next) {
       }
       if (token && token !== 'undefined' && token !== 'null') {
         try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
-          activeUser = await User.findById(decoded.id).select('-password');
+          const decoded = jwt.verify(token, getJwtSecret());
+          activeUser = await User.findById(decoded.id).select(
+            '-password -otp -otpExpires -twoFactorSecret -resetPasswordToken -resetPasswordExpires -refreshToken -refreshTokens'
+          );
+          if (
+            activeUser &&
+            decoded.tv !== undefined &&
+            Number(decoded.tv) !== Number(activeUser.tokenVersion || 0)
+          ) {
+            return res.status(401).json({ message: 'Session has been revoked. Please sign in again.' });
+          }
         } catch {
           return next();
         }
@@ -52,6 +62,9 @@ async function requireActiveSubscription(req, res, next) {
     next();
   } catch (err) {
     console.warn('Subscription lock check warning:', err.message);
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ message: 'Unable to verify subscription status right now. Please try again.' });
+    }
     next();
   }
 }

@@ -5,9 +5,17 @@ const Settings = require('../models/Settings');
 const User = require('../models/User');
 const nodemailer = require('nodemailer');
 
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
+const { getJwtSecret, pickAllowed, validateSafeImageInput } = require('../middleware/securityMiddleware');
 const logActivity = require('../utils/logActivity');
 const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
+
+const ALLOWED_SETTINGS_FIELDS = [
+  'orgName', 'landlordName', 'abbreviatedName', 'orgLogo', 'orgEmail', 'orgPhone', 'orgAddress',
+  'taxId', 'invoiceTitle', 'invoiceFootnote', 'currency', 'timezone', 'theme',
+  'mpesaType', 'paybillAccount', 'accountType', 'notifications', 'preferences',
+  'alerts', 'messageTemplates', 'customFields', 'teamMembers', 'integrations'
+];
 
 // Helper to resolve optional authenticated user for GET /api/settings
 async function resolveOptionalUser(req) {
@@ -15,10 +23,13 @@ async function resolveOptionalUser(req) {
   if (!token && req.headers.authorization?.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
   }
-  if (!token) return null;
+  if (!token || token === 'undefined' || token === 'null') return null;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    return await User.findById(decoded.id).select('-password');
+    const decoded = jwt.verify(token, getJwtSecret());
+    const user = await User.findById(decoded.id).select('-password -otp -twoFactorSecret -resetPasswordToken -refreshToken -refreshTokens');
+    if (!user) return null;
+    if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.tokenVersion || 0)) return null;
+    return user;
   } catch {
     return null;
   }
@@ -71,11 +82,19 @@ router.get('/', async (req, res) => {
 // @access  Private
 router.put('/', protect, async (req, res) => {
   try {
+    const safeBody = pickAllowed(req.body, ALLOWED_SETTINGS_FIELDS);
+    if (safeBody.orgLogo !== undefined) {
+      const logoCheck = validateSafeImageInput(safeBody.orgLogo);
+      if (!logoCheck.valid) {
+        return res.status(400).json({ message: logoCheck.message });
+      }
+      safeBody.orgLogo = logoCheck.value;
+    }
+
     let settings = await Settings.findOne({ user: req.user.id });
     if (!settings) {
       const profile = await getUserBusinessProfile(req.user);
       settings = new Settings({
-        user: req.user.id,
         orgName: profile.orgName,
         landlordName: profile.landlordName,
         orgLogo: profile.orgLogo,
@@ -83,14 +102,14 @@ router.put('/', protect, async (req, res) => {
         orgPhone: profile.orgPhone,
         orgAddress: profile.orgAddress,
         taxId: profile.taxId,
-        ...req.body,
+        ...safeBody,
         user: req.user.id
       });
     } else {
-      if (req.body.orgName !== undefined) settings.orgName = req.body.orgName;
-      if (req.body.landlordName !== undefined) settings.landlordName = req.body.landlordName;
-      if (req.body.abbreviatedName !== undefined) settings.abbreviatedName = req.body.abbreviatedName;
-      if (req.body.orgLogo !== undefined) settings.orgLogo = req.body.orgLogo;
+      if (safeBody.orgName !== undefined) settings.orgName = safeBody.orgName;
+      if (safeBody.landlordName !== undefined) settings.landlordName = safeBody.landlordName;
+      if (safeBody.abbreviatedName !== undefined) settings.abbreviatedName = safeBody.abbreviatedName;
+      if (safeBody.orgLogo !== undefined) settings.orgLogo = safeBody.orgLogo;
       if (req.body.orgEmail !== undefined) settings.orgEmail = req.body.orgEmail;
       if (req.body.orgPhone !== undefined) settings.orgPhone = req.body.orgPhone;
       if (req.body.orgAddress !== undefined) settings.orgAddress = req.body.orgAddress;
@@ -182,17 +201,18 @@ router.put('/', protect, async (req, res) => {
   }
 });
 
-// @desc    Test SMTP Connection (defaults to Brevo SMTP Relay when omitted)
+// @desc    Test SMTP Connection (defaults to Email SMTP Relay when omitted for Super Admin)
 // @route   POST /api/settings/test-smtp
 // @access  Private (Admin)
-router.post('/test-smtp', protect, async (req, res) => {
+router.post('/test-smtp', protect, admin, async (req, res) => {
     const body = req.body || {};
-    const host = body.host || process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST || 'smtp-relay.brevo.com';
-    const port = Number(body.port || process.env.BREVO_SMTP_PORT || process.env.SMTP_PORT || 587);
-    const user = body.user || process.env.BREVO_SMTP_USER || process.env.SMTP_USER;
-    const pass = body.pass || process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS;
+    const isSuper = Boolean(req.user?.isSuperAdmin || req.user?.role === 'superadmin');
+    const host = body.host || (isSuper ? (process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST || 'smtp-relay.brevo.com') : '');
+    const port = Number(body.port || (isSuper ? (process.env.BREVO_SMTP_PORT || process.env.SMTP_PORT || 587) : 587));
+    const user = body.user || (isSuper ? (process.env.BREVO_SMTP_USER || process.env.SMTP_USER) : '');
+    const pass = body.pass || (isSuper ? (process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS) : '');
 
-    if (!user || !pass) {
+    if (!host || !user || !pass) {
         return res.status(400).json({ message: 'SMTP Test Failed: Email SMTP credentials are missing.' });
     }
 

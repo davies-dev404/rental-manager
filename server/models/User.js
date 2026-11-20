@@ -39,17 +39,24 @@ const userSchema = new mongoose.Schema({
   refreshTokens: [{
     tokenHash: { type: String, required: true },
     createdAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, default: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
     userAgent: { type: String }
   }],
+  tokenVersion: { type: Number, default: 0 },
+  passwordChangedAt: { type: Date },
+  organizationOwner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   failedLoginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date }
 });
 
-// Hash password before saving
+// Hash password before saving (bcrypt cost 12)
 userSchema.pre('save', async function() {
   if (!this.password || !this.isModified('password')) return;
   try {
-      this.password = await bcrypt.hash(this.password, 10);
+      this.password = await bcrypt.hash(this.password, 12);
+      if (!this.isNew) {
+        this.passwordChangedAt = new Date();
+      }
   } catch (err) {
       console.error('Bcrypt Hashing Failed:', err);
       throw err;

@@ -29,12 +29,12 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
                 reject(err);
             });
 
-            // --- Brand Palette (SHA Style) ---
-            const greenAccent = '#15803d';
-            const paidBannerGreen = '#038a0c';
-            const royalBlue = '#0b5394';
-            const labelBlue = '#1e40af';
-            const darkText = '#1e293b';
+            // --- Brand Palette (SHA Layout in MakaziFlow Colors: Deep Navy + Signature Teal) ---
+            const greenAccent = '#00a99d';
+            const paidBannerGreen = '#00a99d';
+            const royalBlue = '#0d2240';
+            const labelBlue = '#0d2240';
+            const darkText = '#0f172a';
             const mutedText = '#475569';
             const borderColor = '#e2e8f0';
 
@@ -60,13 +60,13 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
                 : (payment.unitId || 'N/A');
 
             // =====================================================
-            // 1. TOP GRADIENT BAR (Green -> Teal -> Royal Blue)
+            // 1. TOP GRADIENT BAR (MakaziFlow Navy -> Signature Teal)
             // =====================================================
             const grad = doc.linearGradient(24, 24, 571, 24);
-            grad.stop(0, '#4ade80')
-                .stop(0.35, '#0ea5e9')
-                .stop(0.75, '#1d4ed8')
-                .stop(1, '#1e3a8a');
+            grad.stop(0, '#0a1e35')
+                .stop(0.45, '#0d2240')
+                .stop(0.75, '#00a99d')
+                .stop(1, '#00d4c8');
             doc.rect(24, 24, 547, 10).fill(grad);
 
             // =====================================================
@@ -247,7 +247,7 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             // =====================================================
             const footerY = Math.max(yPos + 34, 480);
             doc.fontSize(8).font('Helvetica').fillColor(mutedText)
-               .text(`Thank you for your business | ${businessName} | Ref # ${receiptRef}`, 36, footerY, { align: 'center', width: 523 });
+               .text(`Thank you for being a valued resident | ${businessName} | Ref # ${receiptRef}`, 36, footerY, { align: 'center', width: 523 });
 
             doc.end();
         } catch (error) {

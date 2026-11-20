@@ -200,40 +200,6 @@ export const api = {
     return await parseApiResponse(response, 'Registration failed');
   },
 
-  googleAuth: async (payload) => {
-    try {
-      const response = await smartFetch(`${API_URL}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'Google sign-in failed');
-      }
-      return await response.json();
-    } catch (error) {
-      throw error;
-    }
-  },
-
-  appleAuth: async (payload) => {
-    try {
-      const response = await smartFetch(`${API_URL}/auth/apple`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || 'Apple sign-in failed');
-      }
-      return await response.json();
-    } catch (error) {
-      throw error;
-    }
-  },
-
   forgotPassword: async (email) => {
     try {
       const response = await smartFetch(`${API_URL}/auth/forgot-password`, {

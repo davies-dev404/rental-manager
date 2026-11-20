@@ -369,18 +369,33 @@ class PaymentService {
       }
     }
 
-    transaction.status = 'paid';
-    transaction.amountPaid = Number(amountPaid || transaction.amount);
-    transaction.providerReference = providerReference || transaction.internalTransactionId;
-    if (paymentChannel && ['mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer', 'ussd', 'hosted_checkout', 'manual'].includes(paymentChannel)) {
-      transaction.paymentChannel = paymentChannel;
+    const nextChannel = (paymentChannel && ['mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer', 'ussd', 'hosted_checkout', 'manual'].includes(paymentChannel))
+      ? paymentChannel
+      : transaction.paymentChannel;
+
+    // Atomic status transition guard against simultaneous webhook + pull-verify race conditions
+    const claimed = await PaymentTransaction.findOneAndUpdate(
+      { _id: transaction._id, status: { $ne: 'paid' } },
+      {
+        $set: {
+          status: 'paid',
+          amountPaid: Number(amountPaid || transaction.amount),
+          providerReference: providerReference || transaction.internalTransactionId,
+          paymentChannel: nextChannel,
+          reconciliationStatus: 'reconciled',
+          paidAt,
+          verifiedAt: new Date(),
+          reconciledAt: new Date(),
+          updatedAt: new Date()
+        }
+      },
+      { returnDocument: 'after' }
+    );
+    if (!claimed) {
+      const current = await PaymentTransaction.findById(transaction._id);
+      return { transaction: current || transaction, alreadySettled: true };
     }
-    transaction.reconciliationStatus = 'reconciled';
-    transaction.paidAt = paidAt;
-    transaction.verifiedAt = new Date();
-    transaction.reconciledAt = new Date();
-    transaction.updatedAt = new Date();
-    await transaction.save();
+    transaction = claimed;
 
     let activationResult = null;
     let rentPaymentRecord = null;

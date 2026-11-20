@@ -5,7 +5,7 @@ const Payment = require('../models/Payment');
 const Unit = require('../models/Unit');
 const Expense = require('../models/Expense');
 const logActivity = require('../utils/logActivity');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
 
 // Get All Reports Data
 router.get('/', protect, async (req, res) => {
@@ -147,6 +147,9 @@ router.get('/kra-tax-report', protect, async (req, res) => {
         
         let startDate, endDate;
         if (month) {
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) {
+                return res.status(400).json({ message: 'Invalid month format. Expected YYYY-MM.' });
+            }
             startDate = new Date(`${month}-01`);
             endDate = new Date(startDate);
             endDate.setMonth(endDate.getMonth() + 1);
@@ -191,7 +194,7 @@ router.get('/kra-tax-report', protect, async (req, res) => {
 
 // @desc    Simulate KRA Filing
 // @route   POST /api/reports/kra-file-return
-router.post('/kra-file-return', protect, async (req, res) => {
+router.post('/kra-file-return', protect, admin, async (req, res) => {
     try {
         const { grossRent, tax, period } = req.body;
         

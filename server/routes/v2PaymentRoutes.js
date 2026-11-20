@@ -9,7 +9,8 @@ const Property = require('../models/Property');
 const Settings = require('../models/Settings');
 const TaxSubmission = require('../models/TaxSubmission');
 const Payment = require('../models/Payment');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect, admin, superAdmin } = require('../middleware/authMiddleware');
+const { validateObjectId, isValidObjectId, escapeRegExp } = require('../middleware/securityMiddleware');
 const PaymentService = require('../services/payments/PaymentService');
 const EtimsService = require('../services/tax/EtimsService');
 const { createStructuredInvoice } = require('../services/invoiceService');
@@ -77,11 +78,14 @@ router.post('/tenant/initiate', protect, async (req, res) => {
     // Resolve tenant cleanly (support logged-in tenant portal or landlord initiating)
     let tenant = null;
     if (tenantId) {
+      if (!isValidObjectId(String(tenantId))) {
+        return res.status(400).json({ message: 'Invalid tenant identifier' });
+      }
       tenant = await Tenant.findById(tenantId).populate('unitId');
     } else if (req.user.tenantId) {
       tenant = await Tenant.findById(req.user.tenantId).populate('unitId');
     } else if (req.user.role === 'tenant') {
-      tenant = await Tenant.findOne({ email: new RegExp(`^${req.user.email}$`, 'i') }).populate('unitId');
+      tenant = await Tenant.findOne({ email: new RegExp(`^${escapeRegExp(req.user.email)}$`, 'i') }).populate('unitId');
     }
 
     if (!tenant) {
@@ -117,8 +121,23 @@ router.post('/tenant/initiate', protect, async (req, res) => {
       return res.status(400).json({ message: 'Valid payment amount in KES is required.' });
     }
 
-    // Create Rental Invoice automatically if none provided
-    let invoice = invoiceId ? await Invoice.findById(invoiceId) : null;
+    // Verify invoice ownership if invoiceId was passed
+    let invoice = null;
+    if (invoiceId) {
+      if (!isValidObjectId(String(invoiceId))) {
+        return res.status(400).json({ message: 'Invalid invoice identifier' });
+      }
+      invoice = await Invoice.findById(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+      if (
+        String(invoice.landlordId) !== String(landlordId) ||
+        (invoice.tenantId && String(invoice.tenantId) !== String(tenant._id))
+      ) {
+        return res.status(403).json({ message: 'Unauthorized access to invoice' });
+      }
+    }
     if (!invoice) {
       const items = [];
       if (Number(chargeBreakdown.rent) > 0) items.push({ description: `Monthly Rent (Unit ${tenant.unitId?.unitNumber || ''})`, category: 'rent', unitPrice: Number(chargeBreakdown.rent) });
@@ -183,7 +202,7 @@ router.post('/tenant/initiate', protect, async (req, res) => {
 // @desc    Pull-verify transaction status with Pesaflow
 // @route   GET /api/v2/payments/verify/:transactionId
 // @access  Private
-router.get('/verify/:transactionId', protect, async (req, res) => {
+router.get('/verify/:transactionId', protect, validateObjectId('transactionId'), async (req, res) => {
   try {
     const txn = await PaymentTransaction.findById(req.params.transactionId);
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
@@ -210,7 +229,7 @@ router.get('/transactions', protect, async (req, res) => {
       const tenant = await Tenant.findOne({
         $or: [
           ...(req.user.tenantId ? [{ _id: req.user.tenantId }] : []),
-          { email: new RegExp(`^${req.user.email}$`, 'i') }
+          { email: new RegExp(`^${escapeRegExp(req.user.email)}$`, 'i') }
         ]
       });
       if (!tenant) return res.json([]);
@@ -244,7 +263,7 @@ router.get('/invoices', protect, async (req, res) => {
       const tenant = await Tenant.findOne({
         $or: [
           ...(req.user.tenantId ? [{ _id: req.user.tenantId }] : []),
-          { email: new RegExp(`^${req.user.email}$`, 'i') }
+          { email: new RegExp(`^${escapeRegExp(req.user.email)}$`, 'i') }
         ]
       });
       if (!tenant) return res.json([]);
@@ -284,7 +303,31 @@ router.post('/invoices', protect, admin, async (req, res) => {
     const landlordId = req.user._id || req.user.id;
     let tenant = null;
     if (tenantId) {
+      if (!isValidObjectId(String(tenantId))) {
+        return res.status(400).json({ message: 'Invalid tenant identifier' });
+      }
       tenant = await Tenant.findOne({ _id: tenantId, user: landlordId }).populate('unitId');
+      if (!tenant) {
+        return res.status(403).json({ message: 'Tenant not found or not owned by your organization' });
+      }
+    }
+    if (propertyId) {
+      if (!isValidObjectId(String(propertyId))) {
+        return res.status(400).json({ message: 'Invalid property identifier' });
+      }
+      const ownedProp = await Property.findOne({ _id: propertyId, user: landlordId }).select('_id');
+      if (!ownedProp) {
+        return res.status(403).json({ message: 'Property not found or not owned by your organization' });
+      }
+    }
+    if (unitId) {
+      if (!isValidObjectId(String(unitId))) {
+        return res.status(400).json({ message: 'Invalid unit identifier' });
+      }
+      const ownedUnit = await Unit.findOne({ _id: unitId, user: landlordId }).select('_id');
+      if (!ownedUnit) {
+        return res.status(403).json({ message: 'Unit not found or not owned by your organization' });
+      }
     }
 
     const invoice = await createStructuredInvoice({
@@ -313,7 +356,7 @@ router.post('/invoices', protect, admin, async (req, res) => {
 // @desc    Download Official Invoice PDF
 // @route   GET /api/v2/payments/invoices/:id/pdf
 // @access  Private
-router.get('/invoices/:id/pdf', protect, async (req, res) => {
+router.get('/invoices/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
   try {
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
@@ -340,7 +383,7 @@ router.get('/invoices/:id/pdf', protect, async (req, res) => {
 // @desc    Download Official Receipt PDF
 // @route   GET /api/v2/payments/receipts/:id/pdf
 // @access  Private
-router.get('/receipts/:id/pdf', protect, async (req, res) => {
+router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
   try {
     const receipt = await PaymentReceipt.findById(req.params.id);
     if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
@@ -376,11 +419,11 @@ router.get('/receipts/:id/pdf', protect, async (req, res) => {
 
 // @desc    KRA eTIMS Compliance Routes
 // @route   POST /api/v2/payments/etims/submit/:invoiceId
-router.post('/etims/submit/:invoiceId', protect, admin, async (req, res) => {
+router.post('/etims/submit/:invoiceId', protect, admin, validateObjectId('invoiceId'), async (req, res) => {
   try {
     const invoice = await Invoice.findById(req.params.invoiceId);
     if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
-    if (String(invoice.landlordId) !== String(req.user._id || req.user.id) && !req.user.isSuperAdmin) {
+    if (String(invoice.landlordId) !== String(req.user._id || req.user.id) && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Unauthorized' });
     }
 
@@ -395,7 +438,7 @@ router.post('/etims/submit/:invoiceId', protect, admin, async (req, res) => {
   }
 });
 
-router.post('/etims/retry/:submissionId', protect, admin, async (req, res) => {
+router.post('/etims/retry/:submissionId', protect, admin, validateObjectId('submissionId'), async (req, res) => {
   try {
     const result = await EtimsService.retrySubmission({
       submissionId: req.params.submissionId,
@@ -403,7 +446,7 @@ router.post('/etims/retry/:submissionId', protect, admin, async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(err.statusCode || 400).json({ message: err.message });
   }
 });
 
@@ -422,7 +465,7 @@ router.get('/etims/submissions', protect, admin, async (req, res) => {
   }
 });
 
-router.post('/etims/init-device', protect, admin, async (req, res) => {
+router.post('/etims/init-device', protect, superAdmin, async (req, res) => {
   try {
     const data = await EtimsService.initializeDevice(req.body || {});
     res.json({ success: true, data });
@@ -439,7 +482,7 @@ router.get('/tenant-portal/summary', protect, async (req, res) => {
     const tenant = await Tenant.findOne({
       $or: [
         ...(req.user.tenantId ? [{ _id: req.user.tenantId }] : []),
-        { email: new RegExp(`^${(req.user.email || '').trim()}$`, 'i') }
+        { email: new RegExp(`^${escapeRegExp((req.user.email || '').trim())}$`, 'i') }
       ]
     }).populate({
       path: 'unitId',

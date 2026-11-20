@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getJwtSecret } = require('./securityMiddleware');
 
 const protect = async (req, res, next) => {
   let token;
@@ -16,13 +17,25 @@ const protect = async (req, res, next) => {
     token = req.headers.authorization.split(' ')[1];
   }
 
-  if (token) {
+  if (token && token !== 'undefined' && token !== 'null') {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'makaziflow_secret');
-      req.user = await User.findById(decoded.id).select('-password');
-      if (!req.user) {
+      const decoded = jwt.verify(token, getJwtSecret());
+      const user = await User.findById(decoded.id).select(
+        '-password -otp -otpExpires -twoFactorSecret -resetPasswordToken -resetPasswordExpires -refreshToken -refreshTokens'
+      );
+      if (!user) {
         return res.status(401).json({ message: 'User belonging to this token no longer exists' });
       }
+
+      // Enforce session invalidation after password reset / change / forced logout
+      if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.tokenVersion || 0)) {
+        return res.status(401).json({ message: 'Session has been revoked. Please sign in again.' });
+      }
+      if (user.passwordChangedAt && decoded.iat && Number(decoded.iat) < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+        return res.status(401).json({ message: 'Password recently changed. Please sign in again.' });
+      }
+
+      req.user = user;
       // Allow env-configured superadmin promotion without DB migration
       const superEmails = (process.env.SUPERADMIN_EMAILS || '')
         .split(',')

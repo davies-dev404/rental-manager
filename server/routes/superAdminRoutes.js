@@ -12,7 +12,14 @@ const PaymentCallback = require('../models/PaymentCallback');
 const SubscriptionAuditLog = require('../models/SubscriptionAuditLog');
 const TaxSubmission = require('../models/TaxSubmission');
 const { protect, superAdmin } = require('../middleware/authMiddleware');
+const { validateObjectId, pickAllowed } = require('../middleware/securityMiddleware');
 const PaymentService = require('../services/payments/PaymentService');
+
+const ALLOWED_PLAN_FIELDS = [
+  'code', 'name', 'badge', 'description', 'maxUnits', 'minUnits', 'isCustomUnlimited',
+  'currency', 'pricing', 'pricePerAdditionalUnit', 'discountPercent', 'trialDays',
+  'gracePeriodDays', 'features', 'isPopular', 'isActive', 'autoRenewDefault', 'sortOrder'
+];
 const {
   seedDefaultPlans,
   processSubscriptionExpirations,
@@ -130,7 +137,8 @@ router.get('/plans', async (req, res) => {
 
 router.post('/plans', async (req, res) => {
   try {
-    const plan = await SubscriptionPlan.create(req.body);
+    const planPayload = pickAllowed(req.body, ALLOWED_PLAN_FIELDS);
+    const plan = await SubscriptionPlan.create(planPayload);
     await logSubscriptionAudit({
       landlordId: req.user._id,
       actorId: req.user._id,
@@ -144,16 +152,17 @@ router.post('/plans', async (req, res) => {
   }
 });
 
-router.put('/plans/:id', async (req, res) => {
+router.put('/plans/:id', validateObjectId('id'), async (req, res) => {
   try {
     const existing = await SubscriptionPlan.findById(req.params.id);
     if (!existing) return res.status(404).json({ message: 'Plan not found' });
 
     const prevState = existing.toObject();
+    const planUpdates = pickAllowed(req.body, ALLOWED_PLAN_FIELDS);
     const updated = await SubscriptionPlan.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedAt: new Date() },
-      { returnDocument: 'after' }
+      { $set: { ...planUpdates, updatedAt: new Date() } },
+      { returnDocument: 'after', runValidators: true }
     );
 
     await logSubscriptionAudit({
@@ -200,7 +209,7 @@ router.get('/landlords', async (req, res) => {
 });
 
 // @desc    Super Admin Subscription Override (Activate / Suspend / Adjust Unit Allowance) with Audit Log
-router.post('/landlords/:id/subscription-override', async (req, res) => {
+router.post('/landlords/:id/subscription-override', validateObjectId('id'), async (req, res) => {
   try {
     const { action, purchasedLimit, reason = 'Super Admin adjustment', expiryDate } = req.body;
     const landlordId = req.params.id;
@@ -287,7 +296,7 @@ router.get('/unmatched', async (req, res) => {
   }
 });
 
-router.post('/transactions/:id/verify', async (req, res) => {
+router.post('/transactions/:id/verify', validateObjectId('id'), async (req, res) => {
   try {
     const result = await PaymentService.verifyTransactionStatus(req.params.id);
     res.json(result);
@@ -296,7 +305,7 @@ router.post('/transactions/:id/verify', async (req, res) => {
   }
 });
 
-router.post('/transactions/:id/reverse', async (req, res) => {
+router.post('/transactions/:id/reverse', validateObjectId('id'), async (req, res) => {
   try {
     const txn = await PaymentService.handleReversal({
       transactionId: req.params.id,

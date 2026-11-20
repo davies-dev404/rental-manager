@@ -5,12 +5,14 @@
  */
 
 const BUSINESS_CONFIG = require('../config/businessConfig');
+const { escapeHtml } = require('../middleware/securityMiddleware');
 
 const getEmailTemplate = (title, content, settings, options = {}) => {
     const companyName = (settings?.companyName || settings?.orgName || "").trim();
     const landlordName = (settings?.landlordName || "").trim();
     const propName = (options.propertyName || "").trim();
     const orgName = companyName || propName || landlordName || "Property Management";
+    const safeOrgName = escapeHtml(orgName);
     const orgLogo = (settings?.orgLogo || "").trim();
     const orgEmail = (settings?.orgEmail || "").trim();
     const orgPhone = (settings?.orgPhone || "").trim();
@@ -23,21 +25,25 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
       subtitleParts.push(`Landlord: ${landlordName}`);
     }
     const defaultSubtitle = subtitleParts.length > 0 ? subtitleParts.join(" • ") : "Official Property Notice";
+    const safeDefaultSubtitle = escapeHtml(defaultSubtitle);
 
-    const heroTitle = options.heroTitle || title || "Official Notice";
-    const heroSubtitle = options.heroSubtitle || defaultSubtitle;
-    const heroIcon = options.heroIcon || "✓";
+    const heroTitle = escapeHtml(options.heroTitle || title || "Official Notice");
+    const heroSubtitle = escapeHtml(options.heroSubtitle || defaultSubtitle);
+    const heroIcon = escapeHtml(options.heroIcon || "✓");
+    const safeTitle = escapeHtml(title);
 
-    const logoHtml = orgLogo && orgLogo.startsWith("data:image/")
-      ? `<img src="${orgLogo}" alt="${orgName}" style="max-height: 36px; max-width: 110px; border-radius: 6px; background: #ffffff; padding: 3px; vertical-align: middle; margin-right: 10px;" />`
+    const logoHtml = orgLogo && /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(orgLogo)
+      ? `<img src="${orgLogo}" alt="${safeOrgName}" style="max-height: 36px; max-width: 110px; border-radius: 6px; background: #ffffff; padding: 3px; vertical-align: middle; margin-right: 10px;" />`
       : "";
 
+    const safeEmail = escapeHtml(orgEmail);
+    const safePhone = escapeHtml(orgPhone);
     const supportLinks = [];
     if (orgEmail) {
-      supportLinks.push(`<a href="mailto:${orgEmail}" style="color: #60a5fa; text-decoration: none; font-weight: 600;">${orgEmail}</a>`);
+      supportLinks.push(`<a href="mailto:${safeEmail}" style="color: #00d4c8; text-decoration: none; font-weight: 600;">${safeEmail}</a>`);
     }
     if (orgPhone) {
-      supportLinks.push(`<a href="tel:${orgPhone}" style="color: #60a5fa; text-decoration: none; font-weight: 600;">${orgPhone}</a>`);
+      supportLinks.push(`<a href="tel:${safePhone}" style="color: #00d4c8; text-decoration: none; font-weight: 600;">${safePhone}</a>`);
     }
     const supportHtml = supportLinks.length > 0
       ? `<p style="margin: 22px 0 4px 0; color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.5;">Questions? Reach us at ${supportLinks.join(' &nbsp;|&nbsp; ')}.<br/>We're happy to help.</p>`
@@ -50,7 +56,7 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>${title}</title>
+    <title>${safeTitle}</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #0b1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
     <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0b1120; padding: 24px 10px;">
@@ -59,23 +65,23 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
                 <!-- Main Container -->
                 <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; width: 100%; margin: 0 auto; background-color: #131823; border-radius: 16px; overflow: hidden; border: 1px solid #263042; box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5);">
                     
-                    <!-- Royal Blue Gradient Hero Banner -->
+                    <!-- MakaziFlow Navy & Teal Gradient Hero Banner -->
                     <tr>
-                        <td style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #1e40af 100%); padding: 26px 32px 32px 32px; text-align: center;">
+                        <td style="background: linear-gradient(135deg, #0a1e35 0%, #0d2240 60%, #00a99d 100%); padding: 26px 32px 32px 32px; text-align: center; border-bottom: 3px solid #00d4c8;">
                             <!-- Top Brand Row -->
                             <div style="margin-bottom: 20px; text-align: center;">
-                                ${logoHtml}<span style="font-size: 13px; font-weight: 700; color: #e0e7ff; letter-spacing: 0.4px; vertical-align: middle;">${orgName}</span>
-                                ${subtitleParts.length > 0 ? `<div style="font-size: 11px; color: #bfdbfe; margin-top: 4px; font-weight: 500;">${defaultSubtitle}</div>` : ''}
+                                ${logoHtml}<span style="font-size: 13px; font-weight: 700; color: #ccfbf1; letter-spacing: 0.4px; vertical-align: middle;">${safeOrgName}</span>
+                                ${subtitleParts.length > 0 ? `<div style="font-size: 11px; color: #99f6e4; margin-top: 4px; font-weight: 500;">${safeDefaultSubtitle}</div>` : ''}
                             </div>
                             <!-- Circular Emblem -->
-                            <div style="width: 52px; height: 52px; line-height: 52px; border-radius: 50%; background-color: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.25); color: #ffffff; font-size: 22px; font-weight: 800; margin: 0 auto 14px auto; text-align: center;">
+                            <div style="width: 52px; height: 52px; line-height: 52px; border-radius: 50%; background-color: rgba(0, 212, 200, 0.20); border: 1px solid rgba(0, 212, 200, 0.45); color: #ffffff; font-size: 22px; font-weight: 800; margin: 0 auto 14px auto; text-align: center;">
                                 ${heroIcon}
                             </div>
                             <!-- Hero Headline & Subtitle -->
                             <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">
                                 ${heroTitle}
                             </h1>
-                            <p style="margin: 0; font-size: 13px; color: #dbeafe; line-height: 1.4;">
+                            <p style="margin: 0; font-size: 13px; color: #e2e8f0; line-height: 1.4;">
                                 ${heroSubtitle}
                             </p>
                         </td>
@@ -91,12 +97,12 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
 
                     <!-- Footer Strip -->
                     <tr>
-                        <td style="background-color: #171d29; padding: 20px 32px; border-top: 1px solid #263042; text-align: center;">
-                            <p style="margin: 0 0 4px 0; color: #cbd5e1; font-size: 12.5px; font-weight: 700;">
-                                The ${orgName} Team
+                        <td style="background-color: #0d1522; padding: 20px 32px; border-top: 1px solid #263042; text-align: center;">
+                            <p style="margin: 0 0 4px 0; color: #e2e8f0; font-size: 12.5px; font-weight: 700;">
+                                ${safeOrgName}
                             </p>
                             <p style="margin: 0; color: #64748b; font-size: 11px;">
-                                &copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.
+                                &copy; ${new Date().getFullYear()} ${safeOrgName}. All rights reserved.
                             </p>
                         </td>
                     </tr>
@@ -113,8 +119,8 @@ const renderDetailRow = (label, value) => `
     <div style="background-color: #171e2b; border: 1px solid #273244; border-radius: 8px; padding: 11px 14px; margin-bottom: 8px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
             <tr>
-                <td style="color: #94a3b8; font-size: 12.5px; font-weight: 500; text-align: left;">${label}</td>
-                <td style="color: #f8fafc; font-size: 13px; font-weight: 700; text-align: right;">${value}</td>
+                <td style="color: #94a3b8; font-size: 12.5px; font-weight: 500; text-align: left;">${escapeHtml(label)}</td>
+                <td style="color: #f8fafc; font-size: 13px; font-weight: 700; text-align: right;">${escapeHtml(value)}</td>
             </tr>
         </table>
     </div>
@@ -146,13 +152,19 @@ const getCorporateReminderEmailBody = ({
         renderDetailRow(u.name || 'Utility', `${currency} ${Number(u.amount || 0).toLocaleString()}`)
     ).join('');
 
+    const safeTenant = escapeHtml(tenantName);
+    const safeProp = escapeHtml(propertyName);
+    const safeUnit = escapeHtml(unitNumber || 'Assigned Unit');
+    const safeUnitShort = escapeHtml(unitNumber || 'Assigned');
+    const safeDesc = reminderDescription ? escapeHtml(reminderDescription).replace(/\n/g, '<br/>') : '';
+
     const content = `
         <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
-            Dear ${tenantName},
+            Dear ${safeTenant},
         </p>
 
         <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
-            ${reminderDescription || `This is a friendly reminder regarding your outstanding balance for <strong>${propertyName ? `${propertyName} — ` : ''}Unit ${unitNumber || 'Assigned Unit'}</strong>. Please review the details below.`}
+            ${safeDesc || `This is a friendly reminder regarding your outstanding balance for <strong>${safeProp ? `${safeProp} — ` : ''}Unit ${safeUnit}</strong>. Please review the details below.`}
         </p>
 
         <!-- Highlighted Hero Amount Card -->
@@ -160,11 +172,11 @@ const getCorporateReminderEmailBody = ({
             <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
                 AMOUNT DUE
             </div>
-            <div style="font-size: 32px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
-                ${currency} ${Number(totalDue).toLocaleString()}
+            <div style="font-size: 32px; font-weight: 800; color: #00d4c8; letter-spacing: -0.5px; margin-bottom: 12px;">
+                ${escapeHtml(currency)} ${Number(totalDue).toLocaleString()}
             </div>
             <span style="display: inline-block; background-color: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
-                Due: ${formattedDueDate}
+                Due: ${escapeHtml(formattedDueDate)}
             </span>
         </div>
 
@@ -180,7 +192,7 @@ const getCorporateReminderEmailBody = ({
 
         <!-- Soft Green Instructions Box -->
         <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
-            Kindly settle via your designated M-Pesa Paybill, Bank Account, or payment channel using <strong>Unit ${unitNumber || 'Assigned'}</strong> as your reference. If already paid, thank you and please disregard this notice.
+            Kindly settle via your designated M-Pesa Paybill, Bank Account, or payment channel using <strong>Unit ${safeUnitShort}</strong> as your reference. If already paid, thank you and please disregard this notice.
         </div>
     `;
 
@@ -210,7 +222,7 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
 
     const content = `
         <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
-            Dear ${tenantName},
+            Dear ${escapeHtml(tenantName)},
         </p>
         <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
             Great news — we have successfully received and processed your payment. Thank you for keeping your rental account up to date.
@@ -221,10 +233,10 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
             <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
                 AMOUNT PAID
             </div>
-            <div style="font-size: 34px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
-                ${currency} ${amount}
+            <div style="font-size: 34px; font-weight: 800; color: #00d4c8; letter-spacing: -0.5px; margin-bottom: 12px;">
+                ${escapeHtml(currency)} ${amount}
             </div>
-            <span style="display: inline-block; background-color: rgba(37, 99, 235, 0.22); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
+            <span style="display: inline-block; background-color: rgba(0, 169, 157, 0.22); color: #5eead4; border: 1px solid rgba(0, 212, 200, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
                 ✓ Payment Successful
             </span>
         </div>
@@ -237,7 +249,7 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
         ${renderDetailRow('Property / Unit', propertyUnitText)}
         ${renderDetailRow('Organisation', businessName)}
         ${landlordName && landlordName.toLowerCase() !== businessName.toLowerCase() ? renderDetailRow('Landlord', landlordName) : ''}
-        ${renderDetailRow('Payment Mode & Date', `${String(payment.method || 'M-Pesa').toUpperCase()} &bull; ${date}`)}
+        ${renderDetailRow('Payment Mode & Date', `${String(payment.method || 'M-Pesa').toUpperCase()} • ${date}`)}
 
         <!-- Soft Green Attached Receipt Callout Box -->
         <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">

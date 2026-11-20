@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const ActivityLog = require('../models/ActivityLog');
 const { protect } = require('../middleware/authMiddleware');
+const { pickAllowed } = require('../middleware/securityMiddleware');
 
 // Get account-specific logs for current logged-in user
 router.get('/', protect, async (req, res) => {
@@ -22,7 +23,7 @@ router.get('/', protect, async (req, res) => {
     const query = {
       $or: [
         ...(currentUserId ? [{ userId: currentUserId }] : []),
-        ...(escapedEmail ? [{ userEmail: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } }] : [])
+        ...(escapedEmail ? [{ userEmail: new RegExp(`^${escapedEmail}$`, 'i') }] : [])
       ]
     };
 
@@ -58,7 +59,10 @@ router.get('/', protect, async (req, res) => {
 // Create log entry for current user
 router.post('/', protect, async (req, res) => {
   try {
-    const { action, description, type, status } = req.body;
+    const { action, description, type, status } = pickAllowed(req.body, ['action', 'description', 'type', 'status']);
+    if (!action || typeof action !== 'string') {
+      return res.status(400).json({ message: 'Action is required' });
+    }
     const log = await ActivityLog.create({
       user: req.user?.name || req.user?.email || 'User',
       userId: req.user?._id || req.user?.id || null,

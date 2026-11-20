@@ -326,6 +326,16 @@ class EtimsService {
   async retrySubmission({ submissionId, actorUser = null }) {
     const prev = await TaxSubmission.findById(submissionId);
     if (!prev) throw new Error('Tax submission record not found');
+    if (
+      actorUser &&
+      !actorUser.isSuperAdmin &&
+      actorUser.role !== 'superadmin' &&
+      String(prev.landlordId) !== String(actorUser._id || actorUser.id)
+    ) {
+      const err = new Error('Unauthorized to retry this tax submission');
+      err.statusCode = 403;
+      throw err;
+    }
     const result = await this.submitInvoiceToEtims({
       invoiceId: prev.invoiceId,
       actorUser

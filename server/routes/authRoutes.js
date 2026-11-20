@@ -7,18 +7,27 @@ const sendSMS = require('../utils/sendSMS');
 const crypto = require('crypto');
 const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
-const { protect } = require('../middleware/authMiddleware'); // Import protect!
+const { protect } = require('../middleware/authMiddleware');
+const {
+  getJwtSecret,
+  escapeRegExp,
+  authLoginLimiter,
+  authOtpLimiter,
+  authResetLimiter
+} = require('../middleware/securityMiddleware');
 const { validatePassword } = require('../utils/passwordPolicy');
 
-// 1. Persistent Auth: 7-day access token + 30-day refresh token + httpOnly secure cookies
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
+const hashOtp = (value) => crypto.createHash('sha256').update(String(value || '').trim()).digest('hex');
+
+// 1. Persistent Auth: 7-day access token + 30-day refresh token + httpOnly secure cookies (with tokenVersion binding)
+const generateToken = (id, tokenVersion = 0) => {
+  return jwt.sign({ id, tv: Number(tokenVersion || 0) }, getJwtSecret(), {
     expiresIn: '7d',
   });
 };
 
-const generateRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
+const generateRefreshToken = (id, tokenVersion = 0) => {
+  return jwt.sign({ id, tv: Number(tokenVersion || 0), kind: 'refresh' }, getJwtSecret(), {
     expiresIn: '30d',
   });
 };
@@ -85,12 +94,18 @@ const getEmailHeader = () => {
   `;
 };
 
-// Cloudflare Turnstile token verification helper
+// Cloudflare Turnstile token verification helper (strict, fail-closed in production)
 const verifyCloudflareTurnstile = async (token, reqIp) => {
-  if (!token || token.startsWith('cf-') || token.startsWith('XXXX.DUMMY.TOKEN')) {
-    return true; // Gracefully pass if Turnstile test/fallback token submitted
+  if (process.env.NODE_ENV === 'test') {
+    return true;
   }
-  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c';
+  const secretKey = (process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '').trim();
+  if (!secretKey) {
+    return false;
+  }
+  if (!token || typeof token !== 'string' || token.startsWith('cf-') || token.startsWith('XXXX.DUMMY.TOKEN')) {
+    return false;
+  }
   try {
     const formData = new URLSearchParams();
     formData.append('secret', secretKey);
@@ -102,47 +117,37 @@ const verifyCloudflareTurnstile = async (token, reqIp) => {
       body: formData
     });
     const outcome = await result.json();
-    return outcome.success;
+    return Boolean(outcome?.success);
   } catch (err) {
     console.warn('Cloudflare Turnstile verification warning:', err.message);
-    return true; // Non-fatal if CF API is temporarily unreachable
+    return false;
   }
 };
 
-// Environment check: whether app is running on Vercel, Render, or production
-const isProductionOrHosted = () => {
-  return !!(
-    process.env.VERCEL ||
-    process.env.RENDER ||
-    process.env.AWS_LAMBDA_FUNCTION_NAME ||
-    process.env.NODE_ENV === 'production'
-  );
-};
-
-// Generate real random 6-digit OTP code sent via Brevo (Email & SMS)
+// Generate cryptographically random 6-digit OTP code
 const generateOtpCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', async (req, res) => {
+router.post('/login', authLoginLimiter, async (req, res) => {
   const { email, password, turnstileToken } = req.body;
-  const reqIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const reqIp = req.ip || 'unknown';
 
   try {
-    const cleanEmail = (email || '').trim();
-    if (!cleanEmail || !password) {
+    const cleanEmail = String(email || '').trim();
+    if (!cleanEmail || !password || typeof password !== 'string') {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
     const user = await User.findOne({ 
-      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
+      email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i') 
     });
 
     if (!user) {
-      await logActivity('System', 'Login Failed', `Failed login attempt for nonexistent ${cleanEmail}`, 'auth', 'warning');
+      await logActivity('System', 'Login Failed', `Failed login attempt from ${reqIp}`, 'auth', 'warning');
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
@@ -150,7 +155,7 @@ router.post('/login', async (req, res) => {
     if (user.lockUntil && user.lockUntil > Date.now()) {
       const remainingMinutes = Math.ceil((user.lockUntil - Date.now()) / (60 * 1000));
       return res.status(423).json({ 
-        message: `Account temporarily locked due to 5 consecutive failed login attempts. Please try again in ${remainingMinutes} minute(s) or reset your password.`,
+        message: `Account temporarily locked due to repeated failed login attempts. Please try again in ${remainingMinutes} minute(s) or reset your password.`,
         isLocked: true,
         remainingMinutes
       });
@@ -167,11 +172,11 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    const isMatch = await user.matchPassword(password);
+    const isMatch = user.password ? await user.matchPassword(password) : false;
     if (!isMatch) {
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
 
-      // Lock account after 5 failed attempts (Senior Standard)
+      // Lock account after 5 failed attempts
       if (user.failedLoginAttempts >= 5) {
         user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 mins lock
         user.failedLoginAttempts = 0;
@@ -207,13 +212,11 @@ router.post('/login', async (req, res) => {
       }
 
       await user.save();
-      const remaining = 5 - user.failedLoginAttempts;
-      await logActivity(user, 'Login Failed', `Failed login attempt for ${user.email} (${remaining} tries left)`, 'auth', 'warning');
+      await logActivity(user, 'Login Failed', `Failed login attempt for ${user.email}`, 'auth', 'warning');
 
       return res.status(401).json({
-        message: `Invalid email or password. ${remaining} attempt(s) remaining before temporary account lockout.`,
-        requireCaptcha: user.failedLoginAttempts >= 3,
-        attemptsRemaining: remaining
+        message: 'Invalid email or password',
+        requireCaptcha: user.failedLoginAttempts >= 3
       });
     }
 
@@ -221,12 +224,11 @@ router.post('/login', async (req, res) => {
     user.failedLoginAttempts = 0;
     user.lockUntil = undefined;
 
-    // Generate a 6-digit login OTP (valid for 3 minutes)
+    // Generate a 6-digit login OTP (stored hashed in DB, valid for 3 minutes)
     const loginOtp = generateOtpCode();
-    user.otp = loginOtp;
-    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    user.otp = hashOtp(loginOtp);
+    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000);
     await user.save();
-    console.log(`🔑 [OTP] Login verification code for ${user.email}: ${loginOtp}`);
 
     // Send OTP via email
     let emailSent = false;
@@ -274,22 +276,28 @@ router.post('/login', async (req, res) => {
 
     await logActivity(user, 'Login OTP Sent', `Login OTP sent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
+    if (!emailSent && !smsSent) {
+      return res.status(503).json({
+        message: 'Verification code could not be delivered via email or SMS. Please try again shortly.',
+        emailSent: false,
+        smsSent: false
+      });
+    }
+
     return res.json({
       requiresOTP: true,
       email: user.email,
       name: user.name,
       emailSent,
-      smsSent,
-      emailError: emailSent ? undefined : emailError,
-      fallbackOtp: (emailSent || smsSent) ? undefined : loginOtp
+      smsSent
     });
   } catch (error) {
     console.error('Login error:', error.message);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: 'Unable to process login request' });
   }
 });
 
-router.post('/resend-login-otp', async (req, res) => {
+router.post('/resend-login-otp', authOtpLimiter, async (req, res) => {
   const { email } = req.body;
 
   try {
@@ -297,20 +305,22 @@ router.post('/resend-login-otp', async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    const cleanEmail = (email || '').trim();
+    const cleanEmail = String(email || '').trim();
     const user = await User.findOne({ 
-      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') } 
+      email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i') 
     });
     if (!user) {
-      return res.status(404).json({ message: 'No account found with this email' });
+      return res.json({
+        success: true,
+        message: 'If an account exists for that email, a new verification code has been sent.'
+      });
     }
 
-    // Generate fresh 6-digit OTP (3 minutes)
+    // Generate fresh 6-digit OTP (stored hashed, 3 minutes)
     const loginOtp = generateOtpCode();
-    user.otp = loginOtp;
-    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+    user.otp = hashOtp(loginOtp);
+    user.otpExpires = new Date(Date.now() + 3 * 60 * 1000);
     await user.save();
-    console.log(`🔑 [OTP] Resent login verification code for ${user.email}: ${loginOtp}`);
 
     // Send OTP via email
     let emailSent = false;
@@ -358,26 +368,29 @@ router.post('/resend-login-otp', async (req, res) => {
 
     await logActivity(user, 'Login OTP Resent', `Login OTP resent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
+    if (!emailSent && !smsSent) {
+      return res.status(503).json({
+        success: false,
+        message: 'Verification code delivery failed. Please try again shortly.'
+      });
+    }
+
     return res.json({
       success: true,
-      message: (emailSent || smsSent)
-        ? 'A new verification code has been sent.'
-        : 'Verification code delivery failed. Your verification code is provided below.',
+      message: 'If an account exists for that email, a new verification code has been sent.',
       emailSent,
-      smsSent,
-      emailError: emailSent ? undefined : emailError,
-      fallbackOtp: (emailSent || smsSent) ? undefined : loginOtp
+      smsSent
     });
   } catch (error) {
     console.error('Resend login OTP error:', error.message);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: 'Unable to process verification request' });
   }
 });
 
 // @desc    Verify login OTP and return token
 // @route   POST /api/auth/verify-login-otp
 // @access  Public
-router.post('/verify-login-otp', async (req, res) => {
+router.post('/verify-login-otp', authOtpLimiter, async (req, res) => {
   const { email, otp } = req.body;
 
   try {
@@ -385,12 +398,13 @@ router.post('/verify-login-otp', async (req, res) => {
       return res.status(400).json({ message: 'Email and OTP are required' });
     }
 
-    const cleanEmail = (email || '').trim();
-    const cleanOtp = (otp || '').trim();
+    const cleanEmail = String(email || '').trim();
+    const cleanOtp = String(otp || '').trim();
+    const hashedInputOtp = hashOtp(cleanOtp);
 
     const user = await User.findOne({
-      email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-      otp: cleanOtp,
+      email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i'),
+      otp: hashedInputOtp,
       otpExpires: { $gt: Date.now() }
     });
 
@@ -403,16 +417,20 @@ router.post('/verify-login-otp', async (req, res) => {
     user.otpExpires = undefined;
     if (!user.isVerified) user.isVerified = true;
 
-    // 1. Multi-Device Sessions: Short-lived access token + Multi-device refresh tokens
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    // 1. Multi-Device Sessions: access token + Multi-device refresh tokens bound to tokenVersion
+    const tv = user.tokenVersion || 0;
+    const accessToken = generateToken(user._id, tv);
+    const refreshToken = generateRefreshToken(user._id, tv);
     const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-    if (!Array.isArray(user.refreshTokens)) {
-      user.refreshTokens = [];
-    }
-    // Allow concurrent sessions across devices/browsers (keep last 10)
-    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
+    const nowMs = Date.now();
+    user.refreshTokens = (Array.isArray(user.refreshTokens) ? user.refreshTokens : [])
+      .filter(t => !t.expiresAt || new Date(t.expiresAt).getTime() > nowMs);
+    user.refreshTokens.push({
+      tokenHash,
+      createdAt: new Date(),
+      expiresAt: new Date(nowMs + 30 * 24 * 60 * 60 * 1000)
+    });
     if (user.refreshTokens.length > 10) {
       user.refreshTokens.shift();
     }
@@ -450,17 +468,17 @@ router.post('/verify-login-otp', async (req, res) => {
   }
 });
 
-// @desc    Refresh access token (Multi-device concurrent session rotation)
+// @desc    Refresh access token (Multi-device concurrent session rotation + reuse detection)
 // @route   POST /api/auth/refresh
 // @access  Public
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', authOtpLimiter, async (req, res) => {
   const incomingToken = req.cookies.refreshToken || req.body.refreshToken;
   if (!incomingToken) {
     return res.status(401).json({ message: 'Refresh token required' });
   }
 
   try {
-    const decoded = jwt.verify(incomingToken, process.env.JWT_SECRET || 'makaziflow_secret');
+    const decoded = jwt.verify(incomingToken, getJwtSecret());
     const user = await User.findById(decoded.id);
 
     if (!user) {
@@ -468,30 +486,46 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ message: 'Session expired or user not found' });
     }
 
+    if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.tokenVersion || 0)) {
+      clearAuthCookies(res);
+      return res.status(403).json({ message: 'Session has been revoked. Please sign in again.' });
+    }
+
     const incomingHashed = crypto.createHash('sha256').update(incomingToken).digest('hex');
+    const nowMs = Date.now();
     const tokenIndex = (user.refreshTokens || []).findIndex(
-      t => t.tokenHash === incomingHashed || t.tokenHash === incomingToken
+      t => t.tokenHash === incomingHashed && (!t.expiresAt || new Date(t.expiresAt).getTime() > nowMs)
     );
-    const isLegacyMatch = user.refreshToken === incomingHashed || user.refreshToken === incomingToken;
+    const isLegacyMatch = user.refreshToken === incomingHashed;
 
     if (tokenIndex === -1 && !isLegacyMatch) {
+      // Refresh token reuse / theft mitigation: revoke all active sessions for this user
+      user.refreshTokens = [];
+      user.refreshToken = undefined;
+      user.tokenVersion = (user.tokenVersion || 0) + 1;
+      await user.save();
       clearAuthCookies(res);
       return res.status(403).json({ message: 'Session expired on this device. Please sign in again.' });
     }
 
     // Rotate this specific session token while keeping other device sessions intact
-    const newAccessToken = generateToken(user._id);
-    const newRefreshToken = generateRefreshToken(user._id);
+    const tv = user.tokenVersion || 0;
+    const newAccessToken = generateToken(user._id, tv);
+    const newRefreshToken = generateRefreshToken(user._id, tv);
     const newHashed = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
 
-    if (!Array.isArray(user.refreshTokens)) {
-      user.refreshTokens = [];
-    }
+    user.refreshTokens = (Array.isArray(user.refreshTokens) ? user.refreshTokens : [])
+      .filter(t => !t.expiresAt || new Date(t.expiresAt).getTime() > nowMs);
 
-    if (tokenIndex !== -1) {
-      user.refreshTokens[tokenIndex] = { tokenHash: newHashed, createdAt: new Date() };
+    const newEntry = {
+      tokenHash: newHashed,
+      createdAt: new Date(),
+      expiresAt: new Date(nowMs + 30 * 24 * 60 * 60 * 1000)
+    };
+    if (tokenIndex !== -1 && tokenIndex < user.refreshTokens.length) {
+      user.refreshTokens[tokenIndex] = newEntry;
     } else {
-      user.refreshTokens.push({ tokenHash: newHashed, createdAt: new Date() });
+      user.refreshTokens.push(newEntry);
     }
     user.refreshToken = newHashed;
     await user.save();
@@ -540,7 +574,7 @@ router.post('/logout', async (req, res) => {
   res.json({ message: 'Logged out successfully, cookies cleared.' });
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', authOtpLimiter, async (req, res) => {
   const { name, email, phone, password, confirmPassword, role } = req.body;
 
   try {
@@ -562,15 +596,15 @@ router.post('/register', async (req, res) => {
         });
       }
 
-      const userExists = await User.findOne({ email });
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const userExists = await User.findOne({ email: new RegExp(`^${escapeRegExp(normalizedEmail)}$`, 'i') });
       if (userExists) {
         return res.status(400).json({ message: 'An account with this email already exists' });
       }
 
-      // 2. Generate OTP
+      // 2. Generate OTP (stored hashed in DB)
       const otp = generateOtpCode();
       const otpExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 mins
-      console.log(`🔑 [OTP] Registration verification code for ${email}: ${otp}`);
 
       // Security: Never allow self-registering as superadmin via public endpoint
       const safeRole = ['landlord', 'caretaker', 'tenant', 'manager', 'admin'].includes(role)
@@ -579,12 +613,12 @@ router.post('/register', async (req, res) => {
 
       // 3. Create User (Unverified) — NOTE: do NOT pass confirmPassword to Mongoose
       const user = await User.create({
-        name,
-        email: (email || '').trim().toLowerCase(),
-        phone: phone || undefined,
+        name: String(name).trim(),
+        email: normalizedEmail,
+        phone: phone ? String(phone).trim() : undefined,
         password,
         role: safeRole,
-        otp,
+        otp: hashOtp(otp),
         otpExpires,
         isVerified: false
       });
@@ -632,8 +666,7 @@ router.post('/register', async (req, res) => {
           message: 'Registration successful. Please verify your email.',
           requiresVerification: true,
           email: user.email,
-          emailSent,
-          fallbackOtp: emailSent ? undefined : otp
+          emailSent
         });
       } else {
         res.status(400).json({ message: 'Could not create account. Please try again.' });
@@ -645,8 +678,7 @@ router.post('/register', async (req, res) => {
         return res.status(400).json({ message: 'An account with this email already exists' });
       }
       res.status(500).json({ 
-        message: error.message || 'Server error during registration. Please try again.',
-        details: error.name || 'ServerError'
+        message: 'Server error during registration. Please try again.'
       });
   }
 });
@@ -654,13 +686,17 @@ router.post('/register', async (req, res) => {
 // @desc    Verify OTP
 // @route   POST /api/auth/verify-email
 // @access  Public
-router.post('/verify-email', async (req, res) => {
+router.post('/verify-email', authOtpLimiter, async (req, res) => {
     const { email, otp } = req.body;
 
     try {
+        if (!email || !otp) {
+          return res.status(400).json({ message: 'Email and OTP are required' });
+        }
+        const cleanEmail = String(email).trim();
         const user = await User.findOne({ 
-          email: { $regex: new RegExp(`^${(email || '').trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, 'i') }, 
-          otp, 
+          email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i'), 
+          otp: hashOtp(otp), 
           otpExpires: { $gt: Date.now() } 
         });
 
@@ -671,19 +707,31 @@ router.post('/verify-email', async (req, res) => {
         user.isVerified = true;
         user.otp = undefined;
         user.otpExpires = undefined;
+        const tv = user.tokenVersion || 0;
+        const accessToken = generateToken(user._id, tv);
+        const refreshToken = generateRefreshToken(user._id, tv);
+        const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
+        user.refreshTokens.push({ tokenHash, createdAt: new Date(), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) });
+        if (user.refreshTokens.length > 10) user.refreshTokens.shift();
+        user.refreshToken = tokenHash;
         await user.save();
+
+        setAuthCookies(res, accessToken, refreshToken);
 
         res.json({
             _id: user._id,
+            id: user._id,
             name: user.name,
             email: user.email,
             role: user.role,
-            token: generateToken(user._id),
+            token: accessToken,
+            refreshToken,
             message: 'Email verified successfully'
         });
 
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: 'Email verification failed' });
     }
 });
 
@@ -694,13 +742,14 @@ router.post('/verify-email', async (req, res) => {
 // @access  Private
 router.post('/2fa/enable', protect, async (req, res) => {
     try {
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
         const secret = authenticator.generateSecret();
-        const otpauth = authenticator.keyuri(req.user.email, 'RentalManager', secret);
+        const otpauth = authenticator.keyuri(user.email, 'MakaziFlow', secret);
         
-        // Save temporarily or check verify step to save?
-        // Usually, we save the secret but keep Enabled = false until verify
-        req.user.twoFactorSecret = secret;
-        await req.user.save();
+        user.twoFactorSecret = secret;
+        await user.save();
         
         const qrCodeUrl = await QRCode.toDataURL(otpauth);
         
@@ -719,20 +768,21 @@ router.post('/2fa/enable', protect, async (req, res) => {
 router.post('/2fa/verify', protect, async (req, res) => {
     const { token } = req.body;
     try {
-        if (!req.user.twoFactorSecret) {
+        const user = await User.findById(req.user._id);
+        if (!user || !user.twoFactorSecret) {
             return res.status(400).json({ message: "2FA initialization not found" });
         }
 
-        const isValid = authenticator.verify({ token, secret: req.user.twoFactorSecret });
+        const isValid = authenticator.verify({ token, secret: user.twoFactorSecret });
 
         if (!isValid) {
             return res.status(400).json({ message: "Invalid Code" });
         }
 
-        req.user.twoFactorEnabled = true;
-        await req.user.save();
+        user.twoFactorEnabled = true;
+        await user.save();
 
-        await logActivity(req.user, 'Security Update', '2FA Enabled', 'auth', 'success');
+        await logActivity(user, 'Security Update', '2FA Enabled', 'auth', 'success');
 
         res.json({ message: "2FA Enabled Successfully" });
     } catch (error) {
@@ -745,11 +795,14 @@ router.post('/2fa/verify', protect, async (req, res) => {
 // @access  Private
 router.post('/2fa/disable', protect, async (req, res) => {
     try {
-        req.user.twoFactorEnabled = false;
-        req.user.twoFactorSecret = undefined;
-        await req.user.save();
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        user.twoFactorEnabled = false;
+        user.twoFactorSecret = undefined;
+        await user.save();
         
-        await logActivity(req.user, 'Security Update', '2FA Disabled', 'auth', 'warning');
+        await logActivity(user, 'Security Update', '2FA Disabled', 'auth', 'warning');
         
         res.json({ message: "2FA Disabled" });
     } catch (error) {
@@ -757,31 +810,31 @@ router.post('/2fa/disable', protect, async (req, res) => {
     }
 });
 
-// @desc    Forgot Password - Request reset code
+// @desc    Forgot Password - Request reset code (anti-enumeration)
 // @route   POST /api/auth/forgot-password
 // @access  Public
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', authResetLimiter, async (req, res) => {
     const { email } = req.body;
     try {
         if (!email) {
             return res.status(400).json({ message: 'Email is required' });
         }
 
-        const cleanEmail = (email || '').trim();
+        const cleanEmail = String(email || '').trim();
         const user = await User.findOne({ 
-          email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
+          email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i') 
         });
         if (!user) {
-            return res.status(404).json({ message: 'No account found with this email' });
+            return res.json({
+                message: 'If an account exists for that email, a 3-minute one-time password reset code has been sent.'
+            });
         }
 
-        // 2. Senior Standard: Generate random code, store hashed with SHA-256 in DB, strictly 15 mins expiry
+        // Generate random code, store hashed with SHA-256 in DB, 3 mins expiry
         const resetCode = generateOtpCode();
-        const hashedCode = crypto.createHash('sha256').update(resetCode).digest('hex');
-        user.resetPasswordToken = hashedCode;
-        user.resetPasswordExpires = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes strictly
+        user.resetPasswordToken = hashOtp(resetCode);
+        user.resetPasswordExpires = new Date(Date.now() + 3 * 60 * 1000);
         await user.save();
-        console.log(`🔑 [OTP] Password reset verification code for ${user.email}: ${resetCode}`);
 
         // Send reset code email (NEVER send plain passwords)
         let emailSent = false;
@@ -829,12 +882,9 @@ router.post('/forgot-password', async (req, res) => {
         await logActivity(user, 'Password Reset Requested', `Password reset code sent to ${user.email} (Email: ${emailSent ? 'Sent' : 'Failed'}${smsSent ? ', SMS: Sent' : ''})`, 'auth', (emailSent || smsSent) ? 'info' : 'warning');
 
         res.json({
-            message: 'A 3-minute one-time password reset code has been sent to your email.',
-            email: user.email,
+            message: 'If an account exists for that email, a 3-minute one-time password reset code has been sent.',
             emailSent,
-            smsSent,
-            emailError: emailSent ? undefined : emailError,
-            fallbackOtp: (emailSent || smsSent) ? undefined : resetCode
+            smsSent
         });
     } catch (error) {
         console.error('Forgot password error:', error.message);
@@ -842,7 +892,7 @@ router.post('/forgot-password', async (req, res) => {
     }
 });
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', authResetLimiter, async (req, res) => {
     const { email, code, newPassword } = req.body;
     try {
         if (!email || !code || !newPassword) {
@@ -858,17 +908,14 @@ router.post('/reset-password', async (req, res) => {
             });
         }
 
-        const cleanEmail = (email || '').trim();
-        const cleanCode = (code || '').trim();
-        const hashedInput = crypto.createHash('sha256').update(cleanCode).digest('hex');
+        const cleanEmail = String(email || '').trim();
+        const cleanCode = String(code || '').trim();
+        const hashedInput = hashOtp(cleanCode);
 
-        // Match against hashed token in DB (with fallback to unhashed for backwards compatibility)
+        // Match strictly against SHA-256 hashed token in DB
         const user = await User.findOne({
-          email: { $regex: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-          $or: [
-            { resetPasswordToken: hashedInput },
-            { resetPasswordToken: cleanCode }
-          ],
+          email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i'),
+          resetPasswordToken: hashedInput,
           resetPasswordExpires: { $gt: Date.now() }
         });
 
@@ -876,11 +923,14 @@ router.post('/reset-password', async (req, res) => {
           return res.status(400).json({ message: 'Invalid or expired reset code (codes expire in 3 minutes)' });
         }
 
-        // Update password, clear token (one-time use) & invalidate existing sessions
+        // Update password, clear token (one-time use) & invalidate all active sessions across devices
         user.password = newPassword;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
-        user.refreshToken = undefined; // Revoke old sessions (Senior Standard)
+        user.refreshToken = undefined;
+        user.refreshTokens = [];
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        user.passwordChangedAt = new Date();
         await user.save();
 
         clearAuthCookies(res);
@@ -928,252 +978,53 @@ router.post('/change-password', protect, async (req, res) => {
             });
         }
 
+        // Revoke all previous JWTs and refresh tokens across all devices
         user.password = newPassword;
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        user.passwordChangedAt = new Date();
+        user.refreshTokens = [];
+        user.refreshToken = undefined;
         await user.save();
 
-        await logActivity(user, 'Password Changed', `User ${user.name} successfully updated account password`, 'auth', 'success');
+        // Issue fresh session tokens AFTER bcrypt save finishes so iat >= passwordChangedAt
+        const tv = user.tokenVersion;
+        const newAccessToken = generateToken(user._id, tv);
+        const newRefreshToken = generateRefreshToken(user._id, tv);
+        const newHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                refreshToken: newHash,
+                refreshTokens: [{
+                    tokenHash: newHash,
+                    createdAt: new Date(),
+                    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                }]
+            }
+        });
 
-        res.json({ success: true, message: 'Password changed successfully' });
+        setAuthCookies(res, newAccessToken, newRefreshToken);
+
+        await logActivity(user, 'Password Changed', `User ${user.name} updated account password and rotated active sessions`, 'auth', 'success');
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully. Other active sessions have been signed out.',
+            token: newAccessToken,
+            refreshToken: newRefreshToken
+        });
     } catch (error) {
         console.error('Change password error:', error.message);
-        res.status(500).json({ message: error.message || 'Server error changing password' });
+        res.status(500).json({ message: 'Server error changing password' });
     }
 });
 
-// Helper to decode JWT payload safely (used for Google / Apple ID tokens)
-const decodeJwtPayload = (token) => {
-  try {
-    const parts = token.split('.');
-    if (parts.length < 2) return null;
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const jsonStr = Buffer.from(base64, 'base64').toString('utf8');
-    return JSON.parse(jsonStr);
-  } catch (err) {
-    console.error('Failed to parse token payload:', err);
-    return null;
-  }
-};
-
-// @desc    Google OAuth Login / Sign-Up
-// @route   POST /api/auth/google
-// @access  Public
-router.post('/google', async (req, res) => {
-  const { credential, accessToken, role } = req.body;
-
-  try {
-    let email = null;
-    let name = null;
-    let googleId = null;
-    let picture = null;
-
-    // 1. Try decoding standard Google ID Token (from Google Identity Services credential)
-    if (credential) {
-      const payload = decodeJwtPayload(credential);
-      if (payload && payload.email) {
-        email = payload.email.toLowerCase();
-        name = payload.name || payload.given_name || email.split('@')[0];
-        googleId = payload.sub;
-        picture = payload.picture;
-      }
-    }
-
-    // 2. Fallback: If access token was provided or decoding didn't yield email, fetch from Google userinfo API
-    if (!email && (accessToken || credential)) {
-      const tokenToUse = accessToken || credential;
-      try {
-        const axios = require('axios');
-        const googleRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenToUse}` }
-        });
-        if (googleRes.data && googleRes.data.email) {
-          email = googleRes.data.email.toLowerCase();
-          name = googleRes.data.name || email.split('@')[0];
-          googleId = googleRes.data.sub;
-          picture = googleRes.data.picture;
-        }
-      } catch (gErr) {
-        console.warn('Google userinfo fetch fallback skipped/failed:', gErr.message);
-      }
-    }
-
-    // 3. Fallback: Direct payload if user provided email directly in sandbox/demo mode
-    if (!email && req.body.email) {
-      email = req.body.email.toLowerCase();
-      name = req.body.name || email.split('@')[0];
-      googleId = req.body.googleId || req.body.sub;
-      picture = req.body.picture;
-    }
-
-    if (!email) {
-      return res.status(400).json({ message: 'Invalid Google authentication credential. Email not found.' });
-    }
-
-    // 4. Find or create user
-    let user = await User.findOne({ email });
-
-    if (user) {
-      // Existing user: link googleId and update avatar if missing
-      if (!user.googleId && googleId) user.googleId = googleId;
-      if (picture && (!user.avatar || user.avatar.includes('shadcn.png'))) user.avatar = picture;
-      if (!user.isVerified) user.isVerified = true; // Google verifies emails
-      await user.save();
-      await logActivity(user, 'Google Sign-In', `User signed in with Google`, 'auth', 'success');
-    } else {
-      // New user registration
-      user = await User.create({
-        name: name || 'Google User',
-        email: (email || '').trim().toLowerCase(),
-        authProvider: 'google',
-        googleId: googleId || undefined,
-        role: role === 'caretaker' ? 'caretaker' : 'admin',
-        avatar: picture || 'https://github.com/shadcn.png',
-        isVerified: true
-      });
-      await logActivity(user, 'Google Account Created', `New user registered via Google`, 'auth', 'success');
-    }
-
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
-    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
-    if (user.refreshTokens.length > 10) user.refreshTokens.shift();
-    user.refreshToken = tokenHash;
-    await user.save();
-    setAuthCookies(res, accessToken, refreshToken);
-
-    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
-
-    res.json({
-      _id: user._id,
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      isSuperAdmin,
-      avatar: user.avatar,
-      authProvider: user.authProvider || 'google',
-      token: accessToken,
-      refreshToken,
-      twoFactorEnabled: user.twoFactorEnabled,
-      hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
-      onboardingRole: user.onboardingRole || 'landlord',
-      unitsCount: user.unitsCount || 0,
-      subscriptionTier: user.subscriptionTier || 'starter',
-      isDemoMode: Boolean(user.isDemoMode)
-    });
-
-  } catch (error) {
-    console.error('Google auth error:', error);
-    res.status(500).json({ message: error.message || 'Google authentication failed' });
-  }
+// Social OAuth Sign-In Disabled (Google & Apple login removed per security hardening)
+router.post('/google', (req, res) => {
+  return res.status(410).json({ message: 'Google Sign-In has been disabled. Please sign in using your email and password.' });
 });
 
-// @desc    Apple OAuth Login / Sign-Up
-// @route   POST /api/auth/apple
-// @access  Public
-router.post('/apple', async (req, res) => {
-  const { id_token, token, user: appleUserData, role } = req.body;
-
-  try {
-    let email = null;
-    let name = null;
-    let appleId = null;
-
-    const tokenToDecode = id_token || token;
-    if (tokenToDecode) {
-      const payload = decodeJwtPayload(tokenToDecode);
-      if (payload) {
-        email = payload.email ? payload.email.toLowerCase() : null;
-        appleId = payload.sub;
-      }
-    }
-
-    // Apple only sends the user's name on first authorization in req.body.user
-    if (appleUserData) {
-      const parsedUser = typeof appleUserData === 'string' ? JSON.parse(appleUserData) : appleUserData;
-      if (parsedUser.name) {
-        const first = parsedUser.name.firstName || '';
-        const last = parsedUser.name.lastName || '';
-        name = `${first} ${last}`.trim();
-      }
-      if (!email && parsedUser.email) {
-        email = parsedUser.email.toLowerCase();
-      }
-    }
-
-    // Direct fallback from payload
-    if (!email && req.body.email) {
-      email = req.body.email.toLowerCase();
-      name = req.body.name || email.split('@')[0];
-      appleId = req.body.appleId || req.body.sub;
-    }
-
-    if (!email && !appleId) {
-      return res.status(400).json({ message: 'Invalid Apple authorization token' });
-    }
-
-    let user = null;
-    if (email) {
-      user = await User.findOne({ email });
-    } else if (appleId) {
-      user = await User.findOne({ appleId });
-    }
-
-    if (user) {
-      if (!user.appleId && appleId) user.appleId = appleId;
-      if (!user.isVerified) user.isVerified = true;
-      await user.save();
-      await logActivity(user, 'Apple Sign-In', `User signed in with Apple`, 'auth', 'success');
-    } else {
-      user = await User.create({
-        name: name || (email ? email.split('@')[0] : 'Apple User'),
-        email: email || `${appleId.slice(0, 10)}@privaterelay.appleid.com`,
-        authProvider: 'apple',
-        appleId: appleId || undefined,
-        role: role === 'caretaker' ? 'caretaker' : 'admin',
-        isVerified: true
-      });
-      await logActivity(user, 'Apple Account Created', `New user registered via Apple`, 'auth', 'success');
-    }
-
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
-    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
-    if (user.refreshTokens.length > 10) user.refreshTokens.shift();
-    user.refreshToken = tokenHash;
-    await user.save();
-    setAuthCookies(res, accessToken, refreshToken);
-
-    const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
-
-    res.json({
-      _id: user._id,
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      isSuperAdmin,
-      avatar: user.avatar,
-      authProvider: user.authProvider || 'apple',
-      token: accessToken,
-      refreshToken,
-      twoFactorEnabled: user.twoFactorEnabled,
-      hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
-      onboardingRole: user.onboardingRole || 'landlord',
-      unitsCount: user.unitsCount || 0,
-      subscriptionTier: user.subscriptionTier || 'starter',
-      isDemoMode: Boolean(user.isDemoMode)
-    });
-
-  } catch (error) {
-    console.error('Apple auth error:', error);
-    res.status(500).json({ message: error.message || 'Apple authentication failed' });
-  }
+router.post('/apple', (req, res) => {
+  return res.status(410).json({ message: 'Apple Sign-In has been disabled. Please sign in using your email and password.' });
 });
 
 // @desc    Get current authenticated user profile
@@ -1181,7 +1032,9 @@ router.post('/apple', async (req, res) => {
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password -otp -twoFactorSecret');
+    const user = await User.findById(req.user.id).select(
+      '-password -otp -otpExpires -twoFactorSecret -resetPasswordToken -resetPasswordExpires -refreshToken -refreshTokens'
+    );
     if (!user) return res.status(404).json({ message: 'User not found' });
     const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const userObj = user.toObject();
@@ -1190,7 +1043,7 @@ router.get('/me', protect, async (req, res) => {
     }
     res.json(userObj);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: 'Failed to load profile' });
   }
 });
 
@@ -1211,8 +1064,11 @@ router.put('/profile', protect, async (req, res) => {
     }
     if (typeof email === 'string' && email.trim()) {
       const cleanEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ message: 'Please provide a valid email address.' });
+      }
       if (cleanEmail !== (user.email || '').toLowerCase()) {
-        const existing = await User.findOne({ email: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), _id: { $ne: user._id } });
+        const existing = await User.findOne({ email: new RegExp(`^${escapeRegExp(cleanEmail)}$`, 'i'), _id: { $ne: user._id } });
         if (existing) {
           return res.status(400).json({ message: 'That email address is already registered to another account.' });
         }
@@ -1237,10 +1093,15 @@ router.put('/profile', protect, async (req, res) => {
     const safeUser = user.toObject();
     delete safeUser.password;
     delete safeUser.otp;
+    delete safeUser.otpExpires;
     delete safeUser.twoFactorSecret;
+    delete safeUser.resetPasswordToken;
+    delete safeUser.resetPasswordExpires;
+    delete safeUser.refreshToken;
+    delete safeUser.refreshTokens;
     res.json(safeUser);
   } catch (err) {
-    res.status(500).json({ message: err.message || 'Failed to update profile' });
+    res.status(500).json({ message: 'Failed to update profile' });
   }
 });
 
@@ -1300,7 +1161,7 @@ router.post('/onboarding', protect, async (req, res) => {
       isSuperAdmin,
       avatar: freshUser.avatar,
       authProvider: freshUser.authProvider,
-      token: generateToken(freshUser._id),
+      token: generateToken(freshUser._id, freshUser.tokenVersion || 0),
       twoFactorEnabled: freshUser.twoFactorEnabled,
       hasCompletedOnboarding: freshUser.hasCompletedOnboarding,
       onboardingRole: freshUser.onboardingRole,

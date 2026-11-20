@@ -3,7 +3,8 @@ const router = express.Router();
 const Reminder = require('../models/Reminder');
 const Tenant = require('../models/Tenant');
 const Payment = require('../models/Payment');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect, admin, superAdmin } = require('../middleware/authMiddleware');
+const { validateObjectId, isValidObjectId } = require('../middleware/securityMiddleware');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
@@ -171,6 +172,9 @@ router.post('/', protect, async (req, res) => {
 
     // Case 1: Specific tenant selected
     if (tenantId && tenantId !== 'all_debtors') {
+      if (!isValidObjectId(String(tenantId))) {
+        return res.status(400).json({ message: 'Invalid tenant identifier' });
+      }
       const tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId', 'unitNumber rentAmount propertyId');
       if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
@@ -417,7 +421,7 @@ router.post('/', protect, async (req, res) => {
 });
 
 // Send single reminder immediately by ID
-router.post('/:id/send', protect, async (req, res) => {
+router.post('/:id/send', protect, validateObjectId('id'), async (req, res) => {
   try {
     const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user.id })
       .populate({ path: 'tenantId', populate: { path: 'unitId', select: 'unitNumber' } });
@@ -482,7 +486,7 @@ router.post('/:id/send', protect, async (req, res) => {
 });
 
 // Delete reminder
-router.delete('/:id', protect, async (req, res) => {
+router.delete('/:id', protect, validateObjectId('id'), async (req, res) => {
   try {
     const reminder = await Reminder.findOne({ _id: req.params.id, user: req.user.id });
     if (!reminder) return res.status(404).json({ message: 'Reminder not found' });
@@ -495,10 +499,10 @@ router.delete('/:id', protect, async (req, res) => {
   }
 });
 
-// @desc    Create (and optionally schedule/send) a Brevo Email Campaign
+// @desc    Create (and optionally schedule/send) a Platform Email Campaign
 // @route   POST /api/reminders/campaign
-// @access  Private (Admin / Landlord)
-router.post('/campaign', protect, admin, async (req, res) => {
+// @access  Private (Super Admin only - prevents cross-tenant Brevo list access)
+router.post('/campaign', protect, superAdmin, async (req, res) => {
   try {
     const {
       name,

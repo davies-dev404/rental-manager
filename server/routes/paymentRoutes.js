@@ -5,7 +5,8 @@ const Settings = require('../models/Settings');
 const Tenant = require('../models/Tenant');
 const Unit = require('../models/Unit');
 const Property = require('../models/Property');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, admin } = require('../middleware/authMiddleware');
+const { validateObjectId, isValidObjectId, escapeRegExp } = require('../middleware/securityMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
 const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const sendEmail = require('../utils/sendEmail');
@@ -50,7 +51,7 @@ router.get('/', protect, async (req, res) => {
 // @desc    Get single payment
 // @route   GET /api/payments/:id
 // @access  Private
-router.get('/:id', protect, async (req, res) => {
+router.get('/:id', protect, validateObjectId('id'), async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email')
@@ -119,31 +120,33 @@ router.post('/', protect, async (req, res) => {
 
     let tenant = null;
 
-    if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+    if (tenantId && isValidObjectId(String(tenantId))) {
         tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id });
     }
     
     if (!tenant && tenantName) {
-        tenant = await Tenant.findOne({ name: new RegExp('^' + tenantName + '$', 'i'), user: req.user.id });
+        tenant = await Tenant.findOne({ name: new RegExp('^' + escapeRegExp(String(tenantName).trim()) + '$', 'i'), user: req.user.id });
     }
 
     if (!tenant && unitNumber) {
-        const matchingUnit = await Unit.findOne({ unitNumber: new RegExp('^' + unitNumber + '$', 'i'), user: req.user.id });
+        const matchingUnit = await Unit.findOne({ unitNumber: new RegExp('^' + escapeRegExp(String(unitNumber).trim()) + '$', 'i'), user: req.user.id });
         if (matchingUnit) {
             tenant = await Tenant.findOne({ unitId: matchingUnit._id, user: req.user.id });
         }
-    }
-
-    // Fallback: pick any tenant if none specified or find the first active tenant
-    if (!tenant && !tenantId) {
-        tenant = await Tenant.findOne({ user: req.user.id, status: 'active' });
     }
     
     if (!tenant) {
         return res.status(404).json({ message: "Tenant not found for this payment" });
     }
 
-    const finalUnitId = tenant.unitId || reqUnitId;
+    let finalUnitId = tenant.unitId;
+    if (!finalUnitId && reqUnitId && isValidObjectId(String(reqUnitId))) {
+        const ownedUnit = await Unit.findOne({ _id: reqUnitId, user: req.user.id }).select('_id');
+        if (!ownedUnit) {
+            return res.status(403).json({ message: 'Unit does not belong to your organization' });
+        }
+        finalUnitId = ownedUnit._id;
+    }
     const paymentDate = date ? new Date(date) : new Date();
     const defaultMonth = `${paymentDate.getFullYear()}-${String(paymentDate.getMonth() + 1).padStart(2, '0')}`;
 
@@ -180,9 +183,9 @@ router.post('/', protect, async (req, res) => {
         isUnpaid ? 'warning' : 'success'
     );
 
-    // Update Tenant nextPaymentDate if provided
-    if (nextPaymentDate && tenantId) {
-        await Tenant.findByIdAndUpdate(tenantId, { nextPaymentDate });
+    // Update Tenant nextPaymentDate if provided (scoped to req.user.id)
+    if (nextPaymentDate && tenant?._id) {
+        await Tenant.findOneAndUpdate({ _id: tenant._id, user: req.user.id }, { nextPaymentDate });
     }
 
     // Send ONE Receipt Email only if payment was actually made
@@ -214,6 +217,12 @@ const updatePaymentHandler = async (req, res) => {
 
     if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
+    if (payment.paymentTransactionId) {
+      return res.status(403).json({
+        message: 'Verified gateway-settled payments are immutable and cannot be edited directly.'
+      });
+    }
+
     const prevStatus = String(payment.status || '').toLowerCase();
     const { status, method, reference, transactionId, date, amount, notes, sendReceipt } = req.body || {};
 
@@ -226,8 +235,12 @@ const updatePaymentHandler = async (req, res) => {
     else if (transactionId !== undefined) payment.reference = transactionId;
     if (date !== undefined && date) payment.date = new Date(date);
     if (notes !== undefined) payment.notes = notes;
-    if (amount !== undefined && Number(amount) > 0) {
-      payment.amount = Number(amount);
+    if (amount !== undefined) {
+      const parsedAmt = Number(amount);
+      if (!Number.isFinite(parsedAmt) || parsedAmt <= 0) {
+        return res.status(400).json({ message: 'Payment amount must be a positive number' });
+      }
+      payment.amount = parsedAmt;
     }
 
     const nextStatus = String(payment.status || '').toLowerCase();
@@ -281,16 +294,21 @@ const updatePaymentHandler = async (req, res) => {
   }
 };
 
-router.put('/:id', protect, updatePaymentHandler);
-router.patch('/:id', protect, updatePaymentHandler);
+router.put('/:id', protect, admin, validateObjectId('id'), updatePaymentHandler);
+router.patch('/:id', protect, admin, validateObjectId('id'), updatePaymentHandler);
 
 // @desc    Delete payment / invoice record
 // @route   DELETE /api/payments/:id
-// @access  Private
-router.delete('/:id', protect, async (req, res) => {
+// @access  Private (Admin)
+router.delete('/:id', protect, admin, validateObjectId('id'), async (req, res) => {
   try {
     const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id });
     if (!payment) return res.status(404).json({ message: 'Payment not found' });
+    if (payment.paymentTransactionId) {
+      return res.status(403).json({
+        message: 'Verified gateway-settled payments cannot be deleted directly.'
+      });
+    }
     await payment.deleteOne();
     await logActivity(req.user, 'Delete Payment', `Deleted payment record #${req.params.id.slice(-6).toUpperCase()}`, 'payment', 'info');
     res.json({ message: 'Payment removed' });
@@ -302,7 +320,7 @@ router.delete('/:id', protect, async (req, res) => {
 // @desc    Resend Receipt Email
 // @route   POST /api/payments/:id/email
 // @access  Private
-router.post('/:id/email', protect, async (req, res) => {
+router.post('/:id/email', protect, validateObjectId('id'), async (req, res) => {
     try {
         // Verify ownership first
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id });
@@ -334,7 +352,7 @@ router.post('/:id/email', protect, async (req, res) => {
 // @desc    Download Receipt PDF
 // @route   GET /api/payments/:id/pdf
 // @access  Private
-router.get('/:id/pdf', protect, async (req, res) => {
+router.get('/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email phone')
@@ -460,11 +478,11 @@ router.post('/send-invoice', protect, async (req, res) => {
         const { tenantId, invoiceId, amount, dueDate, notes, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
         
         let tenant = null;
-        if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+        if (tenantId && isValidObjectId(String(tenantId))) {
             tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId');
         }
         if (!tenant && fallbackName) {
-            tenant = await Tenant.findOne({ name: new RegExp('^' + fallbackName.trim() + '$', 'i'), user: req.user.id }).populate('unitId');
+            tenant = await Tenant.findOne({ name: new RegExp('^' + escapeRegExp(String(fallbackName).trim()) + '$', 'i'), user: req.user.id }).populate('unitId');
         }
 
         const recipientName = tenant?.name || fallbackName || 'Valued Tenant';
@@ -499,7 +517,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                         <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
                             AMOUNT DUE
                         </div>
-                        <div style="font-size: 32px; font-weight: 800; color: #60a5fa; letter-spacing: -0.5px; margin-bottom: 12px;">
+                        <div style="font-size: 32px; font-weight: 800; color: #00d4c8; letter-spacing: -0.5px; margin-bottom: 12px;">
                             KES ${totalAmt}
                         </div>
                         <span style="display: inline-block; background-color: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">

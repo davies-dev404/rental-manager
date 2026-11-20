@@ -109,28 +109,6 @@ export function AuthProvider({ children }) {
         return await api.resendLoginOtp(email);
     };
 
-    const socialLogin = async (provider, payload) => {
-        try {
-            const authFn = provider === 'apple' ? api.appleAuth : api.googleAuth;
-            const resUser = await authFn(payload);
-            localStorage.setItem("rental_user", JSON.stringify(resUser));
-            hydrateQueryCacheForUser(resUser);
-            setUser(resUser);
-            toast({ 
-              title: "Welcome! 🎉", 
-              description: `Signed in as ${resUser.name} (${resUser.role})` 
-            });
-            return resUser;
-        } catch (error) {
-            toast({ 
-              variant: "destructive", 
-              title: `${provider === 'apple' ? 'Apple' : 'Google'} Sign-In Failed`, 
-              description: error.message || "Could not complete sign in" 
-            });
-            throw error;
-        }
-    };
-
     const logout = async () => {
         try {
             await api.logout();
@@ -155,7 +133,7 @@ export function AuthProvider({ children }) {
         }
     };
 
-    return (<AuthContext.Provider value={{ user, login, verifyLoginOtp, resendLoginOtp, socialLogin, logout, updateProfile, isLoading }}>
+    return (<AuthContext.Provider value={{ user, login, verifyLoginOtp, resendLoginOtp, logout, updateProfile, isLoading }}>
       {children}
     </AuthContext.Provider>);
 }

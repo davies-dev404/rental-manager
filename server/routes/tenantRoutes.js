@@ -6,6 +6,13 @@ const Unit = require('../models/Unit');
 const Payment = require('../models/Payment');
 const logActivity = require('../utils/logActivity');
 const { protect } = require('../middleware/authMiddleware');
+const { validateObjectId, pickAllowed, isValidObjectId } = require('../middleware/securityMiddleware');
+
+const ALLOWED_TENANT_FIELDS = [
+  'name', 'email', 'phone', 'nationalId', 'unitId', 'propertyId', 'rentAmount',
+  'deposit', 'deposits', 'depositType', 'leaseStart', 'leaseEnd', 'nextPaymentDate',
+  'status', 'utilities', 'emergencyContact', 'notes', 'kraPin', 'property', 'unit'
+];
 
 // Get all tenants with payment status
 router.get('/', protect, async (req, res) => {
@@ -95,13 +102,18 @@ router.get('/', protect, async (req, res) => {
 // Add tenant
 router.post('/', protect, async (req, res) => {
   try {
-    const payload = { ...req.body };
+    const payload = pickAllowed(req.body, ALLOWED_TENANT_FIELDS);
 
     // Sanitize unitId: remove if empty, "none", "undefined", or invalid ObjectId
     if (!payload.unitId || payload.unitId === "" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
       delete payload.unitId;
-    } else if (!mongoose.Types.ObjectId.isValid(payload.unitId)) {
+    } else if (!isValidObjectId(String(payload.unitId))) {
       delete payload.unitId;
+    } else {
+      const ownedUnit = await Unit.findOne({ _id: payload.unitId, user: req.user.id }).select('_id');
+      if (!ownedUnit) {
+        return res.status(403).json({ message: 'Unit not found or not owned by your organization.' });
+      }
     }
 
     // Default name validation
@@ -141,9 +153,9 @@ router.post('/', protect, async (req, res) => {
 
     const tenant = await Tenant.create({ ...payload, user: req.user.id });
 
-    // If unit assigned, update unit status to occupied
+    // If unit assigned (already verified ownership above), update unit status to occupied
     if (tenant.unitId) {
-      await Unit.findByIdAndUpdate(tenant.unitId, { status: 'occupied' });
+      await Unit.findOneAndUpdate({ _id: tenant.unitId, user: req.user.id }, { status: 'occupied' });
     }
 
     await logActivity(req.user, 'Add Tenant', `Added tenant ${tenant.name}`, 'tenant', 'success');
@@ -158,16 +170,13 @@ router.post('/', protect, async (req, res) => {
 });
 
 // Update tenant
-router.put('/:id', protect, async (req, res) => {
+router.put('/:id', protect, validateObjectId('id'), async (req, res) => {
   try {
-    const payload = { ...req.body };
-    delete payload._id;
-    delete payload.id;
-    delete payload.user;
+    const payload = pickAllowed(req.body, ALLOWED_TENANT_FIELDS);
 
     if (payload.unitId === "" || payload.unitId === "no_unit" || payload.unitId === "none" || payload.unitId === "undefined" || payload.unitId === "null") {
       payload.unitId = null;
-    } else if (payload.unitId && !mongoose.Types.ObjectId.isValid(payload.unitId)) {
+    } else if (payload.unitId && !isValidObjectId(String(payload.unitId))) {
       payload.unitId = null;
     }
 
@@ -192,18 +201,24 @@ router.put('/:id', protect, async (req, res) => {
     const originalTenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!originalTenant) return res.status(404).json({ message: 'Tenant not found' });
 
-    // Handle unit swap/removal logic
+    // Handle unit swap/removal logic (strictly scoped to req.user.id)
     if (payload.unitId !== undefined && String(payload.unitId || '') !== String(originalTenant.unitId || '')) {
-      // Vacate old unit if it existed
-      if (originalTenant.unitId) {
-        await Unit.findByIdAndUpdate(originalTenant.unitId, { status: 'vacant' });
-      }
-      // Occupy new unit if assigned
       if (payload.unitId) {
-        const assignedUnit = await Unit.findByIdAndUpdate(payload.unitId, { status: 'occupied' }, { returnDocument: 'after' });
-        if (assignedUnit && payload.rentAmount === undefined) {
+        const assignedUnit = await Unit.findOneAndUpdate(
+          { _id: payload.unitId, user: req.user.id },
+          { status: 'occupied' },
+          { returnDocument: 'after' }
+        );
+        if (!assignedUnit) {
+          return res.status(403).json({ message: 'Unit not found or not owned by your organization.' });
+        }
+        if (payload.rentAmount === undefined) {
           payload.rentAmount = assignedUnit.rentAmount;
         }
+      }
+      // Vacate old unit only after verifying new assignment succeeded
+      if (originalTenant.unitId) {
+        await Unit.findOneAndUpdate({ _id: originalTenant.unitId, user: req.user.id }, { status: 'vacant' });
       }
     }
 
@@ -228,7 +243,7 @@ router.put('/:id', protect, async (req, res) => {
 });
 
 // Delete tenant
-router.delete('/:id', protect, async (req, res) => {
+router.delete('/:id', protect, validateObjectId('id'), async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
@@ -236,7 +251,7 @@ router.delete('/:id', protect, async (req, res) => {
     const tenantName = tenant.name;
     // Vacate unit if active
     if (tenant.status === 'active' && tenant.unitId) {
-      await Unit.findByIdAndUpdate(tenant.unitId, { status: 'vacant' });
+      await Unit.findOneAndUpdate({ _id: tenant.unitId, user: req.user.id }, { status: 'vacant' });
     }
 
     await tenant.deleteOne();
