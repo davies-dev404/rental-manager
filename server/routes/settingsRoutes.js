@@ -43,6 +43,8 @@ router.get('/', async (req, res) => {
       settings = await Settings.create({
         user: user._id,
         orgName: profile.orgName,
+        landlordName: profile.landlordName,
+        orgLogo: profile.orgLogo,
         orgEmail: profile.orgEmail,
         orgPhone: profile.orgPhone,
         orgAddress: profile.orgAddress,
@@ -50,6 +52,13 @@ router.get('/', async (req, res) => {
         currency: profile.currency,
         timezone: profile.timezone
       });
+    } else {
+      // Merge fallback user contact details when settings fields are still empty
+      const obj = settings.toObject();
+      if (!obj.landlordName && user.name) obj.landlordName = user.name;
+      if (!obj.orgEmail && user.email) obj.orgEmail = user.email;
+      if (!obj.orgPhone && user.phone) obj.orgPhone = user.phone;
+      return res.json(obj);
     }
     res.json(settings);
   } catch (error) {
@@ -68,6 +77,8 @@ router.put('/', protect, async (req, res) => {
       settings = new Settings({
         user: req.user.id,
         orgName: profile.orgName,
+        landlordName: profile.landlordName,
+        orgLogo: profile.orgLogo,
         orgEmail: profile.orgEmail,
         orgPhone: profile.orgPhone,
         orgAddress: profile.orgAddress,
@@ -77,10 +88,14 @@ router.put('/', protect, async (req, res) => {
       });
     } else {
       if (req.body.orgName !== undefined) settings.orgName = req.body.orgName;
+      if (req.body.landlordName !== undefined) settings.landlordName = req.body.landlordName;
+      if (req.body.orgLogo !== undefined) settings.orgLogo = req.body.orgLogo;
       if (req.body.orgEmail !== undefined) settings.orgEmail = req.body.orgEmail;
       if (req.body.orgPhone !== undefined) settings.orgPhone = req.body.orgPhone;
       if (req.body.orgAddress !== undefined) settings.orgAddress = req.body.orgAddress;
       if (req.body.taxId !== undefined) settings.taxId = req.body.taxId;
+      if (req.body.invoiceTitle !== undefined) settings.invoiceTitle = req.body.invoiceTitle;
+      if (req.body.invoiceFootnote !== undefined) settings.invoiceFootnote = req.body.invoiceFootnote;
 
       if (req.body.currency) settings.currency = req.body.currency;
       if (req.body.timezone) settings.timezone = req.body.timezone;
@@ -102,7 +117,7 @@ router.put('/', protect, async (req, res) => {
 
     // Sync primary company/tax details back onto User profile
     const userUpdates = {};
-    if (typeof req.body.orgName === 'string' && req.body.orgName.trim()) {
+    if (typeof req.body.orgName === 'string') {
       userUpdates.companyName = req.body.orgName.trim();
     }
     if (typeof req.body.orgAddress === 'string') {

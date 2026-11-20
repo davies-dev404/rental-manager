@@ -679,10 +679,13 @@ export default function SettingsPage() {
     window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
   };
 
-  // General Settings State initialized from registered user profile
+  // General Settings State: Company/Management fields stay optional so Property Name & Landlord Name stay distinct
   const [generalSettings, setGeneralSettings] = useState({
-    companyName: user?.companyName || user?.name || "",
-    abbreviatedName: user?.companyName || user?.name || "",
+    companyName: user?.companyName || "",
+    landlordName: user?.name || "",
+    companyLogo: "",
+    companyLogoName: "",
+    abbreviatedName: user?.companyName || "",
     companyAddress: user?.address || "",
     companyEmail: user?.email || "",
     companyPhone: user?.phone || "",
@@ -838,10 +841,14 @@ export default function SettingsPage() {
     if (serverSettings && Object.keys(serverSettings).length > 0) {
       setGeneralSettings((prev) => ({
         ...prev,
-        companyName: serverSettings.orgName || prev.companyName || user?.companyName || user?.name || "",
+        companyName: serverSettings.orgName ?? prev.companyName ?? user?.companyName ?? "",
+        landlordName: serverSettings.landlordName || prev.landlordName || user?.name || "",
+        companyLogo: serverSettings.orgLogo ?? prev.companyLogo ?? "",
         companyEmail: serverSettings.orgEmail || prev.companyEmail || user?.email || "",
         companyPhone: serverSettings.orgPhone || prev.companyPhone || user?.phone || "",
         companyAddress: serverSettings.orgAddress || prev.companyAddress || user?.address || "",
+        invoiceTitle: serverSettings.invoiceTitle || prev.invoiceTitle,
+        invoiceFootnote: serverSettings.invoiceFootnote || prev.invoiceFootnote,
         currency: serverSettings.currency || prev.currency,
         timezone: serverSettings.timezone || prev.timezone,
         paybillNumber: serverSettings.integrations?.mpesa?.shortcode || prev.paybillNumber
@@ -895,14 +902,49 @@ export default function SettingsPage() {
     }
   };
 
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ variant: "destructive", title: "Invalid File", description: "Please upload an image file (PNG or JPG)." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 320;
+        const maxH = 160;
+        const scale = Math.min(1, maxW / img.width, maxH / img.height);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const pngDataUrl = canvas.toDataURL("image/png");
+        setGeneralSettings((prev) => ({
+          ...prev,
+          companyLogo: pngDataUrl,
+          companyLogoName: file.name
+        }));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveGeneral = async () => {
     setIsSaving(true);
     try {
       await api.updateSettings({
         orgName: generalSettings.companyName,
+        landlordName: generalSettings.landlordName,
+        orgLogo: generalSettings.companyLogo,
         orgEmail: generalSettings.companyEmail,
         orgPhone: generalSettings.companyPhone,
         orgAddress: generalSettings.companyAddress,
+        invoiceTitle: generalSettings.invoiceTitle,
+        invoiceFootnote: generalSettings.invoiceFootnote,
         currency: generalSettings.currency,
         timezone: generalSettings.timezone,
         integrations: {
@@ -911,11 +953,12 @@ export default function SettingsPage() {
           }
         }
       });
-      // Keep local stored user session synced so client PDFs/statements reflect updated company name immediately
+      // Keep local stored user session synced so client PDFs/statements reflect updated details immediately
       try {
         const stored = JSON.parse(localStorage.getItem("rental_user") || "{}");
         if (stored && Object.keys(stored).length > 0) {
           stored.companyName = generalSettings.companyName;
+          stored.landlordName = generalSettings.landlordName;
           stored.address = generalSettings.companyAddress;
           localStorage.setItem("rental_user", JSON.stringify(stored));
         }
@@ -1005,13 +1048,45 @@ export default function SettingsPage() {
                 </h3>
 
                 <div className="space-y-1.5 max-w-2xl">
-                  <Label className="text-xs text-slate-700 dark:text-slate-300">Company Name</Label>
+                  <Label className="text-xs text-slate-700 dark:text-slate-300">Company / Management Name (Optional)</Label>
                   <Input
-                    placeholder="Company Name..."
+                    placeholder="e.g. AfriNex Property Managers (leave blank to show Property Name)"
                     value={generalSettings.companyName}
                     onChange={(e) => setGeneralSettings({ ...generalSettings, companyName: e.target.value })}
                     className="h-9 text-xs"
                   />
+                </div>
+
+                <div className="space-y-1.5 max-w-2xl">
+                  <Label className="text-xs text-slate-700 dark:text-slate-300">Landlord / Owner Name</Label>
+                  <Input
+                    placeholder="Full name displayed as Landlord on receipts & invoices"
+                    value={generalSettings.landlordName}
+                    onChange={(e) => setGeneralSettings({ ...generalSettings, landlordName: e.target.value })}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-700 dark:text-slate-300">Business / Contact Email</Label>
+                    <Input
+                      type="email"
+                      placeholder="billing@yourcompany.com"
+                      value={generalSettings.companyEmail}
+                      onChange={(e) => setGeneralSettings({ ...generalSettings, companyEmail: e.target.value })}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-slate-700 dark:text-slate-300">Business / Contact Phone</Label>
+                    <Input
+                      placeholder="+254..."
+                      value={generalSettings.companyPhone}
+                      onChange={(e) => setGeneralSettings({ ...generalSettings, companyPhone: e.target.value })}
+                      className="h-9 text-xs"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1.5 max-w-2xl">
@@ -1036,13 +1111,31 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-1.5 max-w-2xl">
-                  <Label className="text-xs text-slate-700 dark:text-slate-300">Logo (Optional)</Label>
-                  <div className="flex items-center gap-3">
+                  <Label className="text-xs text-slate-700 dark:text-slate-300">Company / Management Logo (Optional)</Label>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {generalSettings.companyLogo && (
+                      <img
+                        src={generalSettings.companyLogo}
+                        alt="Company Logo Preview"
+                        className="h-10 max-w-32 object-contain border border-slate-200 dark:border-slate-700 rounded bg-white p-1"
+                      />
+                    )}
                     <label className="border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 rounded px-3 py-1.5 text-xs text-blue-700 dark:text-blue-400 font-medium cursor-pointer shadow-2xs transition">
                       Choose file
-                      <input type="file" accept="image/*" className="hidden" />
+                      <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
                     </label>
-                    <span className="text-xs text-slate-400">No file chosen</span>
+                    <span className="text-xs text-slate-400">
+                      {generalSettings.companyLogoName || (generalSettings.companyLogo ? "Custom logo loaded" : "No file chosen")}
+                    </span>
+                    {generalSettings.companyLogo && (
+                      <button
+                        type="button"
+                        onClick={() => setGeneralSettings({ ...generalSettings, companyLogo: "", companyLogoName: "" })}
+                        className="text-xs text-rose-600 hover:underline cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </div>
 

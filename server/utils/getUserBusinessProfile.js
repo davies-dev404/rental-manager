@@ -2,10 +2,18 @@ const mongoose = require('mongoose');
 const Settings = require('../models/Settings');
 const User = require('../models/User');
 
+const LEGACY_PLACEHOLDERS = new Set([
+  'makaziflow',
+  'makaziflow properties ltd',
+  'makaazihub inc.'
+]);
+
 /**
- * Resolves the business/company letterhead profile strictly for the registered
- * landlord/company user owning a record — never leaking another tenant/org's
- * Settings document or falling back to a generic platform name on tenant docs.
+ * Resolves the business/management letterhead & landlord profile strictly for
+ * the registered user owning a record.
+ * - `companyName` / `orgName` is ONLY set if the user configured a company/management name
+ *   (never substituting the landlord's login username as if it were a company name).
+ * - `landlordName` carries the landlord's registered/configured name separately.
  */
 async function getUserBusinessProfile(userOrId) {
   let userDoc = null;
@@ -38,15 +46,18 @@ async function getUserBusinessProfile(userOrId) {
   }
 
   const cleanStr = (val) => (typeof val === 'string' ? val.trim() : '');
-  const registeredName = cleanStr(userDoc?.companyName) || cleanStr(userDoc?.name) || 'Property Management';
   const savedOrgName = cleanStr(userSettings?.orgName);
+  const userCompanyName = cleanStr(userDoc?.companyName);
 
-  // Ignore legacy platform default placeholders if the user has never customized their orgName
-  const resolvedOrgName =
-    savedOrgName &&
-    !['makaziflow', 'makaziflow properties ltd', 'makaazihub inc.'].includes(savedOrgName.toLowerCase())
-      ? savedOrgName
-      : registeredName;
+  const isPlaceholder = (s) => LEGACY_PLACEHOLDERS.has(s.toLowerCase());
+  const companyName =
+    (savedOrgName && !isPlaceholder(savedOrgName) ? savedOrgName : '') ||
+    (userCompanyName && !isPlaceholder(userCompanyName) ? userCompanyName : '');
+
+  const landlordName =
+    cleanStr(userSettings?.landlordName) ||
+    cleanStr(userDoc?.name) ||
+    '';
 
   const resolvedEmail =
     cleanStr(userSettings?.orgEmail) ||
@@ -71,14 +82,33 @@ async function getUserBusinessProfile(userOrId) {
   return {
     ...(userSettings || {}),
     user: userId || undefined,
-    orgName: resolvedOrgName,
+    orgName: companyName,
+    companyName,
+    landlordName,
+    orgLogo: cleanStr(userSettings?.orgLogo),
     orgEmail: resolvedEmail,
     orgPhone: resolvedPhone,
     orgAddress: resolvedAddress,
     taxId: resolvedTaxId,
+    invoiceTitle: cleanStr(userSettings?.invoiceTitle),
+    invoiceFootnote: cleanStr(userSettings?.invoiceFootnote),
     currency: cleanStr(userSettings?.currency) || 'KES',
     timezone: cleanStr(userSettings?.timezone) || 'Africa/Nairobi'
   };
 }
 
-module.exports = { getUserBusinessProfile };
+/**
+ * Decodes a data:image/(png|jpeg|jpg);base64,... URL into a Buffer for PDFKit.
+ */
+function decodeLogoDataUrl(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  const match = dataUrl.match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], 'base64');
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { getUserBusinessProfile, decodeLogoDataUrl };

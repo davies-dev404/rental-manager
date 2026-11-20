@@ -2,12 +2,16 @@ const mongoose = require('mongoose');
 
 const settingsSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
-  // Organization Details (populated per registered user/company)
+  // Organization & Landlord Details (populated per registered user/company)
   orgName: { type: String, default: '' },
+  landlordName: { type: String, default: '' },
+  orgLogo: { type: String, default: '' },
   orgEmail: { type: String, default: '' },
   orgPhone: { type: String, default: '' },
   orgAddress: { type: String, default: '' },
   taxId: { type: String, default: '' },
+  invoiceTitle: { type: String, default: '' },
+  invoiceFootnote: { type: String, default: '' },
   
   // App Preferences
   currency: { type: String, default: 'KES' },

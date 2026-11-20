@@ -52,7 +52,7 @@ const sendPaymentReceipt = async (paymentId) => {
 
         const settings = await getUserBusinessProfile(payment.user);
         const propertyName = await getPropertyNameForPayment(payment);
-        const businessName = settings?.orgName || propertyName || 'Property Management';
+        const businessName = settings?.companyName || settings?.orgName || propertyName || settings?.landlordName || 'Property Management';
         const unitNumber = payment.unitId?.unitNumber ? `Unit ${payment.unitId.unitNumber}` : 'your unit';
         const reference = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
         const amountFormatted = Number(payment.amount || 0).toLocaleString();

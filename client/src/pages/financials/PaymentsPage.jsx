@@ -699,10 +699,19 @@ export default function PaymentsPage() {
     queryFn: api.getTenants
   });
 
-  // Local recorded payments state
+  const paymentStorageKey = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("rental_user") || "{}");
+      return `dwello_custom_payments_${u?._id || u?.id || "anon"}`;
+    } catch {
+      return "dwello_custom_payments_anon";
+    }
+  })();
+
+  // Local recorded payments state (scoped per user; backend records load via payments query)
   const [customPayments, setCustomPayments] = useState(() => {
     try {
-      const saved = localStorage.getItem("dwello_custom_payments");
+      const saved = localStorage.getItem(paymentStorageKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -711,15 +720,18 @@ export default function PaymentsPage() {
   });
 
   const handleAddPayment = (newPay) => {
-    setCustomPayments((prev) => {
-      const next = [newPay, ...prev];
-      try {
-        localStorage.setItem("dwello_custom_payments", JSON.stringify(next));
-      } catch (e) {
-        console.error(e);
-      }
-      return next;
-    });
+    const isMongoId = newPay?._id && /^[a-f\d]{24}$/i.test(String(newPay._id));
+    if (!isMongoId) {
+      setCustomPayments((prev) => {
+        const next = [newPay, ...prev];
+        try {
+          localStorage.setItem(paymentStorageKey, JSON.stringify(next));
+        } catch (e) {
+          console.error(e);
+        }
+        return next;
+      });
+    }
     queryClient.invalidateQueries({ queryKey: ["payments"] });
     queryClient.invalidateQueries({ queryKey: ["stats"] });
     queryClient.invalidateQueries({ queryKey: ["debtors"] });
@@ -771,6 +783,9 @@ export default function PaymentsPage() {
   const [markPaidRef, setMarkPaidRef] = useState("");
   const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  const [deleteTargets, setDeleteTargets] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [collapseDate, setCollapseDate] = useState(false);
   const [collapseStatus, setCollapseStatus] = useState(false);
@@ -917,7 +932,7 @@ export default function PaymentsPage() {
               ? { ...cp, status: "paid", paymentType: markPaidMethod, transactionId: markPaidRef.trim() || cp.transactionId }
               : cp
           );
-          try { localStorage.setItem("dwello_custom_payments", JSON.stringify(next)); } catch {}
+          try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch {}
           return next;
         });
       }
@@ -948,36 +963,79 @@ export default function PaymentsPage() {
     }
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = () => {
     if (selectedPayments.length === 0) {
       toast({
         variant: "destructive",
         title: "None Selected",
-        description: "Please select payment records to delete."
+        description: "Please select payment record(s) to delete."
       });
       return;
     }
-    const dbIds = selectedPayments.filter((id) => /^[a-f\d]{24}$/i.test(String(id)));
-    for (const id of dbIds) {
-      try {
-        await api.deletePayment(id);
-      } catch (err) {
-        console.warn("Delete payment warning:", err.message);
+    const items = allPayments.filter((p) => selectedPayments.includes(p._id));
+    setDeleteTargets(items.length > 0 ? items : selectedPayments.map((id) => ({ _id: id })));
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!Array.isArray(deleteTargets) || deleteTargets.length === 0) return;
+    setIsDeleting(true);
+    let deletedCount = 0;
+    let failedCount = 0;
+    let lastError = "";
+    const successfullyDeletedIds = [];
+
+    for (const item of deleteTargets) {
+      const id = item._id;
+      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
+      if (isMongoId) {
+        try {
+          await api.deletePayment(id);
+          deletedCount++;
+          successfullyDeletedIds.push(id);
+        } catch (err) {
+          failedCount++;
+          lastError = err.message || "Failed to delete payment";
+        }
+      } else {
+        deletedCount++;
+        successfullyDeletedIds.push(id);
       }
     }
-    setCustomPayments((prev) => {
-      const next = prev.filter((p) => !selectedPayments.includes(p._id));
-      try { localStorage.setItem("dwello_custom_payments", JSON.stringify(next)); } catch {}
-      return next;
-    });
-    setSelectedPayments([]);
-    queryClient.invalidateQueries({ queryKey: ["payments"] });
-    queryClient.invalidateQueries({ queryKey: ["stats"] });
-    queryClient.invalidateQueries({ queryKey: ["debtors"] });
-    toast({
-      title: "Payments Deleted",
-      description: "Selected payment records removed."
-    });
+
+    if (successfullyDeletedIds.length > 0) {
+      setCustomPayments((prev) => {
+        const next = prev.filter((p) => !successfullyDeletedIds.includes(p._id));
+        try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setSelectedPayments((prev) => prev.filter((id) => !successfullyDeletedIds.includes(id)));
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    }
+
+    setIsDeleting(false);
+    setDeleteTargets(null);
+
+    if (deletedCount === 0) {
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: lastError || "Could not delete selected payment record(s)."
+      });
+    } else if (failedCount > 0) {
+      toast({
+        variant: "destructive",
+        title: "Partially Deleted",
+        description: `Deleted ${deletedCount} record(s), but ${failedCount} failed: ${lastError}`
+      });
+    } else {
+      toast({
+        title: "Payment Deleted",
+        description: `Removed ${deletedCount} erroneous payment record(s) and updated balances.`
+      });
+    }
   };
 
   if (view === "record_payment") {
@@ -1218,12 +1276,18 @@ export default function PaymentsPage() {
                   <Mail className="w-3 h-3" /> Send Receipt(s)
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant={selectedPayments.length > 0 ? "destructive" : "outline"}
                   size="sm"
                   onClick={handleDeleteSelected}
-                  className="h-7 px-2 text-slate-400 hover:text-rose-500 cursor-pointer"
+                  className={`h-7 px-2.5 text-[11px] gap-1 cursor-pointer ${
+                    selectedPayments.length > 0
+                      ? ""
+                      : "text-slate-500 hover:text-rose-600 border-slate-300 dark:border-slate-700"
+                  }`}
+                  title="Delete selected erroneous payment(s)"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
+                  {selectedPayments.length > 0 ? `Delete (${selectedPayments.length})` : "Delete"}
                 </Button>
                 <Button
                   variant="outline"
@@ -1401,6 +1465,13 @@ export default function PaymentsPage() {
                             >
                               <Download className="w-3 h-3" /> PDF
                             </button>
+                            <button
+                              onClick={() => setDeleteTargets([p])}
+                              className="text-[11px] text-rose-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                              title="Delete erroneous payment"
+                            >
+                              <Trash2 className="w-3 h-3" /> Delete
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1459,6 +1530,47 @@ export default function PaymentsPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Erroneous Payment(s) Confirmation Modal */}
+      {Array.isArray(deleteTargets) && deleteTargets.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                Delete Erroneous Payment{deleteTargets.length > 1 ? "s" : ""}?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {deleteTargets.length === 1
+                  ? `This will permanently remove payment #${String(deleteTargets[0]._id || "").slice(-6).toUpperCase()} of KES ${Number(deleteTargets[0].amount || 0).toLocaleString()} for ${deleteTargets[0].tenantId || "this tenant"} and recalculate dashboard totals.`
+                  : `This will permanently remove ${deleteTargets.length} selected payment record(s) totaling KES ${deleteTargets.reduce((s, x) => s + Number(x.amount || 0), 0).toLocaleString()} and recalculate dashboard totals.`}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteTargets(null)}
+                disabled={isDeleting}
+                className="text-xs h-8 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="text-xs h-8 cursor-pointer"
+              >
+                {isDeleting ? "Deleting..." : `Delete ${deleteTargets.length > 1 ? `(${deleteTargets.length})` : "Payment"}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mark Pending Payment as Paid Modal */}
       {markPaidTarget && (

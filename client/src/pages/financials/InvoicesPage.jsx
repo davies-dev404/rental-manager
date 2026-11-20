@@ -2222,6 +2222,9 @@ export default function InvoicesPage() {
   const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  const [deleteTargets, setDeleteTargets] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Pagination
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
@@ -2472,36 +2475,79 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = () => {
     if (selectedInvoices.length === 0) {
       toast({
         variant: "destructive",
         title: "None Selected",
-        description: "Please select invoices to delete."
+        description: "Please select invoice(s) to delete."
       });
       return;
     }
-    const dbIds = selectedInvoices.filter((id) => /^[a-f\d]{24}$/i.test(String(id)));
-    for (const id of dbIds) {
-      try {
-        await api.deletePayment(id);
-      } catch (err) {
-        console.warn("Delete invoice warning:", err.message);
+    const items = allInvoices.filter((inv) => selectedInvoices.includes(inv._id));
+    setDeleteTargets(items.length > 0 ? items : selectedInvoices.map((id) => ({ _id: id })));
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!Array.isArray(deleteTargets) || deleteTargets.length === 0) return;
+    setIsDeleting(true);
+    let deletedCount = 0;
+    let failedCount = 0;
+    let lastError = "";
+    const deletedIds = [];
+
+    for (const item of deleteTargets) {
+      const id = item._id;
+      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
+      if (isMongoId) {
+        try {
+          await api.deletePayment(id);
+          deletedCount++;
+          deletedIds.push(id);
+        } catch (err) {
+          failedCount++;
+          lastError = err.message || "Failed to delete invoice";
+        }
+      } else {
+        deletedCount++;
+        deletedIds.push(id);
       }
     }
-    setCustomInvoices((prev) => {
-      const next = prev.filter((inv) => !selectedInvoices.includes(inv._id));
-      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
-      return next;
-    });
-    setSelectedInvoices([]);
-    queryClient.invalidateQueries({ queryKey: ["payments"] });
-    queryClient.invalidateQueries({ queryKey: ["stats"] });
-    queryClient.invalidateQueries({ queryKey: ["debtors"] });
-    toast({
-      title: "Invoices Deleted",
-      description: "Selected invoices have been removed."
-    });
+
+    if (deletedIds.length > 0) {
+      setCustomInvoices((prev) => {
+        const next = prev.filter((inv) => !deletedIds.includes(inv._id));
+        try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setSelectedInvoices((prev) => prev.filter((id) => !deletedIds.includes(id)));
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    }
+
+    setIsDeleting(false);
+    setDeleteTargets(null);
+
+    if (deletedCount === 0) {
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description: lastError || "Could not delete selected invoice record(s)."
+      });
+    } else if (failedCount > 0) {
+      toast({
+        variant: "destructive",
+        title: "Partially Deleted",
+        description: `Deleted ${deletedCount} invoice(s), but ${failedCount} failed: ${lastError}`
+      });
+    } else {
+      toast({
+        title: "Invoices Deleted",
+        description: `Removed ${deletedCount} invoice record(s).`
+      });
+    }
   };
 
   // handleAddInvoices helper: saves generated invoices to backend DB so balances & receipts sync across the system
@@ -2895,12 +2941,18 @@ export default function InvoicesPage() {
                   Send Invoices
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant={selectedInvoices.length > 0 ? "destructive" : "outline"}
                   size="sm"
                   onClick={handleDeleteSelected}
-                  className="h-7 px-2 text-slate-400 hover:text-rose-500 cursor-pointer"
+                  className={`h-7 px-2.5 text-[11px] gap-1 cursor-pointer ${
+                    selectedInvoices.length > 0
+                      ? ""
+                      : "text-slate-500 hover:text-rose-600 border-slate-300 dark:border-slate-700"
+                  }`}
+                  title="Delete selected invoice(s)"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3" />
+                  {selectedInvoices.length > 0 ? `Delete (${selectedInvoices.length})` : "Delete"}
                 </Button>
                 <Button
                   variant="outline"
@@ -3098,6 +3150,13 @@ export default function InvoicesPage() {
                             >
                               <Download className="w-3 h-3" /> PDF
                             </button>
+                            <button
+                              onClick={() => setDeleteTargets([p])}
+                              className="text-[11px] text-rose-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                              title="Delete erroneous invoice"
+                            >
+                              <Trash2 className="w-3 h-3" /> Delete
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -3156,6 +3215,47 @@ export default function InvoicesPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Erroneous Invoice(s) Confirmation Modal */}
+      {Array.isArray(deleteTargets) && deleteTargets.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                Delete Erroneous Invoice{deleteTargets.length > 1 ? "s" : ""}?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                {deleteTargets.length === 1
+                  ? `This will permanently remove invoice #${String(deleteTargets[0]._id || "").slice(-6).toUpperCase()} of KES ${Number(deleteTargets[0].amount || 0).toLocaleString()} for ${deleteTargets[0].tenantId || "this tenant"}.`
+                  : `This will permanently remove ${deleteTargets.length} selected invoice record(s) totaling KES ${deleteTargets.reduce((s, x) => s + Number(x.amount || 0), 0).toLocaleString()}.`}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteTargets(null)}
+                disabled={isDeleting}
+                className="text-xs h-8 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="text-xs h-8 cursor-pointer"
+              >
+                {isDeleting ? "Deleting..." : `Delete ${deleteTargets.length > 1 ? `(${deleteTargets.length})` : "Invoice"}`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mark Open/Pending Invoice as Paid Modal */}
       {markPaidTarget && (

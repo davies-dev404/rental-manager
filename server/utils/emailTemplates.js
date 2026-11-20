@@ -6,11 +6,27 @@
 const BUSINESS_CONFIG = require('../config/businessConfig');
 
 const getEmailTemplate = (title, content, settings, options = {}) => {
-    const orgName = settings?.orgName || options.propertyName || "Property Management";
+    const companyName = (settings?.companyName || settings?.orgName || "").trim();
+    const landlordName = (settings?.landlordName || "").trim();
+    const propName = (options.propertyName || "").trim();
+    const orgName = companyName || propName || landlordName || "Property Management";
+    const orgLogo = (settings?.orgLogo || "").trim();
     const orgEmail = settings?.orgEmail || "";
     const orgPhone = settings?.orgPhone || "";
-    const subtitle = options.subtitle || "Official Property Notice";
+
+    const subtitleParts = [];
+    if (companyName && propName && propName.toLowerCase() !== companyName.toLowerCase()) {
+      subtitleParts.push(`Property: ${propName}`);
+    }
+    if (landlordName && landlordName.toLowerCase() !== orgName.toLowerCase()) {
+      subtitleParts.push(`Landlord: ${landlordName}`);
+    }
+    const subtitle = options.subtitle || (subtitleParts.length > 0 ? subtitleParts.join(" • ") : "Official Property Notice");
     const primaryColor = "#0f172a"; // Deep slate / obsidian
+
+    const logoHtml = orgLogo && orgLogo.startsWith("data:image/")
+      ? `<img src="${orgLogo}" alt="${orgName}" style="max-height: 44px; max-width: 140px; display: block; margin-bottom: 10px; border-radius: 6px; background: #ffffff; padding: 4px;" />`
+      : "";
 
     const contactParts = [];
     if (orgEmail) {
@@ -45,6 +61,7 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                                 <tr>
                                     <td>
+                                        ${logoHtml}
                                         <div style="font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; margin: 0;">
                                             ${orgName}
                                         </div>
@@ -209,7 +226,7 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName) => {
     const amount = Number(payment.amount || 0).toLocaleString();
     const date = new Date(payment.date || Date.now()).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
     const time = new Date(payment.date || Date.now()).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-    const businessName = settings?.orgName || propertyName || 'Property Management';
+    const businessName = settings?.companyName || settings?.orgName || propertyName || settings?.landlordName || 'Property Management';
     const reference = payment.reference || payment._id?.toString().substring(0, 8).toUpperCase();
 
     const content = `

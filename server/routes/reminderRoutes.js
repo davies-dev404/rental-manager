@@ -25,7 +25,12 @@ router.get('/', protect, async (req, res) => {
 
 // Helper: Calculate outstanding balances (rent + utilities) for active tenants
 async function getTenantsWithBalances(userId) {
-  const tenants = await Tenant.find({ user: userId, status: 'active' }).populate('unitId', 'unitNumber rentAmount propertyId');
+  const tenants = await Tenant.find({ user: userId, status: 'active' })
+    .populate({
+      path: 'unitId',
+      select: 'unitNumber rentAmount propertyId',
+      populate: { path: 'propertyId', select: 'name' }
+    });
   
   // Current month payment window
   const now = new Date();
@@ -112,6 +117,7 @@ function generatePersonalizedMessage(tenant, calculation) {
 // Helper: compose HTML email body using registered company/user template
 function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
   const unitNum = tenant.unitId?.unitNumber || '';
+  const propName = options.propertyName || tenant.unitId?.propertyId?.name || '';
   return getCorporateReminderEmailBody({
     tenantName: tenant.name,
     unitNumber: unitNum,
@@ -119,6 +125,7 @@ function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
     reminderTitle: options.title || `Payment Reminder - Unit ${unitNum || ''}`,
     reminderDescription: options.description || null,
     settings: options.settings || null,
+    propertyName: propName,
     dueDate: options.dueDate || null
   });
 }
@@ -168,15 +175,18 @@ router.post('/', protect, async (req, res) => {
         if (dispatchMethod === 'email') {
           if (tenant.email && String(tenant.email).includes('@')) {
             try {
+              const propName = match?.tenant?.unitId?.propertyId?.name || '';
+              const displayBrand = businessProfile.companyName || businessProfile.orgName || propName || businessProfile.landlordName || 'Property Management';
               await sendEmail({
                 email: tenant.email,
-                fromName: businessProfile.orgName,
+                fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
-                subject: subject || `${businessProfile.orgName}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
                 message: generatePersonalizedEmailHtml(tenant, calculation, {
                   title: subject,
                   description: customNote || undefined,
                   settings: businessProfile,
+                  propertyName: propName,
                   dueDate
                 })
               });
@@ -252,7 +262,8 @@ router.post('/', protect, async (req, res) => {
     const recipients = all.filter(item => {
       if (!sendToAll && item.totalDue <= 0) return false;
       if (propertyFilterSet) {
-        const unitPropId = item.tenant.unitId?.propertyId ? String(item.tenant.unitId.propertyId) : null;
+        const rawProp = item.tenant.unitId?.propertyId?._id || item.tenant.unitId?.propertyId;
+        const unitPropId = rawProp ? String(rawProp) : null;
         return unitPropId && propertyFilterSet.has(unitPropId);
       }
       return true;
@@ -288,15 +299,18 @@ router.post('/', protect, async (req, res) => {
         if (dispatchMethod === 'email') {
           if (tenant.email && String(tenant.email).includes('@')) {
             try {
+              const propName = tenant.unitId?.propertyId?.name || '';
+              const displayBrand = businessProfile.companyName || businessProfile.orgName || propName || businessProfile.landlordName || 'Property Management';
               await sendEmail({
                 email: tenant.email,
-                fromName: businessProfile.orgName,
+                fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
-                subject: subject || `${businessProfile.orgName}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
                 message: generatePersonalizedEmailHtml(tenant, item, {
                   title: subject,
                   description: customNote || undefined,
                   settings: businessProfile,
+                  propertyName: propName,
                   dueDate
                 })
               });
@@ -397,6 +411,7 @@ router.post('/:id/send', protect, async (req, res) => {
         return res.status(422).json({ message: `No valid email address for ${reminder.recipientName || 'this tenant'}.` });
       }
       const businessProfile = await getUserBusinessProfile(req.user);
+      const displayBrand = businessProfile.companyName || businessProfile.orgName || businessProfile.landlordName || 'Property Management';
       const emailHtml = getCorporateReminderEmailBody({
         tenantName: reminder.recipientName || reminder.tenantId?.name || 'Valued Resident',
         unitNumber: reminder.tenantId?.unitId?.unitNumber || '',
@@ -413,7 +428,7 @@ router.post('/:id/send', protect, async (req, res) => {
 
       await sendEmail({
         email: recipientEmail,
-        fromName: businessProfile.orgName,
+        fromName: displayBrand,
         replyToEmail: businessProfile.orgEmail || undefined,
         subject: reminder.title,
         message: emailHtml

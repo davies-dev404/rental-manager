@@ -263,8 +263,15 @@ export default function StatementsPage() {
       title: "Downloading PDF",
       description: `Exporting ${currentReportObj.label} to clean PDF statement.`
     });
+    const selectedPropObj = selectedProperty !== "all"
+      ? properties.find((p) => String(p._id || p.id) === String(selectedProperty))
+      : null;
     const reportData = getFilteredStatementData();
-    exportToPDF({ ...reportData, company: settings });
+    exportToPDF({
+      ...reportData,
+      company: settings,
+      propertyName: selectedPropObj?.name || ""
+    });
   };
 
   const handleDownloadExcel = () => {

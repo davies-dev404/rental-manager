@@ -51,16 +51,25 @@ const tenantSchema = z.object({
 // --- View Lease Dialog ---
 function ViewLeaseDialog({ tenant, open, onOpenChange }) {
     const { t } = useTranslation();
+    const { data: settings = {} } = useQuery({
+        queryKey: ["settings"],
+        queryFn: api.getSettings,
+        enabled: open
+    });
     if (!tenant) return null;
     const unitNum = (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A');
-    const propName = tenant.unitId?.propertyId?.name || tenant.property || 'MakaziFlow Property';
+    const propName = tenant.unitId?.propertyId?.name || tenant.property || 'Property';
+    const landlordOrCompany = settings?.companyName || settings?.orgName || settings?.landlordName || propName;
     const handleExportLease = () => {
         exportToPDF({
             title: `Lease Agreement - ${tenant.name}`,
-            subtitle: `${propName} • Unit ${unitNum}`,
+            subtitle: `Property: ${propName} • Unit ${unitNum}`,
+            propertyName: propName,
+            company: settings,
             dateRange: `Lease Start: ${safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}`,
             summary: [
                 { label: "Tenant", value: tenant.name },
+                { label: "Property", value: propName },
                 { label: "Unit", value: `Unit ${unitNum}` },
                 { label: "Monthly Rent", value: `KES ${Number(tenant.rentAmount || tenant.unitId?.rentAmount || 0).toLocaleString()}` },
                 { label: "Status", value: tenant.status || "active" }
@@ -70,7 +79,7 @@ function ViewLeaseDialog({ tenant, open, onOpenChange }) {
                 { key: "details", label: "Agreement Terms" }
             ],
             records: [
-                { section: "Parties", details: `Landlord / Manager (${propName}) & Tenant (${tenant.name}, ${tenant.phone || ''})` },
+                { section: "Parties", details: `Landlord / Manager (${landlordOrCompany}) • Property (${propName}) & Tenant (${tenant.name}, ${tenant.phone || ''})` },
                 { section: t('lease_prop_title'), details: t('lease_prop_text', { unit: unitNum }) },
                 { section: t('lease_term_title'), details: t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' }) },
                 { section: t('lease_rent_title'), details: t('lease_rent_text') },

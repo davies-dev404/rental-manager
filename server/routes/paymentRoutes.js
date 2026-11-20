@@ -346,7 +346,7 @@ router.get('/:id/pdf', protect, async (req, res) => {
         const propertyName = await getPropertyNameForPayment(payment);
         const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
 
-        const businessName = settings?.orgName || propertyName || 'Property Management';
+        const businessName = settings?.companyName || settings?.orgName || propertyName || settings?.landlordName || 'Property Management';
         const ref = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
         const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${ref}.pdf`;
         const disposition = req.query.download === '1' ? 'attachment' : 'inline';
@@ -422,6 +422,7 @@ router.post('/invoice-pdf', protect, async (req, res) => {
 
         const invoiceObj = {
             invoiceCategory: 'rental',
+            propertyName: propertyName || '',
             invoiceNumber: invNum,
             issuedAt: issuedAt || new Date(),
             createdAt: issuedAt || new Date(),
@@ -471,7 +472,8 @@ router.post('/send-invoice', protect, async (req, res) => {
         const recipientPhone = tenant?.phone || fallbackPhone;
 
         const settings = await getUserBusinessProfile(req.user);
-        const businessName = settings?.orgName || propertyName || 'Property Management';
+        const resolvedPropName = propertyName || (tenant?.unitId?.propertyId ? (await Property.findById(tenant.unitId.propertyId).select('name').lean())?.name : '') || '';
+        const businessName = settings?.companyName || settings?.orgName || resolvedPropName || settings?.landlordName || 'Property Management';
         const uNum = unitNumber || tenant?.unitId?.unitNumber || tenant?.unit || 'assigned unit';
         const invRef = invoiceId || `INV-${Date.now().toString().slice(-6)}`;
         const totalAmt = Number(amount || 0).toLocaleString();
@@ -517,6 +519,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                 const numericAmount = Number(amount || 0);
                 const pdfBuffer = await generateInvoicePDF({
                     invoiceCategory: 'rental',
+                    propertyName: resolvedPropName,
                     invoiceNumber: invRef,
                     issuedAt: new Date(),
                     createdAt: new Date(),
@@ -541,7 +544,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                     fromName: businessName,
                     replyToEmail: settings?.orgEmail || undefined,
                     subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
-                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName }),
+                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: resolvedPropName }),
                     attachments: [
                         {
                             filename: `Invoice-${invRef.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,

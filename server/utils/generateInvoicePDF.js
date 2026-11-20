@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const BUSINESS_CONFIG = require('../config/businessConfig');
+const { decodeLogoDataUrl } = require('./getUserBusinessProfile');
 
 /**
  * Generates an official Invoice PDF (distinguishes Subscription vs Rental Invoice,
@@ -19,11 +20,15 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       const accentColor = '#2546e8';
 
       const isSub = invoice.invoiceCategory === 'subscription';
-      const docTitle = isSub ? 'SUBSCRIPTION INVOICE' : 'RENTAL INVOICE';
+      const customTitle = !isSub && settings?.invoiceTitle ? String(settings.invoiceTitle).toUpperCase() : '';
+      const docTitle = isSub ? 'SUBSCRIPTION INVOICE' : (customTitle || 'RENTAL INVOICE');
 
+      const companyName = isSub ? BUSINESS_CONFIG.name : (settings?.companyName || settings?.orgName || '').trim();
+      const landlordName = isSub ? '' : (settings?.landlordName || '').trim();
+      const propName = isSub ? '' : (invoice.propertyName || '').trim();
       const businessName = isSub
         ? BUSINESS_CONFIG.name
-        : (settings?.orgName || 'Property Management');
+        : (companyName || propName || landlordName || 'Property Management');
       const businessEmail = isSub
         ? BUSINESS_CONFIG.email
         : (settings?.orgEmail || '');
@@ -33,14 +38,34 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       const businessAddress = isSub
         ? BUSINESS_CONFIG.address
         : (settings?.orgAddress || '');
+      const logoBuffer = isSub ? null : decodeLogoDataUrl(settings?.orgLogo);
 
-      doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 50, 50);
+      let leftHeaderY = 50;
+      if (logoBuffer) {
+        try {
+          doc.image(logoBuffer, 50, leftHeaderY, { fit: [110, 42] });
+          leftHeaderY += 46;
+        } catch {}
+      }
+
+      doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 50, leftHeaderY, { width: 250 });
+      leftHeaderY += 23;
+      if (!isSub && companyName && propName && propName.toLowerCase() !== companyName.toLowerCase()) {
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(secondaryColor).text(`Property: ${propName}`, 50, leftHeaderY);
+        leftHeaderY += 13;
+      }
+      if (!isSub && landlordName && landlordName.toLowerCase() !== businessName.toLowerCase()) {
+        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(`Landlord: ${landlordName}`, 50, leftHeaderY);
+        leftHeaderY += 13;
+      }
       const contactLine = [businessEmail, businessPhone ? `Tel: ${businessPhone}` : ''].filter(Boolean).join(' | ');
       if (contactLine) {
-        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(contactLine, 50, 74);
+        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(contactLine, 50, leftHeaderY);
+        leftHeaderY += 13;
       }
       if (businessAddress) {
-        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(businessAddress, 50, contactLine ? 88 : 74);
+        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(businessAddress, 50, leftHeaderY);
+        leftHeaderY += 13;
       }
 
       doc.fontSize(18).font('Helvetica-Bold').fillColor(accentColor)
@@ -51,9 +76,10 @@ const generateInvoicePDF = (invoice, settings = {}) => {
         .text(`Issued: ${new Date(invoice.issuedAt || invoice.createdAt).toLocaleDateString('en-KE')}`, 310, 89, { align: 'right', width: 235 })
         .text(`Due: ${new Date(invoice.dueDate).toLocaleDateString('en-KE')}`, 310, 102, { align: 'right', width: 235 });
 
-      doc.rect(50, 125, 495, 3).fill(accentColor);
+      const stripeY = Math.max(125, leftHeaderY + 8);
+      doc.rect(50, stripeY, 495, 3).fill(accentColor);
 
-      let y = 145;
+      let y = stripeY + 20;
       doc.fontSize(9).font('Helvetica-Bold').fillColor(accentColor).text('BILL TO', 50, y);
       y += 14;
       doc.fontSize(12).font('Helvetica-Bold').fillColor(primaryColor).text(invoice.customerName || 'Valued Customer', 50, y);

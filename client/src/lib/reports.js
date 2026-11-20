@@ -123,13 +123,14 @@ export const exportToPDF = (reportOptions = {}) => {
 
     const companyInfo = reportOptions.company || {};
     const companyName =
-        companyInfo.orgName ||
-        companyInfo.name ||
-        reportOptions.companyName ||
-        storedUser.companyName ||
-        storedUser.name ||
-        "Property Management";
+        (companyInfo.companyName || companyInfo.orgName || reportOptions.companyName || storedUser.companyName || "").trim();
+    const landlordName =
+        (companyInfo.landlordName || reportOptions.landlordName || storedUser.landlordName || storedUser.name || "").trim();
+    const propertyTitle = (reportOptions.propertyName || "").trim();
+    const displayHeader = companyName || propertyTitle || landlordName || "Property Management";
+    const companyLogo = (companyInfo.orgLogo || "").trim();
     const companyContact = [
+        landlordName && landlordName.toLowerCase() !== displayHeader.toLowerCase() ? `Landlord: ${landlordName}` : "",
         companyInfo.orgEmail || companyInfo.email || storedUser.email || "",
         companyInfo.orgPhone || companyInfo.phone || storedUser.phone || "",
         companyInfo.orgAddress || companyInfo.address || storedUser.address || ""
@@ -137,7 +138,7 @@ export const exportToPDF = (reportOptions = {}) => {
 
     const {
         title = "Statement Report",
-        subtitle = `${companyName} Rental Management Statement`,
+        subtitle = `${displayHeader} Rental Management Statement`,
         dateRange = "",
         records = [],
         columns = [],
@@ -216,7 +217,7 @@ export const exportToPDF = (reportOptions = {}) => {
         <html>
         <head>
             <meta charset="utf-8">
-            <title>${title} - ${companyName}</title>
+            <title>${title} - ${displayHeader}</title>
             <style>
                 @page {
                     size: A4 portrait;
@@ -378,7 +379,8 @@ export const exportToPDF = (reportOptions = {}) => {
         <body>
             <div class="header-wrapper">
                 <div>
-                    <h1 class="brand-title">${companyName}</h1>
+                    ${companyLogo ? `<img src="${companyLogo}" alt="${displayHeader}" style="max-height:48px;max-width:160px;margin-bottom:8px;display:block;object-fit:contain;" />` : ""}
+                    <h1 class="brand-title">${displayHeader}</h1>
                     <div class="brand-subtitle">${companyContact || "Rental & Property Management Statement"}</div>
                 </div>
                 <div class="report-meta">

@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const { decodeLogoDataUrl } = require('./getUserBusinessProfile');
 
 /**
  * Generates a professional, corporate-branded PDF Receipt for a payment
@@ -33,13 +34,16 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             const lightBg = '#f8fafc';
             const successBg = '#f0fdf4';
 
-            // --- Business Info (Registered company/user details take precedence) ---
-            const businessName = settings?.orgName || propertyName || "Property Management";
-            const businessEmail = settings?.orgEmail || "";
-            const businessPhone = settings?.orgPhone || "";
-            const businessAddress = settings?.orgAddress || "";
-            const taxId = settings?.taxId || "";
+            // --- Business & Property Info (Show company/management if set, else Property Name; Landlord listed separately) ---
+            const companyName = (settings?.companyName || settings?.orgName || "").trim();
+            const landlordName = (settings?.landlordName || "").trim();
+            const businessName = companyName || propertyName || landlordName || "Property Management";
+            const businessEmail = (settings?.orgEmail || "").trim();
+            const businessPhone = (settings?.orgPhone || "").trim();
+            const businessAddress = (settings?.orgAddress || "").trim();
+            const taxId = (settings?.taxId || "").trim();
             const currency = settings?.currency || "KES";
+            const customLogoBuffer = decodeLogoDataUrl(settings?.orgLogo);
 
             // --- Watermark ---
             doc.save();
@@ -53,20 +57,33 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             // =====================================================
             let yPos = 50;
 
-            // Logo attempt
-            const logoPath = require('path').join(__dirname, '../assets/logo.png');
-            try {
-                doc.image(logoPath, 50, yPos, { width: 70 }); 
-            } catch (e) {
-                // Fallback: styled text logo
+            // Company / Management Logo if uploaded, else crisp brand emblem
+            if (customLogoBuffer) {
+                try {
+                    doc.image(customLogoBuffer, 50, yPos, { fit: [120, 55] });
+                } catch (e) {
+                    doc.fontSize(22).font('Helvetica-Bold').fillColor(accentColor).text('●', 50, yPos + 5);
+                    doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 68, yPos + 8, { width: 200 });
+                }
+            } else {
                 doc.fontSize(22).font('Helvetica-Bold').fillColor(accentColor).text('●', 50, yPos + 5);
-                doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 68, yPos + 8);
+                doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 68, yPos + 8, { width: 200 });
             }
 
-            // Company Info (Right Aligned)
-            doc.fontSize(15).font('Helvetica-Bold').fillColor(primaryColor)
+            // Company / Property / Landlord Info (Right Aligned)
+            doc.fontSize(14).font('Helvetica-Bold').fillColor(primaryColor)
                .text(businessName, 280, yPos, { align: 'right', width: 265 });
-            yPos += 20;
+            yPos += 19;
+            if (companyName && propertyName && propertyName.toLowerCase() !== companyName.toLowerCase()) {
+                doc.fontSize(9).font('Helvetica-Bold').fillColor(secondaryColor)
+                   .text(`Property: ${propertyName}`, 280, yPos, { align: 'right', width: 265 });
+                yPos += 13;
+            }
+            if (landlordName && landlordName.toLowerCase() !== businessName.toLowerCase()) {
+                doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
+                   .text(`Landlord: ${landlordName}`, 280, yPos, { align: 'right', width: 265 });
+                yPos += 13;
+            }
             if (businessEmail) {
                 doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
                    .text(businessEmail, 280, yPos, { align: 'right', width: 265 });
@@ -91,7 +108,7 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             // =====================================================
             // ACCENT STRIPE
             // =====================================================
-            yPos = 135;
+            yPos = Math.max(135, yPos + 10);
             doc.rect(50, yPos, 495, 4).fill(accentColor);
             yPos += 15;
 
