@@ -47,8 +47,8 @@ export function AuthProvider({ children }) {
     }, []);
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
-    const login = async (email, password, turnstileToken) => {
-        const result = await api.login(email, password, turnstileToken);
+    const login = async (email, password) => {
+        const result = await api.login(email, password);
         // Server returns requiresOTP: true after credentials pass
         if (result.requiresOTP) {
             return result;
@@ -103,15 +103,13 @@ export function AuthProvider({ children }) {
 
     const updateProfile = async (updates) => {
         try {
-            const updatedUser = { ...user, ...updates };
-            // In a real app, we'd wait for API confirmation
-            await api.updateUser(updates);
-            
+            const serverUser = await api.updateUser(updates);
+            const updatedUser = { ...user, ...serverUser };
             setUser(updatedUser);
             localStorage.setItem("rental_user", JSON.stringify(updatedUser));
-            toast({ title: "Profile updated", description: "Your profile has been updated successfully." });
+            return updatedUser;
         } catch (error) {
-            toast({ variant: "destructive", title: "Update failed", description: "Could not update profile." });
+            toast({ variant: "destructive", title: "Update failed", description: error.message || "Could not update profile." });
             throw error;
         }
     };

@@ -89,6 +89,7 @@ router.put('/', protect, async (req, res) => {
     } else {
       if (req.body.orgName !== undefined) settings.orgName = req.body.orgName;
       if (req.body.landlordName !== undefined) settings.landlordName = req.body.landlordName;
+      if (req.body.abbreviatedName !== undefined) settings.abbreviatedName = req.body.abbreviatedName;
       if (req.body.orgLogo !== undefined) settings.orgLogo = req.body.orgLogo;
       if (req.body.orgEmail !== undefined) settings.orgEmail = req.body.orgEmail;
       if (req.body.orgPhone !== undefined) settings.orgPhone = req.body.orgPhone;
@@ -100,13 +101,55 @@ router.put('/', protect, async (req, res) => {
       if (req.body.currency) settings.currency = req.body.currency;
       if (req.body.timezone) settings.timezone = req.body.timezone;
       if (req.body.theme) settings.theme = req.body.theme;
+      if (req.body.mpesaType !== undefined) settings.mpesaType = req.body.mpesaType;
+      if (req.body.paybillAccount !== undefined) settings.paybillAccount = req.body.paybillAccount;
+      if (req.body.accountType !== undefined) settings.accountType = req.body.accountType;
 
-      if (req.body.notifications) settings.notifications = req.body.notifications;
+      if (req.body.notifications && typeof req.body.notifications === 'object') {
+        settings.notifications = {
+          ...(settings.notifications?.toObject ? settings.notifications.toObject() : settings.notifications || {}),
+          ...req.body.notifications
+        };
+      }
 
-      if (req.body.integrations) {
+      if (req.body.preferences && typeof req.body.preferences === 'object') {
+        settings.preferences = {
+          ...(settings.preferences?.toObject ? settings.preferences.toObject() : settings.preferences || {}),
+          ...req.body.preferences
+        };
+      }
+
+      if (req.body.alerts && typeof req.body.alerts === 'object') {
+        settings.alerts = {
+          ...(settings.alerts?.toObject ? settings.alerts.toObject() : settings.alerts || {}),
+          ...req.body.alerts
+        };
+      }
+
+      if (req.body.messageTemplates && typeof req.body.messageTemplates === 'object') {
+        settings.messageTemplates = {
+          ...(settings.messageTemplates?.toObject ? settings.messageTemplates.toObject() : settings.messageTemplates || {}),
+          ...req.body.messageTemplates
+        };
+      }
+
+      if (Array.isArray(req.body.customFields)) {
+        settings.customFields = req.body.customFields;
+      }
+
+      if (Array.isArray(req.body.teamMembers)) {
+        settings.teamMembers = req.body.teamMembers;
+      }
+
+      if (req.body.integrations && typeof req.body.integrations === 'object') {
+        const existingInt = settings.integrations?.toObject ? settings.integrations.toObject() : settings.integrations || {};
         settings.integrations = {
-          ...(settings.integrations?.toObject ? settings.integrations.toObject() : settings.integrations || {}),
-          ...req.body.integrations
+          ...existingInt,
+          ...req.body.integrations,
+          mpesa: {
+            ...(existingInt.mpesa || {}),
+            ...(req.body.integrations.mpesa || {})
+          }
         };
       }
 

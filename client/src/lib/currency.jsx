@@ -39,27 +39,35 @@ export function PreferencesProvider({ children }) {
     });
 
     useEffect(() => {
+        const hasAuthToken = () => {
+            try {
+                const stored = JSON.parse(localStorage.getItem("rental_user") || "{}");
+                return Boolean(stored?.token && stored.token !== "undefined" && stored.token !== "null");
+            } catch {
+                return false;
+            }
+        };
+
         const loadPrefs = async () => {
+            if (!hasAuthToken()) {
+                const storedCur = localStorage.getItem("rental_currency");
+                const storedTZ = localStorage.getItem("rental_timezone");
+                if (storedCur) setCurrency(storedCur);
+                if (storedTZ) setTimezone(storedTZ);
+                return;
+            }
             try {
                 const settings = await api.getSettings();
                 if (settings?.currency) {
                     setCurrency(settings.currency);
                     localStorage.setItem("rental_currency", settings.currency);
-                } else {
-                     const storedCur = localStorage.getItem("rental_currency");
-                     if (storedCur) setCurrency(storedCur);
                 }
-
                 if (settings?.timezone) {
-                     setTimezone(settings.timezone);
-                     localStorage.setItem("rental_timezone", settings.timezone);
-                } else {
-                     const storedTZ = localStorage.getItem("rental_timezone");
-                     if (storedTZ) setTimezone(storedTZ);
+                    setTimezone(settings.timezone);
+                    localStorage.setItem("rental_timezone", settings.timezone);
                 }
-
                 if (settings?.theme) {
-                     setTheme(settings.theme);
+                    setTheme(settings.theme);
                 }
             } catch (e) {
                 console.warn("Could not load remote preferences, using cached values:", e.message);
@@ -72,23 +80,29 @@ export function PreferencesProvider({ children }) {
         loadPrefs();
     }, [setTheme]);
 
-    const changeCurrency = (code) => {
+    const changeCurrency = (code, syncRemote = true) => {
         if (EXCHANGE_RATES[code]) {
             setCurrency(code);
             localStorage.setItem("rental_currency", code);
-            api.getSettings().then(s => api.updateSettings({ ...s, currency: code })).catch(() => {});
+            if (syncRemote) {
+                api.updateSettings({ currency: code }).catch(() => {});
+            }
         }
     };
 
-    const changeTimezone = (tz) => {
+    const changeTimezone = (tz, syncRemote = true) => {
         setTimezone(tz);
         localStorage.setItem("rental_timezone", tz);
-        api.getSettings().then(s => api.updateSettings({ ...s, timezone: tz })).catch(() => {});
+        if (syncRemote) {
+            api.updateSettings({ timezone: tz }).catch(() => {});
+        }
     };
 
-    const changeTheme = (newTheme) => {
+    const changeTheme = (newTheme, syncRemote = true) => {
         setTheme(newTheme);
-        api.getSettings().then(s => api.updateSettings({ ...s, theme: newTheme })).catch(() => {});
+        if (syncRemote) {
+            api.updateSettings({ theme: newTheme }).catch(() => {});
+        }
     };
 
     const formatCurrency = (amount) => {

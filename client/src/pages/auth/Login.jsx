@@ -13,8 +13,6 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
-import { trackRegistration } from "@/lib/metaPixel";
 import SEO from "@/components/SEO";
 
 export default function LoginPage() {
@@ -82,7 +80,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState("");
 
   // OTP Verification state
   const [isOtpStep, setIsOtpStep] = useState(false);
@@ -159,7 +156,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       // Step 1: Validate credentials with backend
-      const res = await login(usernameOrEmail.trim(), password, turnstileToken);
+      const res = await login(usernameOrEmail.trim(), password);
 
       if (res && res.requiresOTP) {
         // Backend generated an OTP and sent email
@@ -377,9 +374,6 @@ export default function LoginPage() {
         });
         return;
       }
-
-      // Track registration in Meta Pixel
-      trackRegistration("email");
 
       // Return newly created user to login screen so they can authenticate and enter onboarding
       setIsSignup(false);
@@ -753,9 +747,6 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {/* Cloudflare Turnstile Bot Protection */}
-            <CloudflareTurnstile key="login-turnstile" onVerify={(token) => setTurnstileToken(token)} />
-
             {/* Sign In Button */}
             <div className="pt-1">
               <Button
@@ -917,9 +908,6 @@ export default function LoginPage() {
                 of MakaziFlow
               </label>
             </div>
-
-            {/* Cloudflare Turnstile Bot Protection */}
-            <CloudflareTurnstile key="signup-turnstile" onVerify={(token) => setTurnstileToken(token)} />
 
             {/* Submit Button */}
             <div className="pt-2">

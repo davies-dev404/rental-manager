@@ -17,7 +17,6 @@ import AppLayout from "@/components/layout/AppLayout";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import OnboardingWizard from "@/components/onboarding/OnboardingWizard";
 import { Loader2 } from "lucide-react";
-import { initMetaPixel, trackPageView } from "@/lib/metaPixel";
 import Dashboard from "@/pages/dashboard";
 import PropertiesPage from "@/pages/properties";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -178,10 +177,6 @@ function Router() {
     </Switch>);
 }
 function App() {
-    useEffect(() => {
-      initMetaPixel();
-    }, []);
-
     return (<ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>

@@ -520,7 +520,6 @@ export default function AppLayout({ children }) {
         documents: "Documents (beta)",
         templates: "Custom Message Template",
         custom_fields: "Custom Fields",
-        integrations: "Cloudflare & Meta Pixel",
         audit: "Audit Trail",
         backup: "Backup"
       };
@@ -529,9 +528,6 @@ export default function AppLayout({ children }) {
       }
       if (tab === "mpesa") {
         return { title: "MPESA Transactions Status", Icon: CreditCard };
-      }
-      if (tab === "integrations") {
-        return { title: "Cloudflare & Meta Pixel", Icon: BarChart2 };
       }
       return { title: tabNames[tab] || "General", Icon: Settings };
     }

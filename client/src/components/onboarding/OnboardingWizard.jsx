@@ -4,7 +4,6 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { trackOnboardingLead, trackInitiateCheckout } from "@/lib/metaPixel";
 import {
   Building2,
   Users,
@@ -70,13 +69,7 @@ export default function OnboardingWizard({ onComplete }) {
   const handleFinish = async (mode) => {
     setIsSubmitting(true);
     try {
-      // 1. Meta Pixel Lead Tracking
-      trackOnboardingLead(selectedRole, unitsCount, pricing.tier);
-      if (mode === "live") {
-        trackInitiateCheckout(pricing.tier, pricing.activePrice);
-      }
-
-      // 2. Submit to backend API
+      // Submit to backend API
       const response = await api.submitOnboarding({
         role: selectedRole,
         unitsCount: unitsCount,

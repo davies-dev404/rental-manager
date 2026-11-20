@@ -15,11 +15,14 @@ router.get('/', protect, async (req, res) => {
     }
 
     // STRICT account-level isolation:
-    // Only return logs explicitly belonging to this user's account ID or account Email.
+    // Match logs belonging to this user's account ID or account Email (case-insensitive)
+    const escapedEmail = currentUserEmail
+      ? currentUserEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      : null;
     const query = {
       $or: [
         ...(currentUserId ? [{ userId: currentUserId }] : []),
-        ...(currentUserEmail ? [{ userEmail: currentUserEmail }] : [])
+        ...(escapedEmail ? [{ userEmail: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } }] : [])
       ]
     };
 

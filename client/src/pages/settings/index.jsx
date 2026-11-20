@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -19,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { trackPixelEvent, initMetaPixel } from "@/lib/metaPixel";
 import {
   Info,
   Save,
@@ -91,25 +90,31 @@ function AuditTrailTab() {
     const myEmail = (user.email || "").trim().toLowerCase();
     const myName = (user.name || "").trim().toLowerCase();
 
-    // 1. If log has an explicit userId, it MUST match current user's ID
-    if (log.userId) {
-      return Boolean(myId && String(log.userId) === myId);
+    // 1. Normalize userId whether it is a plain string or populated object
+    const logUserId =
+      log.userId && typeof log.userId === "object"
+        ? String(log.userId._id || log.userId.id || "")
+        : log.userId
+        ? String(log.userId)
+        : "";
+    if (logUserId) {
+      return Boolean(myId && logUserId === myId);
     }
 
-    // 2. If log has an explicit userEmail, it MUST match current user's email
+    // 2. If log has an explicit userEmail, match current user's email
     if (log.userEmail) {
       return Boolean(myEmail && log.userEmail.trim().toLowerCase() === myEmail);
     }
 
     const logUser = (log.user || "").trim().toLowerCase();
 
-    // 3. If log was recorded under "System", only show if description explicitly mentions my email
+    // 3. If log was recorded under "System", show if description mentions my email or name
     if (logUser === "system") {
       const desc = (log.description || "").toLowerCase();
-      return Boolean(myEmail && desc.includes(myEmail));
+      return Boolean((myEmail && desc.includes(myEmail)) || (myName && desc.includes(myName)));
     }
 
-    // 4. If log has a username, verify that it matches my account's name or email prefix
+    // 4. Match username/email prefix, or accept server-isolated entries returned for this user
     if (logUser) {
       if (myName && (logUser === myName || logUser.includes(myName) || myName.includes(logUser))) {
         return true;
@@ -120,21 +125,18 @@ function AuditTrailTab() {
       }
     }
 
-    // 5. If description targets current user's email
-    if (myEmail && log.description && log.description.toLowerCase().includes(myEmail)) {
-      return true;
-    }
-
-    // Reject any log belonging to another user/account
-    return false;
+    return true;
   };
 
-  const filteredLogs = logs.filter(log => {
-    // Strict account isolation: reject logs from other accounts
-    if (!isLogForCurrentUser(log)) {
-      return false;
-    }
+  const accountLogs = logs.filter(isLogForCurrentUser);
 
+  const categoryCounts = accountLogs.reduce((acc, log) => {
+    const key = (log.type || "general").toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const filteredLogs = accountLogs.filter((log) => {
     const matchesSearch =
       !searchTerm ||
       (log.action && log.action.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -186,20 +188,23 @@ function AuditTrailTab() {
           />
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {["all", "property", "unit", "tenant", "payment", "settings", "auth"].map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setFilterType(cat)}
-              className={`px-2.5 py-1 text-xs rounded-md capitalize transition cursor-pointer font-medium ${
-                filterType === cat
-                  ? "bg-[#0b1065] text-white"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+          {["all", "property", "unit", "tenant", "payment", "settings", "auth", "reminder"].map((cat) => {
+            const count = cat === "all" ? accountLogs.length : (categoryCounts[cat] || 0);
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setFilterType(cat)}
+                className={`px-2.5 py-1 text-xs rounded-md capitalize transition cursor-pointer font-medium whitespace-nowrap ${
+                  filterType === cat
+                    ? "bg-[#0b1065] text-white"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -230,9 +235,21 @@ function AuditTrailTab() {
                   <p className="text-slate-600 dark:text-slate-300 font-medium text-xs">No audit logs found for your account.</p>
                   <p className="text-slate-400 text-[11px] mt-0.5">
                     {searchTerm || filterType !== "all"
-                      ? "No records match the current search or category filter."
+                      ? `No records match the current filter${accountLogs.length > 0 ? ` (${accountLogs.length} total logs available under All)` : ""}.`
                       : "Actions like updating properties, units, recording payments, or changing settings will appear here."}
                   </p>
+                  {(searchTerm || filterType !== "all") && accountLogs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterType("all");
+                        setSearchTerm("");
+                      }}
+                      className="mt-2 text-xs text-[#2546e8] hover:underline font-medium cursor-pointer"
+                    >
+                      Show all {accountLogs.length} audit logs
+                    </button>
+                  )}
                 </td>
               </tr>
             ) : (
@@ -659,6 +676,7 @@ export default function SettingsPage() {
   const { user, updateProfile } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const { currency, changeCurrency, timezone, changeTimezone } = usePreferences();
 
   // Active tab — driven by Wouter's reactive search string so sidebar
@@ -817,90 +835,89 @@ export default function SettingsPage() {
     { id: "documents", label: "Documents (beta)" },
     { id: "templates", label: "Custom Message Template" },
     { id: "custom_fields", label: "Custom Fields" },
-    { id: "integrations", label: "Cloudflare & Meta Pixel" },
     { id: "audit", label: "Audit Trail" },
     { id: "backup", label: "Backup" }
   ];
 
   // Fetch live settings from database
-  const { data: serverSettings } = useQuery({
+  const { data: serverSettings, refetch: refetchSettings } = useQuery({
     queryKey: ["settings"],
     queryFn: api.getSettings
   });
 
-  const [integrationSettings, setIntegrationSettings] = useState({
-    metaPixelId: localStorage.getItem("meta_pixel_id") || "",
-    cfTurnstileSiteKey: localStorage.getItem("cloudflare_turnstile_site_key") || "",
-    cfTurnstileSecretKey: "",
-    cfAnalyticsToken: localStorage.getItem("cloudflare_analytics_token") || "",
-    googlePlaceId: "",
-    googleWriteReviewUrl: ""
-  });
+  useEffect(() => {
+    try {
+      localStorage.removeItem("meta_pixel_id");
+      localStorage.removeItem("cloudflare_turnstile_site_key");
+      localStorage.removeItem("cloudflare_analytics_token");
+    } catch {}
+  }, []);
 
   useEffect(() => {
+    if (user) {
+      setAccountForm((prev) => ({
+        ...prev,
+        name: prev.name || user.name || "",
+        email: prev.email || user.email || "",
+        phone: prev.phone || user.phone || ""
+      }));
+    }
     if (serverSettings && Object.keys(serverSettings).length > 0) {
+      const prefs = serverSettings.preferences || {};
+      const notifs = serverSettings.notifications || {};
       setGeneralSettings((prev) => ({
         ...prev,
         companyName: serverSettings.orgName ?? prev.companyName ?? user?.companyName ?? "",
         landlordName: serverSettings.landlordName || prev.landlordName || user?.name || "",
+        abbreviatedName: serverSettings.abbreviatedName ?? prev.abbreviatedName ?? serverSettings.orgName ?? "",
         companyLogo: serverSettings.orgLogo ?? prev.companyLogo ?? "",
         companyEmail: serverSettings.orgEmail || prev.companyEmail || user?.email || "",
         companyPhone: serverSettings.orgPhone || prev.companyPhone || user?.phone || "",
         companyAddress: serverSettings.orgAddress || prev.companyAddress || user?.address || "",
         invoiceTitle: serverSettings.invoiceTitle || prev.invoiceTitle,
-        invoiceFootnote: serverSettings.invoiceFootnote || prev.invoiceFootnote,
+        invoiceFootnote: serverSettings.invoiceFootnote ?? prev.invoiceFootnote,
         currency: serverSettings.currency || prev.currency,
         timezone: serverSettings.timezone || prev.timezone,
-        paybillNumber: serverSettings.integrations?.mpesa?.shortcode || prev.paybillNumber
+        mpesaType: serverSettings.mpesaType || prev.mpesaType,
+        paybillNumber: serverSettings.integrations?.mpesa?.shortcode ?? prev.paybillNumber,
+        paybillAccount: serverSettings.paybillAccount ?? prev.paybillAccount,
+        accountType: serverSettings.accountType || prev.accountType,
+        autoRentInvoices: prefs.autoRentInvoices ?? prev.autoRentInvoices,
+        autoRecurringInvoices: prefs.autoRecurringInvoices ?? prev.autoRecurringInvoices,
+        alertLandlordNewTenant: prefs.alertLandlordNewTenant ?? prev.alertLandlordNewTenant,
+        autoSendPaymentAck: prefs.autoSendPaymentAck ?? prev.autoSendPaymentAck,
+        reminderDates: Array.isArray(prefs.reminderDates) ? prefs.reminderDates : prev.reminderDates,
+        leaseExpiryRange: prefs.leaseExpiryRange ?? prev.leaseExpiryRange,
+        commSMS: prefs.commSMS ?? notifs.sms ?? prev.commSMS,
+        commWhatsApp: prefs.commWhatsApp ?? notifs.whatsapp ?? prev.commWhatsApp,
+        commEmail: prefs.commEmail ?? notifs.email ?? prev.commEmail
       }));
 
-      if (serverSettings.integrations) {
-        setIntegrationSettings({
-          metaPixelId: serverSettings.integrations.metaPixel?.pixelId || localStorage.getItem("meta_pixel_id") || "",
-          cfTurnstileSiteKey: serverSettings.integrations.cloudflare?.turnstileSiteKey || localStorage.getItem("cloudflare_turnstile_site_key") || "",
-          cfTurnstileSecretKey: serverSettings.integrations.cloudflare?.turnstileSecretKey || "",
-          cfAnalyticsToken: serverSettings.integrations.cloudflare?.analyticsToken || localStorage.getItem("cloudflare_analytics_token") || "",
-          googlePlaceId: serverSettings.integrations.googleReviews?.placeId || "",
-          googleWriteReviewUrl: serverSettings.integrations.googleReviews?.writeReviewUrl || ""
-        });
+      setAccountForm((prev) => ({
+        ...prev,
+        name: user?.name || serverSettings.landlordName || prev.name,
+        email: user?.email || serverSettings.orgEmail || prev.email,
+        phone: user?.phone || serverSettings.orgPhone || prev.phone
+      }));
+
+      if (serverSettings.alerts) {
+        setAlertSettings((prev) => ({ ...prev, ...serverSettings.alerts }));
+      }
+      if (serverSettings.messageTemplates) {
+        setTemplates((prev) => ({
+          reminder: serverSettings.messageTemplates.reminder || prev.reminder,
+          receipt: serverSettings.messageTemplates.receipt || prev.receipt,
+          overdue: serverSettings.messageTemplates.overdue || prev.overdue
+        }));
+      }
+      if (Array.isArray(serverSettings.customFields) && serverSettings.customFields.length > 0) {
+        setCustomFields(serverSettings.customFields);
+      }
+      if (Array.isArray(serverSettings.teamMembers)) {
+        setTeamMembers(serverSettings.teamMembers);
       }
     }
-  }, [serverSettings]);
-
-  const handleSaveIntegrations = async () => {
-    setIsSaving(true);
-    try {
-      localStorage.setItem("meta_pixel_id", integrationSettings.metaPixelId);
-      localStorage.setItem("cloudflare_turnstile_site_key", integrationSettings.cfTurnstileSiteKey);
-      localStorage.setItem("cloudflare_analytics_token", integrationSettings.cfAnalyticsToken);
-
-      await api.updateSettings({
-        integrations: {
-          ...serverSettings?.integrations,
-          metaPixel: {
-            pixelId: integrationSettings.metaPixelId,
-            enabled: Boolean(integrationSettings.metaPixelId)
-          },
-          cloudflare: {
-            turnstileSiteKey: integrationSettings.cfTurnstileSiteKey,
-            turnstileSecretKey: integrationSettings.cfTurnstileSecretKey,
-            analyticsToken: integrationSettings.cfAnalyticsToken
-          },
-          googleReviews: {
-            enabled: true,
-            placeId: integrationSettings.googlePlaceId,
-            writeReviewUrl: integrationSettings.googleWriteReviewUrl
-          }
-        }
-      });
-      initMetaPixel(integrationSettings.metaPixelId);
-      toast({ title: "Integrations Saved", description: "Cloudflare, Meta Pixel, and Google Reviews settings updated." });
-    } catch (err) {
-      toast({ title: "Save Failed", description: err.message, variant: "destructive" });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  }, [serverSettings, user]);
 
   const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
@@ -939,6 +956,7 @@ export default function SettingsPage() {
       await api.updateSettings({
         orgName: generalSettings.companyName,
         landlordName: generalSettings.landlordName,
+        abbreviatedName: generalSettings.abbreviatedName,
         orgLogo: generalSettings.companyLogo,
         orgEmail: generalSettings.companyEmail,
         orgPhone: generalSettings.companyPhone,
@@ -947,6 +965,26 @@ export default function SettingsPage() {
         invoiceFootnote: generalSettings.invoiceFootnote,
         currency: generalSettings.currency,
         timezone: generalSettings.timezone,
+        mpesaType: generalSettings.mpesaType,
+        paybillAccount: generalSettings.paybillAccount,
+        accountType: generalSettings.accountType,
+        preferences: {
+          autoRentInvoices: generalSettings.autoRentInvoices,
+          autoRecurringInvoices: generalSettings.autoRecurringInvoices,
+          alertLandlordNewTenant: generalSettings.alertLandlordNewTenant,
+          autoSendPaymentAck: generalSettings.autoSendPaymentAck,
+          reminderDates: generalSettings.reminderDates,
+          leaseExpiryRange: generalSettings.leaseExpiryRange,
+          commSMS: generalSettings.commSMS,
+          commWhatsApp: generalSettings.commWhatsApp,
+          commEmail: generalSettings.commEmail
+        },
+        notifications: {
+          email: generalSettings.commEmail,
+          sms: generalSettings.commSMS,
+          whatsapp: generalSettings.commWhatsApp,
+          rentReminders: generalSettings.reminderDates.length > 0
+        },
         integrations: {
           mpesa: {
             shortcode: generalSettings.paybillNumber
@@ -963,12 +1001,14 @@ export default function SettingsPage() {
           localStorage.setItem("rental_user", JSON.stringify(stored));
         }
       } catch {}
-      settingsQuery.refetch?.();
-      if (generalSettings.currency) changeCurrency(generalSettings.currency);
-      if (generalSettings.timezone) changeTimezone(generalSettings.timezone);
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      await refetchSettings();
+      if (generalSettings.currency) changeCurrency(generalSettings.currency, false);
+      if (generalSettings.timezone) changeTimezone(generalSettings.timezone, false);
       toast({
         title: "Settings Saved",
-        description: "General organization parameters have been saved to the database."
+        description: "General information and preferences have been updated."
       });
     } catch (err) {
       toast({
@@ -976,6 +1016,76 @@ export default function SettingsPage() {
         title: "Save Failed",
         description: err.message || "Could not save settings."
       });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAccount = async () => {
+    setIsSaving(true);
+    try {
+      if (accountForm.newPassword || accountForm.confirmPassword) {
+        if (!accountForm.oldPassword) {
+          throw new Error("Please enter your current password to change your password.");
+        }
+        if (accountForm.newPassword !== accountForm.confirmPassword) {
+          throw new Error("New password and confirmation do not match.");
+        }
+        await api.changePassword(accountForm.oldPassword, accountForm.newPassword);
+      }
+      await updateProfile({
+        name: accountForm.name,
+        email: accountForm.email,
+        phone: accountForm.phone
+      });
+      setAccountForm((prev) => ({
+        ...prev,
+        oldPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      }));
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      toast({
+        title: "Account Updated",
+        description: accountForm.newPassword
+          ? "Profile and password have been updated."
+          : "Your account profile has been saved."
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: err.message || "Could not update account details."
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAlerts = async () => {
+    setIsSaving(true);
+    try {
+      await api.updateSettings({ alerts: alertSettings });
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      toast({ title: "Alert Preferences Saved", description: "Notification preferences synced." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Save Failed", description: err.message });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveTemplates = async () => {
+    setIsSaving(true);
+    try {
+      await api.updateSettings({ messageTemplates: templates });
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+      toast({ title: "Template Saved", description: "Custom message templates synced." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Save Failed", description: err.message });
     } finally {
       setIsSaving(false);
     }
@@ -1176,7 +1286,7 @@ export default function SettingsPage() {
                     value={generalSettings.currency}
                     onChange={(e) => {
                       setGeneralSettings({ ...generalSettings, currency: e.target.value });
-                      changeCurrency(e.target.value);
+                      changeCurrency(e.target.value, false);
                     }}
                     className="w-36 h-8.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium shadow-2xs cursor-pointer"
                   >
@@ -1200,7 +1310,7 @@ export default function SettingsPage() {
                     value={generalSettings.timezone}
                     onChange={(e) => {
                       setGeneralSettings({ ...generalSettings, timezone: e.target.value });
-                      changeTimezone(e.target.value);
+                      changeTimezone(e.target.value, false);
                     }}
                     className="h-8.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium shadow-2xs cursor-pointer"
                   >
@@ -1538,10 +1648,11 @@ export default function SettingsPage() {
 
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
                 <Button
-                  onClick={() => toast({ title: "Account Updated", description: "Profile saved." })}
+                  onClick={handleSaveAccount}
+                  disabled={isSaving}
                   className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs px-6"
                 >
-                  Save Account Changes
+                  {isSaving ? "Saving..." : "Save Account Changes"}
                 </Button>
               </div>
             </div>
@@ -1585,7 +1696,13 @@ export default function SettingsPage() {
                       role: teamForm.role,
                       status: "Active"
                     };
-                    setTeamMembers([newMember, ...teamMembers]);
+                    const nextTeam = [newMember, ...teamMembers];
+                    setTeamMembers(nextTeam);
+                    localStorage.setItem("dwello_team_members", JSON.stringify(nextTeam));
+                    api.updateSettings({ teamMembers: nextTeam }).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ["settings"] });
+                      queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+                    }).catch(() => {});
                     toast({ title: "Team Member Added", description: `Added ${teamForm.username} (${teamForm.role}) to team.` });
                     setTeamView("list");
                     setTeamForm({
@@ -1885,6 +2002,9 @@ export default function SettingsPage() {
                                   const next = teamMembers.filter((m) => m.id !== member.id);
                                   setTeamMembers(next);
                                   localStorage.setItem("dwello_team_members", JSON.stringify(next));
+                                  api.updateSettings({ teamMembers: next }).then(() => {
+                                    queryClient.invalidateQueries({ queryKey: ["settings"] });
+                                  }).catch(() => {});
                                 }}
                                 className="text-rose-500 hover:text-rose-700 cursor-pointer"
                               >
@@ -1940,8 +2060,8 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                <Button onClick={() => toast({ title: "Alert Preferences Saved" })} className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs">
-                  Save Alert Settings
+                <Button onClick={handleSaveAlerts} disabled={isSaving} className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs">
+                  {isSaving ? "Saving..." : "Save Alert Settings"}
                 </Button>
               </div>
             </div>
@@ -2397,8 +2517,8 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="flex justify-end">
-                <Button onClick={() => toast({ title: "Template Saved" })} className="bg-[#0b1065] text-white text-xs">
-                  Save Template
+                <Button onClick={handleSaveTemplates} disabled={isSaving} className="bg-[#0b1065] text-white text-xs">
+                  {isSaving ? "Saving..." : "Save Template"}
                 </Button>
               </div>
             </div>
@@ -2436,8 +2556,13 @@ export default function SettingsPage() {
                   <Button
                     onClick={() => {
                       if (!newFieldLabel.trim()) return;
-                      setCustomFields([...customFields, { id: String(Date.now()), target: newFieldTarget, label: newFieldLabel, type: "Text" }]);
+                      const nextFields = [...customFields, { id: String(Date.now()), target: newFieldTarget, label: newFieldLabel.trim(), type: "Text" }];
+                      setCustomFields(nextFields);
                       setNewFieldLabel("");
+                      api.updateSettings({ customFields: nextFields }).then(() => {
+                        queryClient.invalidateQueries({ queryKey: ["settings"] });
+                        queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+                      }).catch(() => {});
                       toast({ title: "Field Added" });
                     }}
                     className="bg-[#0b1065] text-white text-xs"
@@ -2453,7 +2578,16 @@ export default function SettingsPage() {
                       <Badge variant="outline" className="text-[10px]">{field.target}</Badge>
                       <span className="font-semibold text-slate-800 dark:text-slate-100">{field.label}</span>
                     </div>
-                    <button onClick={() => setCustomFields(customFields.filter((f) => f.id !== field.id))} className="text-rose-500">
+                    <button
+                      onClick={() => {
+                        const nextFields = customFields.filter((f) => f.id !== field.id);
+                        setCustomFields(nextFields);
+                        api.updateSettings({ customFields: nextFields }).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ["settings"] });
+                        }).catch(() => {});
+                      }}
+                      className="text-rose-500"
+                    >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -2486,162 +2620,6 @@ export default function SettingsPage() {
                   <Button onClick={() => handleExportBackup("csv")} variant="outline" className="text-xs">
                     <Download className="w-3.5 h-3.5 mr-1.5 text-emerald-600" /> Download CSV Rent Roll
                   </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ────────────────── 12. CLOUDFLARE & META PIXEL ────────────────── */}
-          {activeTab === "integrations" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                    Cloudflare & Meta Pixel Integrations
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Configure Cloudflare Turnstile bot protection, analytics beacon, and Meta (Facebook) Pixel.
-                  </p>
-                </div>
-                <Button
-                  onClick={handleSaveIntegrations}
-                  disabled={isSaving}
-                  className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold h-8 px-4 shadow-xs cursor-pointer self-start sm:self-auto"
-                >
-                  {isSaving ? "Saving…" : "Save Integrations"}
-                </Button>
-              </div>
-
-              {/* Meta Pixel Card */}
-              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600">
-                    <BarChart2 className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Meta (Facebook) Pixel</h4>
-                    <p className="text-[11px] text-muted-foreground">Track PageViews, Registrations, Leads, and Checkout intent for advertising.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 max-w-xl">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      Meta Pixel ID (Dataset ID)
-                    </label>
-                    <input
-                      type="text"
-                      value={integrationSettings.metaPixelId}
-                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, metaPixelId: e.target.value.trim() })}
-                      placeholder="e.g. 123456789012345"
-                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      Can also be set in <code className="text-blue-600">client/.env</code> as <code className="text-blue-600">VITE_FACEBOOK_PIXEL_ID</code>.
-                    </p>
-                  </div>
-
-                  <div className="pt-1 flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        trackPixelEvent("PageView", { test: true });
-                        trackPixelEvent("Lead", { test: true, role: "Test Lead" });
-                        toast({ title: "Test Event Sent", description: "Fired test PageView and Lead events to Meta Pixel." });
-                      }}
-                      className="text-xs h-7"
-                    >
-                      Fire Test Pixel Event
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Cloudflare Turnstile & Analytics Card */}
-              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center text-orange-600">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Cloudflare Turnstile & Web Analytics</h4>
-                    <p className="text-[11px] text-muted-foreground">Smart bot protection on login/signup forms without frustrating CAPTCHAs.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      Cloudflare Turnstile Site Key
-                    </label>
-                    <input
-                      type="text"
-                      value={integrationSettings.cfTurnstileSiteKey}
-                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, cfTurnstileSiteKey: e.target.value.trim() })}
-                      placeholder="e.g. 0x4AAAAAA..."
-                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <span className="text-[10px] text-muted-foreground">Leave blank to use official Cloudflare test sitekey (always passes).</span>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      Cloudflare Web Analytics Token
-                    </label>
-                    <input
-                      type="text"
-                      value={integrationSettings.cfAnalyticsToken}
-                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, cfAnalyticsToken: e.target.value.trim() })}
-                      placeholder="e.g. beacon token string"
-                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <span className="text-[10px] text-muted-foreground">Privacy-first web performance analytics beacon token.</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Google Business Reviews Card */}
-              <div className="border rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 font-bold text-sm">
-                    G
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">Google Business Ratings &amp; Reviews</h4>
-                    <p className="text-[11px] text-muted-foreground">Display live Google ratings and customer reviews automatically on the MakaziFlow landing page.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      Google Place ID
-                    </label>
-                    <input
-                      type="text"
-                      value={integrationSettings.googlePlaceId}
-                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, googlePlaceId: e.target.value.trim() })}
-                      placeholder="e.g. ChIJ..."
-                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <span className="text-[10px] text-muted-foreground">Found in Google Business Profile / Place ID Finder.</span>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                      Direct Google Review Link (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={integrationSettings.googleWriteReviewUrl}
-                      onChange={(e) => setIntegrationSettings({ ...integrationSettings, googleWriteReviewUrl: e.target.value.trim() })}
-                      placeholder="https://g.page/r/.../review"
-                      className="w-full h-9 px-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
-                    />
-                    <span className="text-[10px] text-muted-foreground">Used for the &quot;Rate Us on Google&quot; button on the landing page.</span>
-                  </div>
                 </div>
               </div>
             </div>

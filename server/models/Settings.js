@@ -5,18 +5,46 @@ const settingsSchema = new mongoose.Schema({
   // Organization & Landlord Details (populated per registered user/company)
   orgName: { type: String, default: '' },
   landlordName: { type: String, default: '' },
+  abbreviatedName: { type: String, default: '' },
   orgLogo: { type: String, default: '' },
   orgEmail: { type: String, default: '' },
   orgPhone: { type: String, default: '' },
   orgAddress: { type: String, default: '' },
   taxId: { type: String, default: '' },
-  invoiceTitle: { type: String, default: '' },
+  invoiceTitle: { type: String, default: 'Invoice' },
   invoiceFootnote: { type: String, default: '' },
   
   // App Preferences
   currency: { type: String, default: 'KES' },
   timezone: { type: String, default: 'Africa/Nairobi' },
   theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
+  mpesaType: { type: String, default: 'Paybill' },
+  paybillAccount: { type: String, default: 'Unit Number (e.g. 1B)' },
+  accountType: { type: String, default: 'Property Management' },
+  preferences: {
+    autoRentInvoices: { type: Boolean, default: false },
+    autoRecurringInvoices: { type: Boolean, default: false },
+    alertLandlordNewTenant: { type: Boolean, default: true },
+    autoSendPaymentAck: { type: Boolean, default: true },
+    reminderDates: { type: [String], default: ['5th'] },
+    leaseExpiryRange: { type: String, default: '30' },
+    commSMS: { type: Boolean, default: true },
+    commWhatsApp: { type: Boolean, default: false },
+    commEmail: { type: Boolean, default: false }
+  },
+  alerts: {
+    smsDueReminder: { type: Boolean, default: true },
+    smsReceiptOnPayment: { type: Boolean, default: true },
+    smsOverdueAlert: { type: Boolean, default: true },
+    emailMonthlyStatement: { type: Boolean, default: true }
+  },
+  messageTemplates: {
+    reminder: { type: String, default: '' },
+    receipt: { type: String, default: '' },
+    overdue: { type: String, default: '' }
+  },
+  customFields: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  teamMembers: { type: [mongoose.Schema.Types.Mixed], default: [] },
   
   // Notification Settings (toggles)
   notifications: {

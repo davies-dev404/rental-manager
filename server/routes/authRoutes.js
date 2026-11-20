@@ -85,30 +85,6 @@ const getEmailHeader = () => {
   `;
 };
 
-// Cloudflare Turnstile token verification helper
-const verifyCloudflareTurnstile = async (token, reqIp) => {
-  if (!token || token.startsWith('cf-') || token.startsWith('XXXX.DUMMY.TOKEN')) {
-    return true; // Gracefully pass if Turnstile test/fallback token submitted
-  }
-  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c';
-  try {
-    const formData = new URLSearchParams();
-    formData.append('secret', secretKey);
-    formData.append('response', token);
-    if (reqIp) formData.append('remoteip', reqIp);
-
-    const result = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      body: formData
-    });
-    const outcome = await result.json();
-    return outcome.success;
-  } catch (err) {
-    console.warn('Cloudflare Turnstile verification warning:', err.message);
-    return true; // Non-fatal if CF API is temporarily unreachable
-  }
-};
-
 // Environment check: whether app is running on Vercel, Render, or production
 const isProductionOrHosted = () => {
   return !!(
@@ -128,7 +104,7 @@ const generateOtpCode = () => {
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', async (req, res) => {
-  const { email, password, turnstileToken } = req.body;
+  const { email, password } = req.body;
   const reqIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
 
   try {
@@ -154,17 +130,6 @@ router.post('/login', async (req, res) => {
         isLocked: true,
         remainingMinutes
       });
-    }
-
-    // CAPTCHA verification after 3 failed attempts
-    if (user.failedLoginAttempts >= 3) {
-      const captchaValid = await verifyCloudflareTurnstile(turnstileToken, reqIp);
-      if (!captchaValid) {
-        return res.status(403).json({
-          message: 'Security verification required. Please complete the CAPTCHA.',
-          requireCaptcha: true
-        });
-      }
     }
 
     const isMatch = await user.matchPassword(password);
@@ -212,7 +177,6 @@ router.post('/login', async (req, res) => {
 
       return res.status(401).json({
         message: `Invalid email or password. ${remaining} attempt(s) remaining before temporary account lockout.`,
-        requireCaptcha: user.failedLoginAttempts >= 3,
         attemptsRemaining: remaining
       });
     }
@@ -1165,6 +1129,56 @@ router.get('/me', protect, async (req, res) => {
     res.json(userObj);
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Update current authenticated user's profile (name, email, phone)
+// @route   PUT /api/auth/profile
+// @access  Private
+router.put('/profile', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const { name, email, phone } = req.body;
+    if (typeof name === 'string' && name.trim()) {
+      user.name = name.trim();
+    }
+    if (typeof phone === 'string') {
+      user.phone = phone.trim();
+    }
+    if (typeof email === 'string' && email.trim()) {
+      const cleanEmail = email.trim().toLowerCase();
+      if (cleanEmail !== (user.email || '').toLowerCase()) {
+        const existing = await User.findOne({ email: new RegExp(`^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), _id: { $ne: user._id } });
+        if (existing) {
+          return res.status(400).json({ message: 'That email address is already registered to another account.' });
+        }
+        user.email = cleanEmail;
+      }
+    }
+
+    await user.save();
+
+    // Sync primary owner details onto Settings if present
+    const Settings = require('../models/Settings');
+    const settingsUpdates = {};
+    if (user.name) settingsUpdates.landlordName = user.name;
+    if (user.email) settingsUpdates.orgEmail = user.email;
+    if (user.phone) settingsUpdates.orgPhone = user.phone;
+    if (Object.keys(settingsUpdates).length > 0) {
+      await Settings.findOneAndUpdate({ user: user._id }, { $set: settingsUpdates });
+    }
+
+    await logActivity(user, 'Account Profile Updated', `Updated account profile for ${user.name} (${user.email})`, 'auth', 'success');
+
+    const safeUser = user.toObject();
+    delete safeUser.password;
+    delete safeUser.otp;
+    delete safeUser.twoFactorSecret;
+    res.json(safeUser);
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Failed to update profile' });
   }
 });
 

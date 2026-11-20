@@ -84,12 +84,19 @@ async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
 }
 
 export const getAuthHeaders = () => {
-  const storedUser = localStorage.getItem("rental_user");
-  const user = storedUser ? JSON.parse(storedUser) : null;
-  const token = user?.token;
-  
+  try {
+    const storedUser = localStorage.getItem("rental_user");
+    const user = storedUser ? JSON.parse(storedUser) : null;
+    const token = user?.token;
+    if (token && token !== "undefined" && token !== "null") {
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+    }
+  } catch {}
+
   return {
-    'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
 };
@@ -110,11 +117,11 @@ export const api = {
     }
   },
   // Users
-  login: async (email, password, turnstileToken) => {
+  login: async (email, password) => {
     const response = await smartFetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ email, password, turnstileToken })
+      body: JSON.stringify({ email, password })
     });
     return await parseApiResponse(response, 'Login failed');
   },
@@ -234,8 +241,23 @@ export const api = {
   },
 
   updateUser: async (updates) => {
-    // Placeholder - Logic needs backend route
-    return updates; 
+    const response = await smartFetch(`${API_URL}/auth/profile`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(updates)
+    });
+    return await parseApiResponse(response, 'Failed to update account profile');
+  },
+
+  changePassword: async (oldPassword, newPassword) => {
+    const response = await smartFetch(`${API_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({ oldPassword, newPassword })
+    });
+    return await parseApiResponse(response, 'Failed to update password');
   },
 
   getMe: async () => {
@@ -700,8 +722,7 @@ export const api = {
         headers: getAuthHeaders(), credentials: 'include',
         body: JSON.stringify(settings)
     });
-    if (!response.ok) throw new Error("Failed to update settings");
-    return await response.json();
+    return await parseApiResponse(response, 'Failed to update settings');
   },
   testSMTP: async (config) => {
     const response = await smartFetch(`${API_URL}/settings/test-smtp`, {

@@ -220,6 +220,7 @@ router.put('/:id', protect, async (req, res) => {
       { $set: payload },
       { returnDocument: 'after', runValidators: true }
     ).populate('unitId');
+    await logActivity(req.user, 'Update Tenant', `Updated tenant "${tenant.name}" (Unit ${tenant.unitId?.unitNumber || 'N/A'})`, 'tenant', 'success');
     res.json(tenant);
   } catch (error) {
     res.status(400).json({ message: error.message || 'Failed to update tenant.' });
@@ -232,12 +233,14 @@ router.delete('/:id', protect, async (req, res) => {
     const tenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
+    const tenantName = tenant.name;
     // Vacate unit if active
     if (tenant.status === 'active' && tenant.unitId) {
       await Unit.findByIdAndUpdate(tenant.unitId, { status: 'vacant' });
     }
 
     await tenant.deleteOne();
+    await logActivity(req.user, 'Delete Tenant', `Removed tenant "${tenantName}"`, 'tenant', 'warning');
     res.json({ message: 'Tenant removed' });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to delete tenant.' });
