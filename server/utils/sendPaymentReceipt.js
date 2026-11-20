@@ -1,11 +1,11 @@
 const Payment = require('../models/Payment');
 const Unit = require('../models/Unit');
 const Property = require('../models/Property');
-const Settings = require('../models/Settings');
 const sendEmail = require('./sendEmail');
 const sendSMS = require('./sendSMS');
 const { generateReceiptPDF } = require('./generateReceiptPDF');
 const { getReceiptEmailBody } = require('./emailTemplates');
+const { getUserBusinessProfile } = require('./getUserBusinessProfile');
 
 /**
  * Helper to resolve property name from unit or payment
@@ -50,9 +50,9 @@ const sendPaymentReceipt = async (paymentId) => {
             return { success: false, reason: 'No tenant found' };
         }
 
-        const settings = await Settings.findOne() || {};
+        const settings = await getUserBusinessProfile(payment.user);
         const propertyName = await getPropertyNameForPayment(payment);
-        const businessName = propertyName || settings?.orgName || 'MakaziFlow';
+        const businessName = settings?.orgName || propertyName || 'Property Management';
         const unitNumber = payment.unitId?.unitNumber ? `Unit ${payment.unitId.unitNumber}` : 'your unit';
         const reference = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
         const amountFormatted = Number(payment.amount || 0).toLocaleString();
@@ -74,6 +74,8 @@ const sendPaymentReceipt = async (paymentId) => {
 
             await sendEmail({
                 email: tenant.email,
+                fromName: businessName,
+                replyToEmail: settings?.orgEmail || undefined,
                 subject: `Official Payment Receipt - ${businessName} - #${reference}`,
                 message: emailHtml,
                 attachments: [

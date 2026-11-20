@@ -98,6 +98,11 @@ export default function StatementsPage() {
     queryFn: api.getTenants
   });
 
+  const { data: settings = {} } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings
+  });
+
   const { data: payments = [] } = useQuery({
     queryKey: ["payments"],
     queryFn: api.getPayments
@@ -259,7 +264,7 @@ export default function StatementsPage() {
       description: `Exporting ${currentReportObj.label} to clean PDF statement.`
     });
     const reportData = getFilteredStatementData();
-    exportToPDF(reportData);
+    exportToPDF({ ...reportData, company: settings });
   };
 
   const handleDownloadExcel = () => {

@@ -483,6 +483,23 @@ export const api = {
   addPayment: async (paymentData) => {
     return await api.recordPayment(paymentData);
   },
+  updatePayment: async (id, updates) => {
+    const response = await smartFetch(`${API_URL}/payments/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(updates)
+    });
+    return await parseApiResponse(response, "Failed to update payment");
+  },
+  deletePayment: async (id) => {
+    const response = await smartFetch(`${API_URL}/payments/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      credentials: 'include'
+    });
+    return await parseApiResponse(response, "Failed to delete payment");
+  },
   
   emailReceipt: async (paymentId) => {
       const response = await smartFetch(`${API_URL}/payments/${paymentId}/email`, {

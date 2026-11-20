@@ -1,59 +1,120 @@
 const express = require('express');
 const router = express.Router();
+const jwt = require('jsonwebtoken');
 const Settings = require('../models/Settings');
+const User = require('../models/User');
 const nodemailer = require('nodemailer');
 
 const { protect } = require('../middleware/authMiddleware');
 const logActivity = require('../utils/logActivity');
+const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
 
-// @desc    Get all settings
+// Helper to resolve optional authenticated user for GET /api/settings
+async function resolveOptionalUser(req) {
+  let token = req.cookies?.jwt;
+  if (!token && req.headers.authorization?.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return await User.findById(decoded.id).select('-password');
+  } catch {
+    return null;
+  }
+}
+
+// @desc    Get user's settings (never leaks another company's orgName/branding)
 // @route   GET /api/settings
-// @access  Private (Admin)
+// @access  Private (safe non-PII fallback if unauthenticated)
 router.get('/', async (req, res) => {
   try {
-    let settings = await Settings.findOne();
-    if (!settings) {
-        settings = await Settings.create({});
+    const user = req.user || (await resolveOptionalUser(req));
+    if (!user) {
+      return res.json({
+        currency: 'KES',
+        timezone: 'Africa/Nairobi'
+      });
     }
-    // Return settings
+
+    let settings = await Settings.findOne({ user: user._id });
+    if (!settings) {
+      const profile = await getUserBusinessProfile(user);
+      settings = await Settings.create({
+        user: user._id,
+        orgName: profile.orgName,
+        orgEmail: profile.orgEmail,
+        orgPhone: profile.orgPhone,
+        orgAddress: profile.orgAddress,
+        taxId: profile.taxId,
+        currency: profile.currency,
+        timezone: profile.timezone
+      });
+    }
     res.json(settings);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// @desc    Update settings
+// @desc    Update settings for authenticated user
 // @route   PUT /api/settings
-// @access  Private (Admin)
+// @access  Private
 router.put('/', protect, async (req, res) => {
   try {
-    let settings = await Settings.findOne();
+    let settings = await Settings.findOne({ user: req.user.id });
     if (!settings) {
-        settings = new Settings(req.body);
+      const profile = await getUserBusinessProfile(req.user);
+      settings = new Settings({
+        user: req.user.id,
+        orgName: profile.orgName,
+        orgEmail: profile.orgEmail,
+        orgPhone: profile.orgPhone,
+        orgAddress: profile.orgAddress,
+        taxId: profile.taxId,
+        ...req.body,
+        user: req.user.id
+      });
     } else {
-        // Update fields
-        if (req.body.orgName) settings.orgName = req.body.orgName;
-        if (req.body.orgEmail) settings.orgEmail = req.body.orgEmail;
-        if (req.body.orgPhone) settings.orgPhone = req.body.orgPhone;
-        if (req.body.orgAddress) settings.orgAddress = req.body.orgAddress;
-        if (req.body.taxId) settings.taxId = req.body.taxId;
-        
-        // App Preferences
-        if (req.body.currency) settings.currency = req.body.currency;
-        if (req.body.timezone) settings.timezone = req.body.timezone;
-        if (req.body.theme) settings.theme = req.body.theme;
-        
-        if (req.body.notifications) settings.notifications = req.body.notifications;
-        
-        // Handle Integrations (Deep Merge or Replacement)
-        if (req.body.integrations) {
-            settings.integrations = req.body.integrations;
-        }
+      if (req.body.orgName !== undefined) settings.orgName = req.body.orgName;
+      if (req.body.orgEmail !== undefined) settings.orgEmail = req.body.orgEmail;
+      if (req.body.orgPhone !== undefined) settings.orgPhone = req.body.orgPhone;
+      if (req.body.orgAddress !== undefined) settings.orgAddress = req.body.orgAddress;
+      if (req.body.taxId !== undefined) settings.taxId = req.body.taxId;
 
-        settings.updatedAt = Date.now();
+      if (req.body.currency) settings.currency = req.body.currency;
+      if (req.body.timezone) settings.timezone = req.body.timezone;
+      if (req.body.theme) settings.theme = req.body.theme;
+
+      if (req.body.notifications) settings.notifications = req.body.notifications;
+
+      if (req.body.integrations) {
+        settings.integrations = {
+          ...(settings.integrations?.toObject ? settings.integrations.toObject() : settings.integrations || {}),
+          ...req.body.integrations
+        };
+      }
+
+      settings.updatedAt = Date.now();
     }
-    
+
     await settings.save();
+
+    // Sync primary company/tax details back onto User profile
+    const userUpdates = {};
+    if (typeof req.body.orgName === 'string' && req.body.orgName.trim()) {
+      userUpdates.companyName = req.body.orgName.trim();
+    }
+    if (typeof req.body.orgAddress === 'string') {
+      userUpdates.address = req.body.orgAddress.trim();
+    }
+    if (typeof req.body.taxId === 'string') {
+      userUpdates.kraPin = req.body.taxId.trim();
+    }
+    if (Object.keys(userUpdates).length > 0) {
+      await User.findByIdAndUpdate(req.user.id, { $set: userUpdates });
+    }
+
     if (req.user) {
       await logActivity(req.user, 'Settings Updated', 'General configurations and preferences updated', 'settings', 'success');
     }

@@ -116,9 +116,28 @@ export const generateCSVReport = async (type) => {
  * letterhead, metadata, summary statistics, and clean tabular records.
  */
 export const exportToPDF = (reportOptions = {}) => {
+    let storedUser = {};
+    try {
+        storedUser = JSON.parse(localStorage.getItem("rental_user") || "{}") || {};
+    } catch {}
+
+    const companyInfo = reportOptions.company || {};
+    const companyName =
+        companyInfo.orgName ||
+        companyInfo.name ||
+        reportOptions.companyName ||
+        storedUser.companyName ||
+        storedUser.name ||
+        "Property Management";
+    const companyContact = [
+        companyInfo.orgEmail || companyInfo.email || storedUser.email || "",
+        companyInfo.orgPhone || companyInfo.phone || storedUser.phone || "",
+        companyInfo.orgAddress || companyInfo.address || storedUser.address || ""
+    ].filter(Boolean).join(" • ");
+
     const {
         title = "Statement Report",
-        subtitle = "MakaziFlow Rental Management Statement",
+        subtitle = `${companyName} Rental Management Statement`,
         dateRange = "",
         records = [],
         columns = [],
@@ -197,7 +216,7 @@ export const exportToPDF = (reportOptions = {}) => {
         <html>
         <head>
             <meta charset="utf-8">
-            <title>${title} - MakaziFlow</title>
+            <title>${title} - ${companyName}</title>
             <style>
                 @page {
                     size: A4 portrait;
@@ -359,13 +378,13 @@ export const exportToPDF = (reportOptions = {}) => {
         <body>
             <div class="header-wrapper">
                 <div>
-                    <h1 class="brand-title">MakaziFlow</h1>
-                    <div class="brand-subtitle">Rental & Property Management Solutions</div>
+                    <h1 class="brand-title">${companyName}</h1>
+                    <div class="brand-subtitle">${companyContact || "Rental & Property Management Statement"}</div>
                 </div>
                 <div class="report-meta">
                     <div>Generated: <strong>${currentDateStr}</strong></div>
                     ${dateRange ? `<div>Period: <strong>${dateRange}</strong></div>` : ""}
-                    <div>System ID: <strong>MKZ-${Math.floor(100000 + Math.random() * 900000)}</strong></div>
+                    <div>Ref: <strong>DOC-${Math.floor(100000 + Math.random() * 900000)}</strong></div>
                 </div>
             </div>
 

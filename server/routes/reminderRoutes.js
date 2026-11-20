@@ -8,6 +8,7 @@ const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
 const { getCorporateReminderEmailBody } = require('../utils/emailTemplates');
+const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
 const { createAndSendEmailCampaign } = require('../utils/brevoService');
 
 // Get all reminders
@@ -108,7 +109,7 @@ function generatePersonalizedMessage(tenant, calculation) {
   return lines.join('\n');
 }
 
-// Helper: compose HTML email body using Corporate MakaziFlow template
+// Helper: compose HTML email body using registered company/user template
 function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
   const unitNum = tenant.unitId?.unitNumber || '';
   return getCorporateReminderEmailBody({
@@ -117,6 +118,7 @@ function generatePersonalizedEmailHtml(tenant, calculation, options = {}) {
     calculation,
     reminderTitle: options.title || `Payment Reminder - Unit ${unitNum || ''}`,
     reminderDescription: options.description || null,
+    settings: options.settings || null,
     dueDate: options.dueDate || null
   });
 }
@@ -140,6 +142,7 @@ router.post('/', protect, async (req, res) => {
 
     const dispatchMethod = method || 'email';
     const shouldSendNow = sendImmediately !== false;
+    const businessProfile = await getUserBusinessProfile(req.user);
 
     // Case 1: Specific tenant selected
     if (tenantId && tenantId !== 'all_debtors') {
@@ -167,10 +170,13 @@ router.post('/', protect, async (req, res) => {
             try {
               await sendEmail({
                 email: tenant.email,
-                subject: subject || `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                fromName: businessProfile.orgName,
+                replyToEmail: businessProfile.orgEmail || undefined,
+                subject: subject || `${businessProfile.orgName}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
                 message: generatePersonalizedEmailHtml(tenant, calculation, {
                   title: subject,
                   description: customNote || undefined,
+                  settings: businessProfile,
                   dueDate
                 })
               });
@@ -284,10 +290,13 @@ router.post('/', protect, async (req, res) => {
             try {
               await sendEmail({
                 email: tenant.email,
-                subject: subject || `MakaziFlow: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                fromName: businessProfile.orgName,
+                replyToEmail: businessProfile.orgEmail || undefined,
+                subject: subject || `${businessProfile.orgName}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
                 message: generatePersonalizedEmailHtml(tenant, item, {
                   title: subject,
                   description: customNote || undefined,
+                  settings: businessProfile,
                   dueDate
                 })
               });
@@ -387,6 +396,7 @@ router.post('/:id/send', protect, async (req, res) => {
       if (!recipientEmail || !String(recipientEmail).includes('@')) {
         return res.status(422).json({ message: `No valid email address for ${reminder.recipientName || 'this tenant'}.` });
       }
+      const businessProfile = await getUserBusinessProfile(req.user);
       const emailHtml = getCorporateReminderEmailBody({
         tenantName: reminder.recipientName || reminder.tenantId?.name || 'Valued Resident',
         unitNumber: reminder.tenantId?.unitId?.unitNumber || '',
@@ -397,11 +407,14 @@ router.post('/:id/send', protect, async (req, res) => {
         },
         reminderTitle: reminder.title,
         reminderDescription: reminder.description,
+        settings: businessProfile,
         dueDate: reminder.dueDate
       });
 
       await sendEmail({
         email: recipientEmail,
+        fromName: businessProfile.orgName,
+        replyToEmail: businessProfile.orgEmail || undefined,
         subject: reminder.title,
         message: emailHtml
       });

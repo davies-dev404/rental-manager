@@ -14,6 +14,7 @@ const logActivity = require('../utils/logActivity');
 const { getReceiptEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
 
 const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
+const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
 const sendReceiptEmail = sendPaymentReceipt;
 
 // @desc    Get all payments
@@ -102,7 +103,7 @@ router.post('/', protect, async (req, res) => {
     const totalAmount = (amount && Number(amount) > 0) ? Number(amount) : (rAmt + dAmt + uAmt);
 
     const normalizedStatus = (status || 'paid').toLowerCase();
-    const isUnpaid = ['pending', 'unpaid', 'overdue'].includes(normalizedStatus);
+    const isUnpaid = ['pending', 'unpaid', 'overdue', 'open', 'draft'].includes(normalizedStatus);
 
     if (totalAmount <= 0 && !isUnpaid) {
         return res.status(400).json({ message: "No payment amount provided" });
@@ -160,6 +161,8 @@ router.post('/', protect, async (req, res) => {
         monthCovered: monthCovered || defaultMonth,
         type: paymentType,
         reference: reference || req.body.transactionId || undefined,
+        notes: req.body.notes || req.body.description || undefined,
+        paidAt: isUnpaid ? undefined : new Date(),
         user: req.user.id
     });
 
@@ -172,7 +175,7 @@ router.post('/', protect, async (req, res) => {
     await logActivity(
         req.user,
         'Record Payment',
-        `Recorded ${paymentType} payment (${status.toUpperCase()}) of KES ${totalAmount} for ${tenant.name} (${breakdownText || 'Total: ' + totalAmount})`,
+        `Recorded ${paymentType} payment (${(status || 'paid').toUpperCase()}) of KES ${totalAmount} for ${tenant.name} (${breakdownText || 'Total: ' + totalAmount})`,
         'payment',
         isUnpaid ? 'warning' : 'success'
     );
@@ -197,6 +200,102 @@ router.post('/', protect, async (req, res) => {
         await logActivity(req.user, 'Record Payment Failed', `Failed to record payment: ${error.message}`, 'payment', 'error');
     }
     res.status(400).json({ message: error.message });
+  }
+});
+
+// @desc    Update payment status or details (e.g. mark pending/unpaid/partial payment as paid without re-recording)
+// @route   PUT /api/payments/:id  |  PATCH /api/payments/:id
+// @access  Private
+const updatePaymentHandler = async (req, res) => {
+  try {
+    const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
+      .populate('tenantId', 'name email phone')
+      .populate('unitId', 'unitNumber');
+
+    if (!payment) return res.status(404).json({ message: 'Payment not found' });
+
+    const prevStatus = String(payment.status || '').toLowerCase();
+    const { status, method, reference, transactionId, date, amount, notes, sendReceipt } = req.body || {};
+
+    if (status !== undefined) {
+      const normalized = String(status).trim().toLowerCase();
+      payment.status = normalized === 'confirmed' ? 'paid' : normalized;
+    }
+    if (method !== undefined && method !== '') payment.method = method;
+    if (reference !== undefined) payment.reference = reference;
+    else if (transactionId !== undefined) payment.reference = transactionId;
+    if (date !== undefined && date) payment.date = new Date(date);
+    if (notes !== undefined) payment.notes = notes;
+    if (amount !== undefined && Number(amount) > 0) {
+      payment.amount = Number(amount);
+    }
+
+    const nextStatus = String(payment.status || '').toLowerCase();
+    const wasPaid = ['paid', 'confirmed', 'completed'].includes(prevStatus);
+    const isNowPaid = ['paid', 'confirmed', 'completed'].includes(nextStatus);
+
+    if (!wasPaid && isNowPaid) {
+      payment.paidAt = new Date();
+    }
+
+    await payment.save();
+
+    let receiptEmailSent = false;
+    let receiptEmailReason = null;
+
+    if (!wasPaid && isNowPaid && sendReceipt !== false && Number(payment.amount || 0) > 0) {
+      try {
+        const emailResult = await sendReceiptEmail(payment._id);
+        receiptEmailSent = Boolean(emailResult?.emailSent);
+        receiptEmailReason = emailResult?.reason || null;
+      } catch (e) {
+        receiptEmailReason = e.message;
+        console.warn('Update-to-paid receipt email warning:', e.message);
+      }
+    }
+
+    await logActivity(
+      req.user,
+      'Update Payment',
+      `Updated payment #${payment._id.toString().slice(-6).toUpperCase()} for ${payment.tenantId?.name || 'tenant'} from ${prevStatus || 'pending'} to ${payment.status}`,
+      'payment',
+      'success'
+    );
+
+    const updated = await Payment.findById(payment._id)
+      .populate('tenantId', 'name email phone')
+      .populate({
+        path: 'unitId',
+        select: 'unitNumber propertyId',
+        populate: { path: 'propertyId', select: 'name' }
+      });
+
+    res.json({
+      ...updated.toObject(),
+      property: updated.unitId?.propertyId?.name || 'Property',
+      receiptEmailSent,
+      receiptEmailReason
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'Failed to update payment' });
+  }
+};
+
+router.put('/:id', protect, updatePaymentHandler);
+router.patch('/:id', protect, updatePaymentHandler);
+
+// @desc    Delete payment / invoice record
+// @route   DELETE /api/payments/:id
+// @access  Private
+router.delete('/:id', protect, async (req, res) => {
+  try {
+    const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id });
+    if (!payment) return res.status(404).json({ message: 'Payment not found' });
+    await payment.deleteOne();
+    await logActivity(req.user, 'Delete Payment', `Deleted payment record #${req.params.id.slice(-6).toUpperCase()}`, 'payment', 'info');
+    res.json({ message: 'Payment removed' });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to delete payment' });
   }
 });
 
@@ -243,11 +342,11 @@ router.get('/:id/pdf', protect, async (req, res) => {
 
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
-        const settings = await Settings.findOne() || {};
+        const settings = await getUserBusinessProfile(req.user);
         const propertyName = await getPropertyNameForPayment(payment);
         const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
 
-        const businessName = propertyName || settings?.orgName || 'MakaziFlow';
+        const businessName = settings?.orgName || propertyName || 'Property Management';
         const ref = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
         const filename = `Receipt-${businessName.replace(/\s+/g, '_')}-${ref}.pdf`;
         const disposition = req.query.download === '1' ? 'attachment' : 'inline';
@@ -294,13 +393,13 @@ router.post('/invoice-pdf', protect, async (req, res) => {
             tenant = await Tenant.findOne({ name: new RegExp('^' + String(tenantName).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'), user: req.user.id }).populate('unitId');
         }
 
-        const settings = await Settings.findOne() || {};
+        const settings = await getUserBusinessProfile(req.user);
         const invNum = invoiceNumber || invoiceId || `INV-${Date.now().toString().slice(-6)}`;
         const resolvedName = tenant?.name || tenantName || 'Valued Tenant';
         const resolvedEmail = tenant?.email || email || '';
         const resolvedPhone = tenant?.phone || phone || '';
         const uNum = unitNumber || tenant?.unitId?.unitNumber || '';
-        const pName = propertyName || settings?.orgName || 'MakaziFlow';
+        const pName = propertyName || settings?.orgName || 'Property Management';
 
         const numericAmt = Number(amount || 0);
         const rate = Number(vatRate || 0);
@@ -371,8 +470,8 @@ router.post('/send-invoice', protect, async (req, res) => {
         const recipientEmail = tenant?.email || fallbackEmail;
         const recipientPhone = tenant?.phone || fallbackPhone;
 
-        const settings = await Settings.findOne() || {};
-        const businessName = propertyName || settings?.orgName || 'MakaziFlow';
+        const settings = await getUserBusinessProfile(req.user);
+        const businessName = settings?.orgName || propertyName || 'Property Management';
         const uNum = unitNumber || tenant?.unitId?.unitNumber || tenant?.unit || 'assigned unit';
         const invRef = invoiceId || `INV-${Date.now().toString().slice(-6)}`;
         const totalAmt = Number(amount || 0).toLocaleString();
@@ -439,8 +538,10 @@ router.post('/send-invoice', protect, async (req, res) => {
 
                 await sendEmail({
                     email: recipientEmail,
+                    fromName: businessName,
+                    replyToEmail: settings?.orgEmail || undefined,
                     subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
-                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName: businessName }),
+                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, { propertyName }),
                     attachments: [
                         {
                             filename: `Invoice-${invRef.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,

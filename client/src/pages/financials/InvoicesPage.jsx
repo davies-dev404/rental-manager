@@ -94,12 +94,153 @@ const tenantMatchesProperty = (t, propIdOrName, properties = []) => {
 
 const statusColors = {
   open: "bg-blue-100 text-blue-700 border-blue-200",
+  pending: "bg-amber-100 text-amber-700 border-amber-200",
   partial: "bg-amber-100 text-amber-700 border-amber-200",
   paid: "bg-emerald-100 text-emerald-700 border-emerald-200",
   draft: "bg-slate-100 text-slate-600 border-slate-200",
   void: "bg-red-100 text-red-600 border-red-200",
   uncollectible: "bg-rose-100 text-rose-700 border-rose-200",
   "credit-note": "bg-purple-100 text-purple-700 border-purple-200"
+};
+
+const getTenantRentAmount = (t) => Number(t?.rentAmount ?? t?.unitId?.rentAmount ?? 0);
+
+const getTenantUtilitiesAmount = (t) => {
+  if (!t) return 0;
+  if (Array.isArray(t.utilities) && t.utilities.length > 0) {
+    return t.utilities
+      .filter((u) => !u.isIncluded)
+      .reduce((s, u) => s + (Number(u.amount) || 0), 0);
+  }
+  return Number(t.waterBill || 0);
+};
+
+// Shared deduplicated invoice generator: respects selected properties, deducts payments already made in that month, and avoids duplicates
+const buildDeduplicatedInvoices = ({
+  tenants = [],
+  selectedProps = [],
+  properties = [],
+  payments = [],
+  existingInvoices = [],
+  invoiceDate = new Date().toISOString().split("T")[0],
+  modes = { rent: true, recurring: false, penalties: false }
+}) => {
+  const monthKey = String(invoiceDate || "").slice(0, 7) || new Date().toISOString().slice(0, 7);
+  const matchingTenants = tenants.filter((t) =>
+    t.status !== "inactive" &&
+    selectedProps.some((pid) => tenantMatchesProperty(t, pid, properties))
+  );
+
+  const invoices = [];
+  let skippedPaidCount = 0;
+  let skippedDuplicateCount = 0;
+
+  matchingTenants.forEach((t) => {
+    const tId = String(t._id || t.id || "");
+    const tName = String(t.name || t.tenantName || "Tenant");
+    const propObj = properties.find((p) => tenantMatchesProperty(t, p._id || p.id, properties));
+    const propName = propObj?.name || getTenantPropName(t) || "Property";
+    const unitNum = getTenantUnitNumber(t) || "Unit";
+
+    const matchesTenant = (rec) => {
+      const rTid = rec.rawTenantId || (typeof rec.tenantId === "object" ? (rec.tenantId?._id || rec.tenantId?.id) : null);
+      if (rTid && tId && String(rTid) === tId) return true;
+      const rName = typeof rec.tenantId === "object" ? rec.tenantId?.name : rec.tenantId;
+      return Boolean(rName && tName && String(rName).toLowerCase() === tName.toLowerCase());
+    };
+
+    const sameMonth = (rec) => {
+      const mc = rec.monthCovered || (rec.date ? String(rec.date).slice(0, 7) : "");
+      return mc === monthKey;
+    };
+
+    const paidThisMonth = payments
+      .filter((p) => matchesTenant(p) && sameMonth(p) && ["paid", "confirmed", "completed", "partial"].includes(String(p.status || "").toLowerCase()))
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+    const hasExistingOpenForItem = (itemLabel) =>
+      existingInvoices.some(
+        (inv) =>
+          matchesTenant(inv) &&
+          sameMonth(inv) &&
+          ["open", "pending", "partial"].includes(String(inv.status || "").toLowerCase()) &&
+          String(inv.item || "").toLowerCase().includes(itemLabel.toLowerCase())
+      );
+
+    let remainingCredit = paidThisMonth;
+
+    if (modes.rent) {
+      const expectedRent = getTenantRentAmount(t);
+      const rentApplied = Math.min(expectedRent, remainingCredit);
+      remainingCredit = Math.max(0, remainingCredit - rentApplied);
+      const rentBalance = Math.max(0, expectedRent - rentApplied);
+
+      if (rentBalance <= 0) {
+        if (expectedRent > 0) skippedPaidCount++;
+      } else if (hasExistingOpenForItem("rent")) {
+        skippedDuplicateCount++;
+      } else {
+        invoices.push({
+          date: invoiceDate,
+          rawTenantId: tId,
+          unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
+          tenantId: tName,
+          unitId: unitNum,
+          property: propName,
+          item: "Rent",
+          status: rentApplied > 0 ? "partial" : "pending",
+          amount: rentBalance,
+          rentAmount: rentBalance,
+          monthCovered: monthKey
+        });
+      }
+    }
+
+    if (modes.recurring) {
+      const expectedUtil = getTenantUtilitiesAmount(t);
+      const utilApplied = Math.min(expectedUtil, remainingCredit);
+      remainingCredit = Math.max(0, remainingCredit - utilApplied);
+      const utilBalance = Math.max(0, expectedUtil - utilApplied);
+
+      if (utilBalance > 0 && !hasExistingOpenForItem("util")) {
+        invoices.push({
+          date: invoiceDate,
+          rawTenantId: tId,
+          unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
+          tenantId: tName,
+          unitId: unitNum,
+          property: propName,
+          item: "Water & Utilities",
+          status: utilApplied > 0 ? "partial" : "pending",
+          amount: utilBalance,
+          utilityAmount: utilBalance,
+          monthCovered: monthKey
+        });
+      } else if (utilBalance <= 0 && expectedUtil > 0) {
+        skippedPaidCount++;
+      }
+    }
+
+    if (modes.penalties) {
+      const penaltyAmt = Number(t.penalty || 0);
+      if (penaltyAmt > 0 && !hasExistingOpenForItem("penalty")) {
+        invoices.push({
+          date: invoiceDate,
+          rawTenantId: tId,
+          unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
+          tenantId: tName,
+          unitId: unitNum,
+          property: propName,
+          item: "Late Payment Penalty",
+          status: "pending",
+          amount: penaltyAmt,
+          monthCovered: monthKey
+        });
+      }
+    }
+  });
+
+  return { matchingTenants, invoices, skippedPaidCount, skippedDuplicateCount };
 };
 
 // ─── Invoice Form View (MakaziFlow Layout) ───────────────────────────────────
@@ -174,8 +315,21 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         0
       );
 
+      const savedRes = await api.addPayment({
+        tenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
+        unitId: typeof selectedTenant?.unitId === "object" ? (selectedTenant.unitId?._id || selectedTenant.unitId?.id) : selectedTenant?.unitId,
+        amount: totalAmount,
+        rentAmount: validItems[0]?.name?.toLowerCase().includes("util") ? 0 : totalAmount,
+        utilityAmount: validItems[0]?.name?.toLowerCase().includes("util") ? totalAmount : 0,
+        date: invoiceDate,
+        method: "invoice",
+        status: status === "open" ? "pending" : status,
+        type: validItems[0]?.name || "Rent",
+        notes
+      });
+
       const newInvoice = {
-        _id: "INV-" + Date.now().toString().slice(-6),
+        _id: savedRes?._id || "INV-" + Date.now().toString().slice(-6),
         date: invoiceDate,
         tenantId: selectedTenant ? selectedTenant.name : "Tenant",
         rawTenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
@@ -184,7 +338,7 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         item: validItems[0]?.name || "Rent",
         items: validItems,
         amount: totalAmount,
-        status,
+        status: status === "open" ? "pending" : status,
         combineWithOther,
         notes
       };
@@ -195,11 +349,11 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         description: `Invoice for ${newInvoice.tenantId} (KES ${totalAmount.toLocaleString()}) created successfully.`
       });
       onBack();
-    } catch {
+    } catch (err) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to create invoice."
+        description: err?.message || "Failed to create invoice."
       });
     } finally {
       setLoading(false);
@@ -462,8 +616,8 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
   );
 }
 
-// ─── 1. Generate Bulk Invoices Wizard (MakaziFlow Layout) ──────────────────────
-function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices }) {
+// ─── 1. Generate Bulk Invoices Wizard ─────────────────────────────────────────
+function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existingInvoices = [], onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [step, setStep] = useState(1); // 1: Setup, 2: Preview & Generate, 3: Send Invoices
   const [selectedProps, setSelectedProps] = useState([]);
@@ -522,66 +676,42 @@ function GenerateBulkInvoicesWizard({ properties, tenants, onBack, onAddInvoices
     setStep(2);
   };
 
-  const handleGenerate = () => {
-    const newInvoices = [];
-    const targetTenants = eligibleTenants.length > 0 ? eligibleTenants : tenants;
-    
-    targetTenants.forEach(t => {
-      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
-      const propName = propObj?.name || getTenantPropName(t) || "Property";
-      const unitNum = getTenantUnitNumber(t) || "Unit";
+  const handleGenerate = async () => {
+    const { matchingTenants, invoices: newInvoices, skippedPaidCount, skippedDuplicateCount } =
+      buildDeduplicatedInvoices({
+        tenants,
+        selectedProps,
+        properties,
+        payments,
+        existingInvoices,
+        invoiceDate,
+        modes: invoiceTypes
+      });
 
-      if (invoiceTypes.rent) {
-        newInvoices.push({
-          _id: `inv_rent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          date: invoiceDate,
-          tenantId: t.name || t.tenantName || "Tenant",
-          unitId: unitNum,
-          property: propName,
-          item: "Rent",
-          status: "open",
-          amount: Number(t.rentAmount || 15000),
-        });
-      }
-      if (invoiceTypes.recurring) {
-        newInvoices.push({
-          _id: `inv_rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          date: invoiceDate,
-          tenantId: t.name || t.tenantName || "Tenant",
-          unitId: unitNum,
-          property: propName,
-          item: "Water & Service Charge",
-          status: "open",
-          amount: Number(t.waterBill || 1500),
-        });
-      }
-      if (invoiceTypes.penalties) {
-        newInvoices.push({
-          _id: `inv_pen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          date: invoiceDate,
-          tenantId: t.name || t.tenantName || "Tenant",
-          unitId: unitNum,
-          property: propName,
-          item: "Late Payment Penalty",
-          status: "open",
-          amount: Number(t.penalty || 1000),
-        });
-      }
-    });
+    if (matchingTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants belong to the selected property(s)."
+      });
+      return;
+    }
 
     if (newInvoices.length > 0) {
-      onAddInvoices(newInvoices);
-      setGeneratedCount(newInvoices.length);
+      const savedCount = await onAddInvoices(newInvoices);
+      setGeneratedCount(savedCount || newInvoices.length);
       setStep(3);
+      const skippedTotal = skippedPaidCount + skippedDuplicateCount;
       toast({
         title: "Invoices Generated",
-        description: `Successfully created ${newInvoices.length} batch invoice(s).`,
+        description: `Created ${savedCount || newInvoices.length} unpaid balance invoice(s)${skippedTotal > 0 ? ` (skipped ${skippedTotal} already paid or invoiced this month)` : ""}.`
       });
     } else {
       toast({
-        variant: "destructive",
-        title: "No Invoices Created",
-        description: "No eligible tenants found for selected properties.",
+        title: "All Balances Up to Date",
+        description: skippedPaidCount > 0 || skippedDuplicateCount > 0
+          ? `All ${matchingTenants.length} tenant(s) in the selected property are already paid or invoiced for this month.`
+          : "No billable balances found for the selected properties."
       });
     }
   };
@@ -929,7 +1059,7 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e?.preventDefault();
     const valid = items.filter(it => it.name.trim() || it.amount);
     if (valid.length === 0) {
@@ -943,27 +1073,35 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
 
     const selectedProp = properties.find(p => (p._id || p.id) === propertyId);
     const propName = selectedProp?.name || "Property";
-    const targetTenants = tenants.filter(t => !propertyId || tenantMatchesProperty(t, propertyId, properties));
-    const list = targetTenants.length > 0 ? targetTenants : [{ name: "Tenant", unitNumber: "Unit 1" }];
+    const targetTenants = tenants.filter(t => t.status !== "inactive" && (!propertyId || tenantMatchesProperty(t, propertyId, properties)));
+    if (targetTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants match the selected property."
+      });
+      return;
+    }
 
     const created = [];
-    list.forEach(t => {
+    targetTenants.forEach(t => {
       valid.forEach(it => {
         created.push({
-          _id: `inv_bulk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           date: invoiceDate,
+          rawTenantId: t._id || t.id,
+          unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
           tenantId: t.name || "Tenant",
-          unitId: t.unitNumber || t.unit || "Unit",
-          property: propName,
+          unitId: getTenantUnitNumber(t) || "Unit",
+          property: getTenantPropName(t) || propName,
           item: it.name || "General",
           description: it.description || "",
-          status: "open",
+          status: "pending",
           amount: Number(it.amount || 0),
         });
       });
     });
 
-    onAddInvoices(created);
+    await onAddInvoices(created);
     toast({
       title: "Bulk Invoices Created",
       description: `Generated ${created.length} invoice items across tenants.`,
@@ -1165,7 +1303,7 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
 }
 
 // ─── 3. Rent Invoice Form View (MakaziFlow Layout) ────────────────────────────
-function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
+function RentInvoiceFormView({ properties, tenants, payments = [], existingInvoices = [], onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [selectedProps, setSelectedProps] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -1191,7 +1329,7 @@ function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (selectedProps.length === 0) {
       toast({
         variant: "destructive",
@@ -1202,27 +1340,38 @@ function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const targetTenants = tenants.filter(t => selectedProps.some(pid => tenantMatchesProperty(t, pid, properties)));
-    const list = targetTenants.length > 0 ? targetTenants : tenants;
+    const { matchingTenants, invoices: created, skippedPaidCount, skippedDuplicateCount } =
+      buildDeduplicatedInvoices({
+        tenants,
+        selectedProps,
+        properties,
+        payments,
+        existingInvoices,
+        invoiceDate: today,
+        modes: { rent: true, recurring: false, penalties: false }
+      });
 
-    const created = list.map(t => {
-      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
-      return {
-        _id: `inv_rent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        date: today,
-        tenantId: t.name || t.tenantName || "Tenant",
-        unitId: t.unitNumber || t.unit || "Unit",
-        property: propObj?.name || t.property || "Property",
-        item: "Rent",
-        status: "open",
-        amount: Number(t.rentAmount || 15000),
-      };
-    });
+    if (matchingTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants belong to the selected property(s)."
+      });
+      return;
+    }
 
-    onAddInvoices(created);
+    if (created.length === 0) {
+      toast({
+        title: "No New Invoices Needed",
+        description: `All ${matchingTenants.length} tenant(s) are already paid or invoiced for this month (${skippedPaidCount} paid, ${skippedDuplicateCount} already invoiced).`
+      });
+      return;
+    }
+
+    const savedCount = await onAddInvoices(created);
     toast({
       title: "Rent Invoices Generated",
-      description: `Generated ${created.length} monthly rent invoice(s).`,
+      description: `Generated ${savedCount || created.length} rent balance invoice(s)${skippedPaidCount + skippedDuplicateCount > 0 ? ` (skipped ${skippedPaidCount + skippedDuplicateCount} paid/duplicate)` : ""}.`
     });
     onBack();
   };
@@ -1341,7 +1490,7 @@ function RentInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
 }
 
 // ─── 4. Other Recurring Bills Invoice Form View (MakaziFlow Layout) ───────────
-function RecurringBillsInvoiceFormView({ properties, tenants, onBack, onAddInvoices }) {
+function RecurringBillsInvoiceFormView({ properties, tenants, payments = [], existingInvoices = [], onBack, onAddInvoices }) {
   const { toast } = useToast();
   const [selectedProps, setSelectedProps] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -1367,7 +1516,7 @@ function RecurringBillsInvoiceFormView({ properties, tenants, onBack, onAddInvoi
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (selectedProps.length === 0) {
       toast({
         variant: "destructive",
@@ -1378,27 +1527,37 @@ function RecurringBillsInvoiceFormView({ properties, tenants, onBack, onAddInvoi
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const targetTenants = tenants.filter(t => selectedProps.includes(t.propertyId || t.property));
-    const list = targetTenants.length > 0 ? targetTenants : tenants;
-
-    const created = list.map(t => {
-      const propObj = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
-      return {
-        _id: `inv_rec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        date: today,
-        tenantId: t.name || t.tenantName || "Tenant",
-        unitId: t.unitNumber || t.unit || "Unit",
-        property: propObj?.name || t.property || "Property",
-        item: "Water & Utilities",
-        status: "open",
-        amount: Number(t.waterBill || 2000),
-      };
+    const { matchingTenants, invoices: created } = buildDeduplicatedInvoices({
+      tenants,
+      selectedProps,
+      properties,
+      payments,
+      existingInvoices,
+      invoiceDate: today,
+      modes: { rent: false, recurring: true, penalties: false }
     });
 
-    onAddInvoices(created);
+    if (matchingTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants belong to the selected property(s)."
+      });
+      return;
+    }
+
+    if (created.length === 0) {
+      toast({
+        title: "No Utility Balances Due",
+        description: "Selected tenants have no unpaid utility bills for this month."
+      });
+      return;
+    }
+
+    const savedCount = await onAddInvoices(created);
     toast({
       title: "Recurring Bills Invoices Generated",
-      description: `Generated ${created.length} recurring utility invoice(s).`,
+      description: `Generated ${savedCount || created.length} recurring utility invoice(s).`
     });
     onBack();
   };
@@ -1544,7 +1703,7 @@ function RentPenaltyInvoiceFormView({ properties, tenants, onBack, onAddInvoices
     }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (selectedProps.length === 0) {
       toast({
         variant: "destructive",
@@ -1555,27 +1714,35 @@ function RentPenaltyInvoiceFormView({ properties, tenants, onBack, onAddInvoices
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const targetTenants = tenants.filter(t => selectedProps.includes(t.propertyId || t.property));
-    const list = targetTenants.length > 0 ? targetTenants : tenants;
+    const targetTenants = tenants.filter(t => t.status !== "inactive" && selectedProps.some(pid => tenantMatchesProperty(t, pid, properties)));
+    if (targetTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants belong to the selected property(s)."
+      });
+      return;
+    }
 
-    const created = list.map(t => {
-      const propObj = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
+    const created = targetTenants.map(t => {
+      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
       return {
-        _id: `inv_pen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         date: today,
+        rawTenantId: t._id || t.id,
+        unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
         tenantId: t.name || t.tenantName || "Tenant",
-        unitId: t.unitNumber || t.unit || "Unit",
-        property: propObj?.name || t.property || "Property",
+        unitId: getTenantUnitNumber(t) || "Unit",
+        property: propObj?.name || getTenantPropName(t) || "Property",
         item: "Rent Late Penalty",
-        status: "open",
+        status: "pending",
         amount: Number(t.penalty || 1000),
       };
     });
 
-    onAddInvoices(created);
+    const savedCount = await onAddInvoices(created);
     toast({
       title: "Penalty Invoices Generated",
-      description: `Generated ${created.length} late penalty invoice(s)${sendMessage ? " and queued SMS alerts." : "."}`,
+      description: `Generated ${savedCount || created.length} late penalty invoice(s)${sendMessage ? " and queued alerts." : "."}`,
     });
     onBack();
   };
@@ -1744,7 +1911,7 @@ function GenerateCustomPenaltyInvoicesView({ properties, tenants, onBack, onAddI
     }
   };
 
-  const handleCalculate = () => {
+  const handleCalculate = async () => {
     if (selectedProps.length === 0) {
       toast({
         variant: "destructive",
@@ -1755,27 +1922,35 @@ function GenerateCustomPenaltyInvoicesView({ properties, tenants, onBack, onAddI
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const targetTenants = tenants.filter(t => selectedProps.includes(t.propertyId || t.property));
-    const list = targetTenants.length > 0 ? targetTenants : tenants;
+    const targetTenants = tenants.filter(t => t.status !== "inactive" && selectedProps.some(pid => tenantMatchesProperty(t, pid, properties)));
+    if (targetTenants.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Active Tenants",
+        description: "No active tenants belong to the selected property(s)."
+      });
+      return;
+    }
 
-    const created = list.map(t => {
-      const propObj = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
+    const created = targetTenants.map(t => {
+      const propObj = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
       return {
-        _id: `inv_cust_pen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         date: today,
+        rawTenantId: t._id || t.id,
+        unitObjectId: typeof t.unitId === "object" ? (t.unitId?._id || t.unitId?.id) : t.unitId,
         tenantId: t.name || t.tenantName || "Tenant",
-        unitId: t.unitNumber || t.unit || "Unit",
-        property: propObj?.name || t.property || "Property",
+        unitId: getTenantUnitNumber(t) || "Unit",
+        property: propObj?.name || getTenantPropName(t) || "Property",
         item: "Custom Late Penalty",
-        status: "open",
+        status: "pending",
         amount: Number(t.penalty || 1500),
       };
     });
 
-    onAddInvoices(created);
+    const savedCount = await onAddInvoices(created);
     toast({
       title: "Custom Penalty Invoices Generated",
-      description: `Calculated and saved ${created.length} penalty invoice(s).`,
+      description: `Calculated and saved ${savedCount || created.length} penalty invoice(s).`,
     });
     onBack();
   };
@@ -1958,10 +2133,19 @@ export default function InvoicesPage() {
     queryFn: api.getTenants
   });
 
-  // Local invoices state
+  const storageKey = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("rental_user") || "{}");
+      return `dwello_custom_invoices_${u?._id || u?.id || "anon"}`;
+    } catch {
+      return "dwello_custom_invoices_anon";
+    }
+  })();
+
+  // Local fallback invoices state (scoped per user; backend-persisted invoices come from payments query)
   const [customInvoices, setCustomInvoices] = useState(() => {
     try {
-      const saved = localStorage.getItem("dwello_custom_invoices");
+      const saved = localStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -1970,10 +2154,17 @@ export default function InvoicesPage() {
   });
 
   const handleAddInvoice = (newInv) => {
+    const isMongoId = newInv?._id && /^[a-f\d]{24}$/i.test(String(newInv._id));
+    if (isMongoId) {
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      return;
+    }
     setCustomInvoices((prev) => {
       const next = [newInv, ...prev];
       try {
-        localStorage.setItem("dwello_custom_invoices", JSON.stringify(next));
+        localStorage.setItem(storageKey, JSON.stringify(next));
       } catch (e) {
         console.error(e);
       }
@@ -1981,28 +2172,35 @@ export default function InvoicesPage() {
     });
   };
 
-  // Combine payments acting as invoices + custom created invoices
+  // Combine backend payment/invoice records + unsynced local invoices
   const allInvoices = [
-    ...customInvoices,
-    ...payments.map((p) => ({
-      _id: p._id,
-      date: p.date,
-      tenantId:
-        typeof p.tenantId === "object"
-          ? p.tenantId?.name || "Tenant"
-          : p.tenantId || "Tenant",
-      unitId:
-        typeof p.unitId === "object"
-          ? p.unitId?.unitNumber || "Unit"
-          : p.unitId || "Unit",
-      property: p.property || "Property",
-      item: "Rent",
-      status: p.status || "open",
-      amount: p.amount || 0
-    }))
+    ...customInvoices.filter((ci) => !payments.some((p) => p._id === ci._id)),
+    ...payments.map((p) => {
+      const rawStatus = String(p.status || "open").toLowerCase();
+      const displayStatus = rawStatus === "confirmed" ? "paid" : rawStatus === "pending" ? "open" : rawStatus;
+      return {
+        _id: p._id,
+        date: p.date,
+        monthCovered: p.monthCovered,
+        tenantId:
+          typeof p.tenantId === "object"
+            ? p.tenantId?.name || "Tenant"
+            : p.tenantId || "Tenant",
+        rawTenantId: typeof p.tenantId === "object" ? (p.tenantId?._id || p.tenantId?.id) : undefined,
+        unitId:
+          typeof p.unitId === "object"
+            ? p.unitId?.unitNumber || "Unit"
+            : p.unitId || "Unit",
+        property: p.property || p.unitId?.propertyId?.name || "Property",
+        item: p.type || "Rent",
+        notes: p.notes || "",
+        status: displayStatus,
+        amount: p.amount || 0
+      };
+    })
   ];
 
-  // Filters state
+  // Filters state (default to Open & Partial unpaid balances so Paid receipts aren't double-counted in Summary Total)
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -2013,10 +2211,16 @@ export default function InvoicesPage() {
     void: false,
     open: true,
     partial: true,
-    paid: true,
+    paid: false,
     uncollectible: false,
     "credit-note": false
   });
+
+  const [markPaidTarget, setMarkPaidTarget] = useState(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState("M-Pesa");
+  const [markPaidRef, setMarkPaidRef] = useState("");
+  const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Pagination
   const [perPage, setPerPage] = useState(10);
@@ -2042,10 +2246,28 @@ export default function InvoicesPage() {
     const matchSearch =
       !search ||
       String(p.tenantId).toLowerCase().includes(search.toLowerCase()) ||
-      String(p.unitId).toLowerCase().includes(search.toLowerCase());
+      String(p.unitId).toLowerCase().includes(search.toLowerCase()) ||
+      String(p.property || "").toLowerCase().includes(search.toLowerCase());
+
+    const rowStatus = String(p.status || "open").toLowerCase();
+    const normalizedRowStatus = ["pending", "unpaid", "overdue"].includes(rowStatus) ? "open" : rowStatus;
     const matchStatus =
-      activeStatuses.length === 0 || activeStatuses.includes(p.status);
-    return matchSearch && matchStatus;
+      activeStatuses.length === 0 || activeStatuses.includes(normalizedRowStatus) || activeStatuses.includes(rowStatus);
+
+    const matchProp =
+      propertyFilter === "all" ||
+      String(p.property || "").toLowerCase() === String(propertyFilter).toLowerCase();
+
+    const matchItem =
+      invoiceItemFilter === "all" ||
+      String(p.item || "").toLowerCase().includes(String(invoiceItemFilter).toLowerCase());
+
+    const invDate = p.date ? new Date(p.date).toISOString().split("T")[0] : "";
+    const matchDate =
+      (!startDate || (invDate && invDate >= startDate)) &&
+      (!endDate || (invDate && invDate <= endDate));
+
+    return matchSearch && matchStatus && matchProp && matchItem && matchDate;
   });
 
   const total = filtered.reduce((sum, p) => sum + Number(p.amount || 0), 0);
@@ -2173,7 +2395,84 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleDeleteSelected = () => {
+  const handleConfirmMarkPaid = async (e) => {
+    e.preventDefault();
+    if (!markPaidTarget) return;
+    setIsUpdatingStatus(true);
+    try {
+      const id = markPaidTarget._id;
+      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
+      let receiptEmailed = false;
+      let receiptReason = "";
+
+      if (isMongoId) {
+        const res = await api.updatePayment(id, {
+          status: "paid",
+          method: markPaidMethod,
+          reference: markPaidRef.trim() || undefined,
+          sendReceipt: markPaidSendReceipt
+        });
+        receiptEmailed = Boolean(res?.receiptEmailSent);
+        receiptReason = res?.receiptEmailReason || "";
+      } else {
+        // Persist local generated invoice to backend as Paid
+        const tenantObj = tenants.find(
+          (t) =>
+            (t._id || t.id) === markPaidTarget.rawTenantId ||
+            (t.name && String(t.name).toLowerCase() === String(markPaidTarget.tenantId || "").toLowerCase())
+        );
+        if (tenantObj) {
+          await api.addPayment({
+            tenantId: tenantObj._id || tenantObj.id,
+            amount: Number(markPaidTarget.amount || 0),
+            date: new Date().toISOString().split("T")[0],
+            method: markPaidMethod,
+            status: "paid",
+            reference: markPaidRef.trim() || undefined,
+            type: markPaidTarget.item || "Rent",
+            notes: markPaidTarget.notes || undefined
+          });
+          setCustomInvoices((prev) => {
+            const next = prev.filter((inv) => inv._id !== id);
+            try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+            return next;
+          });
+        } else {
+          setCustomInvoices((prev) => {
+            const next = prev.map((inv) => (inv._id === id ? { ...inv, status: "paid" } : inv));
+            try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+
+      toast({
+        title: "Invoice Marked as Paid",
+        description: markPaidSendReceipt && isMongoId
+          ? (receiptEmailed
+              ? `Updated to Paid and emailed PDF receipt to ${markPaidTarget.tenantId} via Brevo.`
+              : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
+          : `Updated invoice for ${markPaidTarget.tenantId} to Paid.`
+      });
+      setMarkPaidTarget(null);
+      setMarkPaidRef("");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: err.message || "Could not update invoice status."
+      });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
     if (selectedInvoices.length === 0) {
       toast({
         variant: "destructive",
@@ -2182,27 +2481,76 @@ export default function InvoicesPage() {
       });
       return;
     }
-    setCustomInvoices((prev) =>
-      prev.filter((inv) => !selectedInvoices.includes(inv._id))
-    );
+    const dbIds = selectedInvoices.filter((id) => /^[a-f\d]{24}$/i.test(String(id)));
+    for (const id of dbIds) {
+      try {
+        await api.deletePayment(id);
+      } catch (err) {
+        console.warn("Delete invoice warning:", err.message);
+      }
+    }
+    setCustomInvoices((prev) => {
+      const next = prev.filter((inv) => !selectedInvoices.includes(inv._id));
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
     setSelectedInvoices([]);
+    queryClient.invalidateQueries({ queryKey: ["payments"] });
+    queryClient.invalidateQueries({ queryKey: ["stats"] });
+    queryClient.invalidateQueries({ queryKey: ["debtors"] });
     toast({
       title: "Invoices Deleted",
       description: "Selected invoices have been removed."
     });
   };
 
-  // handleAddInvoices helper for bulk/wizard operations
-  const handleAddInvoices = (newInvoices) => {
-    setCustomInvoices(prev => {
-      const next = [...newInvoices, ...prev];
+  // handleAddInvoices helper: saves generated invoices to backend DB so balances & receipts sync across the system
+  const handleAddInvoices = async (newInvoices = []) => {
+    let savedCount = 0;
+    const unsynced = [];
+    for (const inv of newInvoices) {
       try {
-        localStorage.setItem("dwello_custom_invoices", JSON.stringify(next));
-      } catch (e) {
-        console.error(e);
+        const tenantObj = tenants.find(
+          (t) =>
+            (t._id || t.id) === inv.rawTenantId ||
+            (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
+        );
+        if (tenantObj) {
+          await api.addPayment({
+            tenantId: tenantObj._id || tenantObj.id,
+            unitId: inv.unitObjectId || (typeof tenantObj.unitId === "object" ? (tenantObj.unitId?._id || tenantObj.unitId?.id) : tenantObj.unitId),
+            amount: Number(inv.amount || 0),
+            rentAmount: Number(inv.rentAmount || 0),
+            utilityAmount: Number(inv.utilityAmount || 0),
+            date: inv.date || new Date().toISOString().split("T")[0],
+            monthCovered: inv.monthCovered,
+            method: "invoice",
+            status: inv.status === "partial" ? "partial" : "pending",
+            type: inv.item || "Rent",
+            notes: inv.notes || inv.description || undefined
+          });
+          savedCount++;
+        } else {
+          unsynced.push({ ...inv, _id: inv._id || `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` });
+        }
+      } catch (err) {
+        console.warn("Save generated invoice warning:", err.message);
+        unsynced.push({ ...inv, _id: inv._id || `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}` });
       }
-      return next;
-    });
+    }
+
+    if (unsynced.length > 0) {
+      setCustomInvoices((prev) => {
+        const next = [...unsynced, ...prev];
+        try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["payments"] });
+    queryClient.invalidateQueries({ queryKey: ["stats"] });
+    queryClient.invalidateQueries({ queryKey: ["debtors"] });
+    return savedCount + unsynced.length;
   };
 
   if (view === "form") {
@@ -2221,6 +2569,8 @@ export default function InvoicesPage() {
       <GenerateBulkInvoicesWizard
         properties={properties}
         tenants={tenants}
+        payments={payments}
+        existingInvoices={allInvoices}
         onBack={() => setView("list")}
         onAddInvoices={handleAddInvoices}
       />
@@ -2243,6 +2593,8 @@ export default function InvoicesPage() {
       <RentInvoiceFormView
         properties={properties}
         tenants={tenants}
+        payments={payments}
+        existingInvoices={allInvoices}
         onBack={() => setView("list")}
         onAddInvoices={handleAddInvoices}
       />
@@ -2254,6 +2606,8 @@ export default function InvoicesPage() {
       <RecurringBillsInvoiceFormView
         properties={properties}
         tenants={tenants}
+        payments={payments}
+        existingInvoices={allInvoices}
         onBack={() => setView("list")}
         onAddInvoices={handleAddInvoices}
       />
@@ -2674,7 +3028,7 @@ export default function InvoicesPage() {
                           {p.item}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                          {p.unitId}
+                          {p.property && p.property !== "Property" ? `${p.property} (${p.unitId})` : p.unitId}
                         </td>
                         <td className="py-3 px-3">
                           <Badge
@@ -2690,46 +3044,61 @@ export default function InvoicesPage() {
                           })}
                         </td>
                         <td className="py-3 px-3">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const tenant = tenants.find(
-                                  (t) =>
-                                    (t._id || t.id) === p.rawTenantId ||
-                                    (t.name && String(t.name).toLowerCase() === String(p.tenantId || "").toLowerCase())
-                                );
-                                const invRef = `INV-${String(p._id || Date.now()).slice(-6).toUpperCase()}`;
-                                await api.downloadInvoicePdf(
-                                  {
-                                    invoiceNumber: invRef,
-                                    tenantId: tenant?._id || tenant?.id || p.rawTenantId,
-                                    tenantName: tenant?.name || p.tenantId || "Valued Tenant",
-                                    email: tenant?.email || "",
-                                    phone: tenant?.phone || "",
-                                    propertyName: p.property || "MakaziFlow",
-                                    unitNumber: typeof p.unitId === "object" ? (p.unitId?.unitNumber || "") : (p.unitId || ""),
-                                    dueDate: p.date || new Date().toISOString().split("T")[0],
-                                    amount: Number(p.amount || 0),
-                                    notes: p.notes || p.item || "Rent & Utility Invoice"
-                                  },
-                                  `Invoice-${invRef}.pdf`
-                                );
-                                toast({
-                                  title: "Invoice Downloaded",
-                                  description: `Saved ${invRef}.pdf for ${tenant?.name || p.tenantId}.`
-                                });
-                              } catch (err) {
-                                toast({
-                                  variant: "destructive",
-                                  title: "Download Failed",
-                                  description: err.message || "Could not generate invoice PDF."
-                                });
-                              }
-                            }}
-                            className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
-                          >
-                            <Download className="w-3 h-3" /> PDF
-                          </button>
+                          <div className="flex items-center gap-2.5">
+                            {!["paid", "confirmed", "completed"].includes(String(p.status || "").toLowerCase()) && (
+                              <button
+                                onClick={() => {
+                                  setMarkPaidTarget(p);
+                                  setMarkPaidMethod("M-Pesa");
+                                  setMarkPaidRef("");
+                                  setMarkPaidSendReceipt(true);
+                                }}
+                                className="text-[11px] font-medium text-emerald-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <CheckCircle2 className="w-3 h-3" /> Mark Paid
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const tenant = tenants.find(
+                                    (t) =>
+                                      (t._id || t.id) === p.rawTenantId ||
+                                      (t.name && String(t.name).toLowerCase() === String(p.tenantId || "").toLowerCase())
+                                  );
+                                  const invRef = `INV-${String(p._id || Date.now()).slice(-6).toUpperCase()}`;
+                                  await api.downloadInvoicePdf(
+                                    {
+                                      invoiceNumber: invRef,
+                                      tenantId: tenant?._id || tenant?.id || p.rawTenantId,
+                                      tenantName: tenant?.name || p.tenantId || "Valued Tenant",
+                                      email: tenant?.email || "",
+                                      phone: tenant?.phone || "",
+                                      propertyName: p.property || "",
+                                      unitNumber: typeof p.unitId === "object" ? (p.unitId?.unitNumber || "") : (p.unitId || ""),
+                                      dueDate: p.date || new Date().toISOString().split("T")[0],
+                                      amount: Number(p.amount || 0),
+                                      notes: p.notes || p.item || "Rent & Utility Invoice"
+                                    },
+                                    `Invoice-${invRef}.pdf`
+                                  );
+                                  toast({
+                                    title: "Invoice Downloaded",
+                                    description: `Saved ${invRef}.pdf for ${tenant?.name || p.tenantId}.`
+                                  });
+                                } catch (err) {
+                                  toast({
+                                    variant: "destructive",
+                                    title: "Download Failed",
+                                    description: err.message || "Could not generate invoice PDF."
+                                  });
+                                }
+                              }}
+                              className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" /> PDF
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -2787,6 +3156,85 @@ export default function InvoicesPage() {
           </div>
         </div>
       </div>
+
+      {/* Mark Open/Pending Invoice as Paid Modal */}
+      {markPaidTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmMarkPaid}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4"
+          >
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Mark Invoice as Paid
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Record settlement of KES {Number(markPaidTarget.amount || 0).toLocaleString()} for{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {markPaidTarget.tenantId}
+                </span>
+                .
+              </p>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-medium text-slate-700 dark:text-slate-300">Payment Method</label>
+                <select
+                  value={markPaidMethod}
+                  onChange={(e) => setMarkPaidMethod(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
+                >
+                  <option value="M-Pesa">M-Pesa</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Cheque">Cheque</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="font-medium text-slate-700 dark:text-slate-300">
+                  Transaction / Receipt Reference (Optional)
+                </label>
+                <Input
+                  placeholder="e.g. QWE123ABC"
+                  value={markPaidRef}
+                  onChange={(e) => setMarkPaidRef(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={markPaidSendReceipt}
+                  onChange={(e) => setMarkPaidSendReceipt(e.target.checked)}
+                  className="rounded accent-emerald-600 w-3.5 h-3.5"
+                />
+                <span className="text-slate-600 dark:text-slate-300">
+                  Email official PDF receipt to tenant via Brevo
+                </span>
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMarkPaidTarget(null)}
+                className="text-xs h-8 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isUpdatingStatus}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 cursor-pointer"
+              >
+                {isUpdatingStatus ? "Updating..." : "Confirm Paid"}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

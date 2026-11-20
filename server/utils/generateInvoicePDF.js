@@ -18,18 +18,30 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       const secondaryColor = '#64748b';
       const accentColor = '#2546e8';
 
-      const businessName = settings?.orgName || BUSINESS_CONFIG.name;
-      const businessEmail = settings?.orgEmail || BUSINESS_CONFIG.email;
-      const businessPhone = settings?.orgPhone || BUSINESS_CONFIG.phone;
-      const businessAddress = settings?.orgAddress || BUSINESS_CONFIG.address;
-
       const isSub = invoice.invoiceCategory === 'subscription';
       const docTitle = isSub ? 'SUBSCRIPTION INVOICE' : 'RENTAL INVOICE';
 
+      const businessName = isSub
+        ? BUSINESS_CONFIG.name
+        : (settings?.orgName || 'Property Management');
+      const businessEmail = isSub
+        ? BUSINESS_CONFIG.email
+        : (settings?.orgEmail || '');
+      const businessPhone = isSub
+        ? BUSINESS_CONFIG.phone
+        : (settings?.orgPhone || '');
+      const businessAddress = isSub
+        ? BUSINESS_CONFIG.address
+        : (settings?.orgAddress || '');
+
       doc.fontSize(20).font('Helvetica-Bold').fillColor(primaryColor).text(businessName, 50, 50);
-      doc.fontSize(9).font('Helvetica').fillColor(secondaryColor)
-        .text(`${businessEmail} | Tel: ${businessPhone}`, 50, 74)
-        .text(businessAddress, 50, 88);
+      const contactLine = [businessEmail, businessPhone ? `Tel: ${businessPhone}` : ''].filter(Boolean).join(' | ');
+      if (contactLine) {
+        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(contactLine, 50, 74);
+      }
+      if (businessAddress) {
+        doc.fontSize(9).font('Helvetica').fillColor(secondaryColor).text(businessAddress, 50, contactLine ? 88 : 74);
+      }
 
       doc.fontSize(18).font('Helvetica-Bold').fillColor(accentColor)
         .text(docTitle, 310, 50, { align: 'right', width: 235 });

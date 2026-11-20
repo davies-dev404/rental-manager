@@ -679,13 +679,13 @@ export default function SettingsPage() {
     window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
   };
 
-  // General Settings State matching Bomahut General tab
+  // General Settings State initialized from registered user profile
   const [generalSettings, setGeneralSettings] = useState({
-    companyName: "MakaziFlow Properties Ltd",
-    abbreviatedName: "MakaziFlow",
-    companyAddress: "Busia, Kenya",
-    companyEmail: "info@afrinextech.co.ke",
-    companyPhone: "0790264792",
+    companyName: user?.companyName || user?.name || "",
+    abbreviatedName: user?.companyName || user?.name || "",
+    companyAddress: user?.address || "",
+    companyEmail: user?.email || "",
+    companyPhone: user?.phone || "",
     invoiceTitle: "Invoice",
     invoiceFootnote: "This is a computer generated invoice and does not require a physical signature.",
     currency: currency || "KES",
@@ -838,8 +838,10 @@ export default function SettingsPage() {
     if (serverSettings && Object.keys(serverSettings).length > 0) {
       setGeneralSettings((prev) => ({
         ...prev,
-        companyName: serverSettings.orgName || prev.companyName,
-        companyAddress: serverSettings.orgAddress || prev.companyAddress,
+        companyName: serverSettings.orgName || prev.companyName || user?.companyName || user?.name || "",
+        companyEmail: serverSettings.orgEmail || prev.companyEmail || user?.email || "",
+        companyPhone: serverSettings.orgPhone || prev.companyPhone || user?.phone || "",
+        companyAddress: serverSettings.orgAddress || prev.companyAddress || user?.address || "",
         currency: serverSettings.currency || prev.currency,
         timezone: serverSettings.timezone || prev.timezone,
         paybillNumber: serverSettings.integrations?.mpesa?.shortcode || prev.paybillNumber
@@ -898,6 +900,8 @@ export default function SettingsPage() {
     try {
       await api.updateSettings({
         orgName: generalSettings.companyName,
+        orgEmail: generalSettings.companyEmail,
+        orgPhone: generalSettings.companyPhone,
         orgAddress: generalSettings.companyAddress,
         currency: generalSettings.currency,
         timezone: generalSettings.timezone,
@@ -907,6 +911,16 @@ export default function SettingsPage() {
           }
         }
       });
+      // Keep local stored user session synced so client PDFs/statements reflect updated company name immediately
+      try {
+        const stored = JSON.parse(localStorage.getItem("rental_user") || "{}");
+        if (stored && Object.keys(stored).length > 0) {
+          stored.companyName = generalSettings.companyName;
+          stored.address = generalSettings.companyAddress;
+          localStorage.setItem("rental_user", JSON.stringify(stored));
+        }
+      } catch {}
+      settingsQuery.refetch?.();
       if (generalSettings.currency) changeCurrency(generalSettings.currency);
       if (generalSettings.timezone) changeTimezone(generalSettings.timezone);
       toast({

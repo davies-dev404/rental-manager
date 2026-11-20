@@ -6,10 +6,22 @@
 const BUSINESS_CONFIG = require('../config/businessConfig');
 
 const getEmailTemplate = (title, content, settings, options = {}) => {
-    const orgName = options.propertyName || settings?.orgName || BUSINESS_CONFIG.name || "MakaziFlow Property Management";
-    const orgEmail = settings?.orgEmail || process.env.FROM_EMAIL || BUSINESS_CONFIG.email || "info@afrinextech.co.ke";
-    const orgPhone = settings?.orgPhone || process.env.BUSINESS_PHONE || BUSINESS_CONFIG.phone || "0790264792";
+    const orgName = settings?.orgName || options.propertyName || "Property Management";
+    const orgEmail = settings?.orgEmail || "";
+    const orgPhone = settings?.orgPhone || "";
+    const subtitle = options.subtitle || "Official Property Notice";
     const primaryColor = "#0f172a"; // Deep slate / obsidian
+
+    const contactParts = [];
+    if (orgEmail) {
+      contactParts.push(`Inquiries: <a href="mailto:${orgEmail}" style="color: #0284c7; text-decoration: none;">${orgEmail}</a>`);
+    }
+    if (orgPhone) {
+      contactParts.push(`Tel: <a href="tel:${orgPhone}" style="color: #0284c7; text-decoration: none;">${orgPhone}</a>`);
+    }
+    const contactHtml = contactParts.length > 0
+      ? `<p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">${contactParts.join(' &nbsp;|&nbsp; ')}</p>`
+      : '';
 
     return `
 <!DOCTYPE html>
@@ -37,11 +49,11 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
                                             ${orgName}
                                         </div>
                                         <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-top: 4px;">
-                                            Real Estate & Property Operations
+                                            ${subtitle}
                                         </div>
                                     </td>
                                     <td align="right" style="vertical-align: middle;">
-                                        <span style="display: inline-block; background-color: rgba(255,255,255,0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 6px 14px; rounded-pill; border-radius: 9999px;">
+                                        <span style="display: inline-block; background-color: rgba(255,255,255,0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 6px 14px; border-radius: 9999px;">
                                             Official Notice
                                         </span>
                                     </td>
@@ -63,11 +75,9 @@ const getEmailTemplate = (title, content, settings, options = {}) => {
                             <p style="margin: 0 0 6px 0; color: #475569; font-size: 13px; font-weight: 600;">
                                 ${orgName}
                             </p>
-                            <p style="margin: 0 0 12px 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                                Inquiries: <a href="mailto:${orgEmail}" style="color: #0284c7; text-decoration: none;">${orgEmail}</a> &nbsp;|&nbsp; Tel: <a href="tel:${orgPhone}" style="color: #0284c7; text-decoration: none;">${orgPhone}</a>
-                            </p>
+                            ${contactHtml}
                             <p style="margin: 0; color: #cbd5e1; font-size: 11px;">
-                                &copy; ${new Date().getFullYear()} ${orgName}. Automated & secured by MakaziFlow.
+                                &copy; ${new Date().getFullYear()} ${orgName}. All rights reserved.
                             </p>
                         </td>
                     </tr>
@@ -185,7 +195,7 @@ const getCorporateReminderEmailBody = ({
 
         <p style="color: #334155; font-size: 14px; line-height: 1.6; margin: 24px 0 0 0; padding-top: 16px; border-top: 1px solid #f1f5f9;">
             Warm regards,<br>
-            <strong>${propertyName || settings?.orgName || 'Property Management Team'}</strong>
+            <strong>${settings?.orgName || propertyName || 'Property Management Team'}</strong>
         </p>
     `;
 
@@ -199,7 +209,7 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName) => {
     const amount = Number(payment.amount || 0).toLocaleString();
     const date = new Date(payment.date || Date.now()).toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' });
     const time = new Date(payment.date || Date.now()).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-    const businessName = propertyName || settings?.orgName || 'MakaziFlow';
+    const businessName = settings?.orgName || propertyName || 'Property Management';
     const reference = payment.reference || payment._id?.toString().substring(0, 8).toUpperCase();
 
     const content = `

@@ -28,9 +28,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 const paymentStatusColors = {
   confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  draft: "bg-slate-100 text-slate-600 border-slate-200",
+  paid: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  pending: "bg-amber-100 text-amber-700 border-amber-200",
+  unpaid: "bg-amber-100 text-amber-700 border-amber-200",
+  open: "bg-blue-100 text-blue-700 border-blue-200",
   partial: "bg-amber-100 text-amber-700 border-amber-200",
-  paid: "bg-emerald-100 text-emerald-700 border-emerald-200"
+  overdue: "bg-rose-100 text-rose-700 border-rose-200",
+  draft: "bg-slate-100 text-slate-600 border-slate-200"
 };
 
 // ─── Payment Form View (MakaziFlow Layout) ───────────────────────────────────
@@ -178,9 +183,12 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
       }
 
       onAdd(paymentData);
+      const isPendingRec = ["pending", "unpaid", "draft", "open", "overdue"].includes(String(status).toLowerCase());
       toast({
-        title: "Payment Recorded & Synchronized",
-        description: `Payment of KES ${Number(paidAmount).toLocaleString()} logged successfully. Official receipt dispatched.`
+        title: isPendingRec ? "Pending Payment Recorded" : "Payment Recorded & Synchronized",
+        description: isPendingRec
+          ? `Logged KES ${Number(paidAmount).toLocaleString()} as ${status}. You can click "Mark Paid" anytime to settle it.`
+          : `Payment of KES ${Number(paidAmount).toLocaleString()} logged successfully.`
       });
       onBack();
     } catch {
@@ -751,10 +759,18 @@ export default function PaymentsPage() {
   const [endDate, setEndDate] = useState("");
   const [propertyFilter, setPropertyFilter] = useState("all");
   const [statusFilters, setStatusFilters] = useState({
-    draft: false,
-    confirmed: true
+    confirmed: true,
+    pending: true,
+    partial: true,
+    draft: false
   });
   const [showUnassigned, setShowUnassigned] = useState(false);
+
+  const [markPaidTarget, setMarkPaidTarget] = useState(null);
+  const [markPaidMethod, setMarkPaidMethod] = useState("M-Pesa");
+  const [markPaidRef, setMarkPaidRef] = useState("");
+  const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const [collapseDate, setCollapseDate] = useState(false);
   const [collapseStatus, setCollapseStatus] = useState(false);
@@ -765,16 +781,32 @@ export default function PaymentsPage() {
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
+  const matchesStatusFilter = (rawStatus) => {
+    const s = String(rawStatus || "confirmed").toLowerCase();
+    const anyChecked = Object.values(statusFilters).some(Boolean);
+    if (!anyChecked) return true;
+    if (["paid", "confirmed", "completed"].includes(s)) return statusFilters.confirmed;
+    if (["pending", "unpaid", "overdue", "open"].includes(s)) return statusFilters.pending;
+    if (s === "partial") return statusFilters.partial;
+    if (s === "draft") return statusFilters.draft;
+    return true;
+  };
+
   const filtered = allPayments.filter((p) => {
     const searchMatch =
       !search ||
-      String(p.tenantId || "")
-        .toLowerCase()
-        .includes(search.toLowerCase()) ||
-      String(p.unitId || "")
-        .toLowerCase()
-        .includes(search.toLowerCase());
-    return searchMatch;
+      String(p.tenantId || "").toLowerCase().includes(search.toLowerCase()) ||
+      String(p.unitId || "").toLowerCase().includes(search.toLowerCase()) ||
+      String(p.property || "").toLowerCase().includes(search.toLowerCase());
+    const statusMatch = matchesStatusFilter(p.status);
+    const propMatch =
+      propertyFilter === "all" ||
+      String(p.property || "").toLowerCase() === String(propertyFilter).toLowerCase();
+    const pDate = p.date ? new Date(p.date).toISOString().split("T")[0] : "";
+    const dateMatch =
+      (!startDate || (pDate && pDate >= startDate)) &&
+      (!endDate || (pDate && pDate <= endDate));
+    return searchMatch && statusMatch && propMatch && dateMatch;
   });
 
   const total = filtered.reduce((sum, p) => sum + Number(p.amount || 0), 0);
@@ -859,7 +891,64 @@ export default function PaymentsPage() {
     }
   };
 
-  const handleDeleteSelected = () => {
+  const handleConfirmMarkPaid = async (e) => {
+    e.preventDefault();
+    if (!markPaidTarget) return;
+    setIsUpdatingStatus(true);
+    try {
+      const id = markPaidTarget._id;
+      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
+      let receiptEmailed = false;
+      let receiptReason = "";
+
+      if (isMongoId) {
+        const res = await api.updatePayment(id, {
+          status: "paid",
+          method: markPaidMethod,
+          reference: markPaidRef.trim() || undefined,
+          sendReceipt: markPaidSendReceipt
+        });
+        receiptEmailed = Boolean(res?.receiptEmailSent);
+        receiptReason = res?.receiptEmailReason || "";
+      } else {
+        setCustomPayments((prev) => {
+          const next = prev.map((cp) =>
+            cp._id === id
+              ? { ...cp, status: "paid", paymentType: markPaidMethod, transactionId: markPaidRef.trim() || cp.transactionId }
+              : cp
+          );
+          try { localStorage.setItem("dwello_custom_payments", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+
+      toast({
+        title: "Payment Marked as Paid",
+        description: markPaidSendReceipt && isMongoId
+          ? (receiptEmailed
+              ? `Updated to Paid and emailed PDF receipt for ${markPaidTarget.tenantId} via Brevo.`
+              : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
+          : `Updated payment for ${markPaidTarget.tenantId} to Paid.`
+      });
+      setMarkPaidTarget(null);
+      setMarkPaidRef("");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: err.message || "Could not update payment status."
+      });
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
     if (selectedPayments.length === 0) {
       toast({
         variant: "destructive",
@@ -868,10 +957,23 @@ export default function PaymentsPage() {
       });
       return;
     }
-    setCustomPayments((prev) =>
-      prev.filter((p) => !selectedPayments.includes(p._id))
-    );
+    const dbIds = selectedPayments.filter((id) => /^[a-f\d]{24}$/i.test(String(id)));
+    for (const id of dbIds) {
+      try {
+        await api.deletePayment(id);
+      } catch (err) {
+        console.warn("Delete payment warning:", err.message);
+      }
+    }
+    setCustomPayments((prev) => {
+      const next = prev.filter((p) => !selectedPayments.includes(p._id));
+      try { localStorage.setItem("dwello_custom_payments", JSON.stringify(next)); } catch {}
+      return next;
+    });
     setSelectedPayments([]);
+    queryClient.invalidateQueries({ queryKey: ["payments"] });
+    queryClient.invalidateQueries({ queryKey: ["stats"] });
+    queryClient.invalidateQueries({ queryKey: ["debtors"] });
     toast({
       title: "Payments Deleted",
       description: "Selected payment records removed."
@@ -1245,7 +1347,7 @@ export default function PaymentsPage() {
                           {p.tenantId}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                          {p.unitId}
+                          {p.property && p.property !== "Property" ? `${p.property} (${p.unitId})` : p.unitId}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-400 capitalize">
                           {p.paymentType || "M-Pesa"}
@@ -1264,27 +1366,42 @@ export default function PaymentsPage() {
                           })}
                         </td>
                         <td className="py-3 px-3">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const ref = p.reference || String(p._id).slice(-6).toUpperCase();
-                                await api.downloadReceiptPdf(p._id, `Receipt-${ref}.pdf`);
-                                toast({
-                                  title: "Receipt Downloaded",
-                                  description: `Saved PDF receipt #${ref} for ${p.tenantId}.`
-                                });
-                              } catch (err) {
-                                toast({
-                                  variant: "destructive",
-                                  title: "Download Failed",
-                                  description: err.message || "Could not generate receipt PDF."
-                                });
-                              }
-                            }}
-                            className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
-                          >
-                            <Download className="w-3 h-3" /> PDF
-                          </button>
+                          <div className="flex items-center gap-2.5">
+                            {!["paid", "confirmed", "completed"].includes(String(p.status || "").toLowerCase()) && (
+                              <button
+                                onClick={() => {
+                                  setMarkPaidTarget(p);
+                                  setMarkPaidMethod(p.paymentType || "M-Pesa");
+                                  setMarkPaidRef("");
+                                  setMarkPaidSendReceipt(true);
+                                }}
+                                className="text-[11px] font-medium text-emerald-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <CheckCircle2 className="w-3 h-3" /> Mark Paid
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const ref = p.reference || String(p._id).slice(-6).toUpperCase();
+                                  await api.downloadReceiptPdf(p._id, `Receipt-${ref}.pdf`);
+                                  toast({
+                                    title: "Receipt Downloaded",
+                                    description: `Saved PDF receipt #${ref} for ${p.tenantId}.`
+                                  });
+                                } catch (err) {
+                                  toast({
+                                    variant: "destructive",
+                                    title: "Download Failed",
+                                    description: err.message || "Could not generate receipt PDF."
+                                  });
+                                }
+                              }}
+                              className="text-[11px] text-blue-600 hover:underline cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Download className="w-3 h-3" /> PDF
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1342,6 +1459,85 @@ export default function PaymentsPage() {
           </div>
         </div>
       </div>
+
+      {/* Mark Pending Payment as Paid Modal */}
+      {markPaidTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmMarkPaid}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4"
+          >
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Mark Payment as Paid
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Confirm settlement of KES {Number(markPaidTarget.amount || 0).toLocaleString()} for{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {markPaidTarget.tenantId}
+                </span>
+                .
+              </p>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-medium text-slate-700 dark:text-slate-300">Payment Method</label>
+                <select
+                  value={markPaidMethod}
+                  onChange={(e) => setMarkPaidMethod(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs"
+                >
+                  <option value="M-Pesa">M-Pesa</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Cheque">Cheque</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="font-medium text-slate-700 dark:text-slate-300">
+                  Transaction / Receipt Reference (Optional)
+                </label>
+                <Input
+                  placeholder="e.g. QWE123ABC"
+                  value={markPaidRef}
+                  onChange={(e) => setMarkPaidRef(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={markPaidSendReceipt}
+                  onChange={(e) => setMarkPaidSendReceipt(e.target.checked)}
+                  className="rounded accent-emerald-600 w-3.5 h-3.5"
+                />
+                <span className="text-slate-600 dark:text-slate-300">
+                  Email official PDF receipt to tenant via Brevo
+                </span>
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMarkPaidTarget(null)}
+                className="text-xs h-8 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isUpdatingStatus}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 cursor-pointer"
+              >
+                {isUpdatingStatus ? "Updating..." : "Confirm Paid"}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

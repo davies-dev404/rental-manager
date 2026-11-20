@@ -33,12 +33,11 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             const lightBg = '#f8fafc';
             const successBg = '#f0fdf4';
 
-            // --- Business Info ---
-            const BUSINESS_CONFIG = require('../config/businessConfig');
-            const businessName = propertyName || settings?.orgName || BUSINESS_CONFIG.name || "MakaziFlow";
-            const businessEmail = settings?.orgEmail || BUSINESS_CONFIG.email || "info@afrinextech.co.ke";
-            const businessPhone = settings?.orgPhone || BUSINESS_CONFIG.phone || "0790264792";
-            const businessAddress = settings?.orgAddress || BUSINESS_CONFIG.address || "";
+            // --- Business Info (Registered company/user details take precedence) ---
+            const businessName = settings?.orgName || propertyName || "Property Management";
+            const businessEmail = settings?.orgEmail || "";
+            const businessPhone = settings?.orgPhone || "";
+            const businessAddress = settings?.orgAddress || "";
             const taxId = settings?.taxId || "";
             const currency = settings?.currency || "KES";
 

@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 
 const settingsSchema = new mongoose.Schema({
-  // Organization Details
-  orgName: { type: String, default: 'MakaziFlow' },
-  orgEmail: { type: String, default: 'info@afrinextech.co.ke' },
-  orgPhone: { type: String, default: '0790264792' },
-  orgAddress: { type: String, default: 'Busia, Kenya' },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+  // Organization Details (populated per registered user/company)
+  orgName: { type: String, default: '' },
+  orgEmail: { type: String, default: '' },
+  orgPhone: { type: String, default: '' },
+  orgAddress: { type: String, default: '' },
   taxId: { type: String, default: '' },
   
   // App Preferences

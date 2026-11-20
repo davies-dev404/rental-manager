@@ -15,6 +15,7 @@ const EtimsService = require('../services/tax/EtimsService');
 const { createStructuredInvoice } = require('../services/invoiceService');
 const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
+const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
 
 // @desc    Get available payment providers (Pesaflow primary + optional bank adapters)
 // @route   GET /api/v2/payments/providers
@@ -322,7 +323,7 @@ router.get('/invoices/:id/pdf', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to download this invoice' });
     }
 
-    const settings = await Settings.findOne() || {};
+    const settings = await getUserBusinessProfile(invoice.landlordId || req.user);
     const pdfBuffer = await generateInvoicePDF(invoice, settings);
 
     res.set({
@@ -349,7 +350,7 @@ router.get('/receipts/:id/pdf', protect, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to download this receipt' });
     }
 
-    const settings = await Settings.findOne() || {};
+    const settings = await getUserBusinessProfile(receipt.landlordId || req.user);
     const pseudoPayment = {
       _id: receipt.receiptNumber,
       amount: receipt.amount,
@@ -360,7 +361,7 @@ router.get('/receipts/:id/pdf', protect, async (req, res) => {
       type: receipt.description,
       tenantId: { name: receipt.recipientName, email: receipt.recipientEmail }
     };
-    const pdfBuffer = await generateReceiptPDF(pseudoPayment, settings, settings?.orgName || 'MakaziFlow');
+    const pdfBuffer = await generateReceiptPDF(pseudoPayment, settings, settings?.orgName || 'Property Management');
 
     res.set({
       'Content-Type': 'application/pdf',
