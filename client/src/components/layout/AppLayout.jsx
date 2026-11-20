@@ -26,6 +26,7 @@ import {
   Receipt,
   CreditCard,
   TrendingDown,
+  TrendingUp,
   Building2,
   Layers,
   FolderTree,

@@ -43,6 +43,7 @@ import {
   Sliders,
   Activity,
   Database,
+  ShieldCheck,
   BarChart2,
   Copy,
   Search,

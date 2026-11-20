@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { generateCSVReport, exportToPDF } from "@/lib/reports";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Filter, Phone, Mail, FileText, MoreHorizontal, Loader2, Save, Download, Send, ChevronDown, UserX, MessageSquare, FileSpreadsheet, DollarSign, ArrowLeftRight, ArrowLeft, ArrowUpDown, Check, X, Info } from "lucide-react";
+import { Plus, Search, Filter, Phone, Mail, FileText, MoreHorizontal, Loader2, Save, Download, Send, ChevronDown, UserX, MessageSquare, FileSpreadsheet, DollarSign, ArrowLeftRight, ArrowLeft, ArrowUpDown, Check, X, Info, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

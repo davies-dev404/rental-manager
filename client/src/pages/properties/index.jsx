@@ -4,10 +4,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
-  Plus, MapPin, Building2, MoreHorizontal, Loader2,
+  Plus, MapPin, Building2, Building, Home, MoreHorizontal, Loader2,
   Pencil, Trash2, UserPlus, Save, Search, ChevronDown, ChevronUp,
   UploadCloud, Link as LinkIcon, Camera, Image as ImageIcon, ArrowLeft
 } from "lucide-react";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, } from "@/components/ui/dialog";
