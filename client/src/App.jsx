@@ -42,7 +42,6 @@ import UnitsPage from "@/pages/properties/UnitsPage";
 import StatementsPage from "@/pages/reports/StatementsPage";
 import InsightsPage from "@/pages/reports/InsightsPage";
 import BillingDashboardPage from "@/pages/billing";
-import TenantPortalPage from "@/pages/tenant-portal";
 import SuperAdminDashboardPage from "@/pages/super-admin";
 
 function PrivateRoute({ component: Component, ...rest }) {
@@ -170,9 +169,6 @@ function Router() {
       </Route>
       <Route path="/billing">
         {() => <PrivateRoute component={BillingDashboardPage}/>}
-      </Route>
-      <Route path="/tenant-portal">
-        {() => <PrivateRoute component={TenantPortalPage}/>}
       </Route>
       <Route path="/super-admin">
         {() => <PrivateRoute component={SuperAdminDashboardPage}/>}

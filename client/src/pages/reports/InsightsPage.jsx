@@ -113,7 +113,7 @@ export default function InsightsPage() {
                   <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
                     <tr>
                       <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
-                        Property Name
+                        Property / Tenant (Unit)
                       </th>
                       <th className="py-2.5 px-4 text-left font-semibold text-slate-600 dark:text-slate-400">
                         Total Arrears (KES)
@@ -143,6 +143,7 @@ export default function InsightsPage() {
                       debtors.map((d, index) => {
                         const tObj = d.tenant || d;
                         const tenantName = tObj.name || d.name || "Tenant";
+                        const propName = tObj.unitId?.propertyId?.name || d.propertyName || "Property";
                         const unitName = tObj.unitId?.unitNumber || tObj.unitNumber || d.unitNumber || "Unit";
                         const dueAmount = Number(d.totalDue ?? d.balance ?? d.rentDue ?? tObj.rentAmount ?? 0);
                         return (
@@ -151,7 +152,7 @@ export default function InsightsPage() {
                             className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
                           >
                             <td className="py-2.5 px-4 text-slate-800 dark:text-slate-200 font-medium">
-                              {tenantName} ({unitName})
+                              {propName} — {tenantName} ({unitName})
                             </td>
                             <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
                               {dueAmount.toLocaleString()} KES

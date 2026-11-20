@@ -202,12 +202,6 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       href: "/reminders"
     },
     {
-      id: "tenant_portal",
-      icon: Wallet,
-      label: "Online Pay Portal",
-      href: "/tenant-portal"
-    },
-    {
       id: "billing",
       icon: CreditCard,
       label: "Billing & Plans",
@@ -576,9 +570,6 @@ export default function AppLayout({ children }) {
     }
     if (location.startsWith("/billing")) {
       return { title: "Billing & Subscription", Icon: CreditCard };
-    }
-    if (location.startsWith("/tenant-portal")) {
-      return { title: "Online Pay Portal", Icon: Wallet };
     }
     if (location.startsWith("/super-admin")) {
       return { title: "Super Admin Control", Icon: ShieldCheck };

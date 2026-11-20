@@ -15,7 +15,15 @@ const { createAndSendEmailCampaign } = require('../utils/brevoService');
 router.get('/', protect, async (req, res) => {
   try {
     const reminders = await Reminder.find({ user: req.user.id })
-      .populate('tenantId', 'name email phone unitId')
+      .populate({
+        path: 'tenantId',
+        select: 'name email phone unitId',
+        populate: {
+          path: 'unitId',
+          select: 'unitNumber propertyId',
+          populate: { path: 'propertyId', select: 'name' }
+        }
+      })
       .sort({ createdAt: -1 });
     res.json(reminders);
   } catch (error) {
@@ -23,7 +31,7 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// Helper: Calculate outstanding balances (rent + utilities) for active tenants
+// Helper: Calculate outstanding balances (rent + utilities + unpaid/pending records) for active tenants
 async function getTenantsWithBalances(userId) {
   const tenants = await Tenant.find({ user: userId, status: 'active' })
     .populate({
@@ -31,26 +39,34 @@ async function getTenantsWithBalances(userId) {
       select: 'unitNumber rentAmount propertyId',
       populate: { path: 'propertyId', select: 'name' }
     });
-  
-  // Current month payment window
+
+  // Current month payment window (inclusive through final day of the month)
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
 
   const payments = await Payment.find({
     user: userId,
-    date: { $gte: startOfMonth, $lte: endOfMonth }
+    date: { $gte: startOfMonth, $lt: endOfMonth }
   });
 
-  return tenants.map(tenant => {
-    const tenantPayments = payments.filter(p =>
-      p.tenantId && p.tenantId.toString() === tenant._id.toString() &&
-      ['paid', 'partial', 'Completed'].includes(p.status)
-    );
+  const paidStatuses = new Set(['paid', 'partial', 'completed', 'confirmed']);
+  const unpaidStatuses = new Set(['pending', 'unpaid', 'overdue', 'open']);
 
-    const rentPaid = tenantPayments.reduce((s, p) => s + (p.rentAmount || 0), 0);
-    const utilityPaid = tenantPayments.reduce((s, p) => s + (p.utilityAmount || 0), 0);
-    const totalPaid = tenantPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  return tenants.map(tenant => {
+    const allTenantPayments = payments.filter(
+      p => p.tenantId && p.tenantId.toString() === tenant._id.toString()
+    );
+    const tenantPayments = allTenantPayments.filter(
+      p => paidStatuses.has((p.status || '').toLowerCase())
+    );
+    const unpaidRecorded = allTenantPayments
+      .filter(p => unpaidStatuses.has((p.status || '').toLowerCase()))
+      .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+    const rentPaid = tenantPayments.reduce((s, p) => s + (Number(p.rentAmount) || 0), 0);
+    const utilityPaid = tenantPayments.reduce((s, p) => s + (Number(p.utilityAmount) || 0), 0);
+    const totalPaid = tenantPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
     const expectedRent = tenant.rentAmount || tenant.unitId?.rentAmount || 0;
     const utilities = Array.isArray(tenant.utilities) ? tenant.utilities : [];
@@ -58,9 +74,10 @@ async function getTenantsWithBalances(userId) {
       .filter(u => !u.isIncluded)
       .reduce((s, u) => s + (Number(u.amount) || 0), 0);
 
-    const rentDue = Math.max(0, expectedRent - rentPaid);
+    const gapTotal = Math.max(0, (expectedRent + expectedUtilities) - totalPaid);
+    const totalDue = Math.max(gapTotal, unpaidRecorded);
     const utilityDue = Math.max(0, expectedUtilities - utilityPaid);
-    const totalDue = Math.max(0, (expectedRent + expectedUtilities) - totalPaid);
+    const rentDue = Math.max(Math.max(0, expectedRent - rentPaid), Math.max(0, totalDue - utilityDue));
 
     return {
       tenant,
@@ -69,6 +86,7 @@ async function getTenantsWithBalances(userId) {
       rentPaid,
       utilityPaid,
       totalPaid,
+      unpaidRecorded,
       rentDue,
       utilityDue,
       totalDue,

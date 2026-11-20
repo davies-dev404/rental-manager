@@ -18,7 +18,7 @@ export const downloadRowsAsCSV = (rows = [], filenamePrefix = 'export') => {
 
     const dateStr = new Date().toISOString().split('T')[0];
     const filename = `${filenamePrefix}_${dateStr}.csv`;
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -92,7 +92,7 @@ export const generateCSVReport = async (type) => {
             }).join(','))
         ].join('\n');
 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);

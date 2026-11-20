@@ -89,33 +89,63 @@ export default function CommunicationPage() {
 
   const messagesData = useMemo(() => {
     const mappedReminders = (Array.isArray(apiReminders) ? apiReminders : []).map((r) => {
+      const rawStatus = (r.status || "").toLowerCase();
       const normalizedStatus =
-        r.status === "sent" ? "delivered" : r.status === "failed" ? "failed" : "pending";
+        rawStatus === "sent" || rawStatus === "delivered"
+          ? "delivered"
+          : rawStatus === "failed"
+          ? "failed"
+          : "pending";
       const d = r.createdAt || r.dueDate;
+      const parsedDate = d ? new Date(d) : null;
+      const rawDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString().split("T")[0] : "";
+      const propObj = r.tenantId?.unitId?.propertyId;
+      const propertyId = propObj?._id ? String(propObj._id) : (typeof propObj === "string" ? propObj : undefined);
+      const propertyName = propObj?.name || "";
+      const unitNum = r.tenantId?.unitId?.unitNumber;
+      const propertyUnit = propertyName && unitNum
+        ? `${propertyName} (Unit ${unitNum})`
+        : unitNum
+        ? `Unit ${unitNum}`
+        : (r.title || "—");
       return {
         _id: r._id,
         type: (r.method || "email").toUpperCase(),
-        date: d ? new Date(d).toLocaleString("en-KE", { dateStyle: "short", timeStyle: "short" }) : "—",
+        date: parsedDate && !isNaN(parsedDate.getTime())
+          ? parsedDate.toLocaleString("en-KE", { dateStyle: "short", timeStyle: "short" })
+          : "—",
+        rawDate,
         recipient: r.recipientName || r.tenantId?.name || r.recipientEmail || "—",
         recipientEmail: r.recipientEmail || r.tenantId?.email || "",
-        propertyUnit: r.tenantId?.unitId?.unitNumber ? `Unit ${r.tenantId.unitId.unitNumber}` : (r.title || "—"),
+        propertyUnit,
         text: r.description || r.title || "—",
         charge: r.method === "sms" ? "0.80 KES" : "Free (Brevo)",
         status: normalizedStatus,
-        propertyId: r.tenantId?.unitId?.propertyId ? String(r.tenantId.unitId.propertyId) : undefined
+        propertyId
       };
     });
     return [...liveMessages, ...mappedReminders];
   }, [apiReminders, liveMessages]);
 
-  const totalSent = messagesData.length;
-  const totalDelivered = messagesData.filter((m) => m.status === "delivered").length;
-  const totalFailed = messagesData.filter((m) => m.status === "failed").length;
+  const activeChannels = Object.entries(channelFilters)
+    .filter(([, enabled]) => enabled)
+    .map(([channel]) => channel.toLowerCase());
 
   const filteredMessages = messagesData.filter((m) => {
-    if (selectedProperty !== "all" && m.propertyId && m.propertyId !== selectedProperty) return false;
+    if (selectedProperty !== "all" && m.propertyId !== selectedProperty) return false;
+    if (startDate && m.rawDate && m.rawDate < startDate) return false;
+    if (endDate && m.rawDate && m.rawDate > endDate) return false;
+    const st = (m.status || "pending").toLowerCase();
+    if (statusFilters[st] === false) return false;
+    if (activeChannels.length > 0 && !activeChannels.includes((m.type || "email").toLowerCase())) {
+      return false;
+    }
     return true;
   });
+
+  const totalSent = filteredMessages.length;
+  const totalDelivered = filteredMessages.filter((m) => m.status === "delivered").length;
+  const totalFailed = filteredMessages.filter((m) => m.status === "failed").length;
 
   const totalPages = Math.max(1, Math.ceil(filteredMessages.length / perPage));
   const paginated = filteredMessages.slice(
@@ -240,9 +270,7 @@ export default function CommunicationPage() {
                   onChange={(e) => setSelectedProperty(e.target.value)}
                   className="w-full h-7.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 text-xs text-slate-600 dark:text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="all">
-                    No properties yet — add one from the Properties page
-                  </option>
+                  <option value="all">All Properties</option>
                   {properties.map((p) => (
                     <option key={p._id || p.id} value={p._id || p.id}>
                       {p.name}
