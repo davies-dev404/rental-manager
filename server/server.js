@@ -12,6 +12,45 @@ const morgan = require('morgan');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Render / reverse-proxy IP resolution for rate limiting & cookies
+app.set('trust proxy', 1);
+
+const ALLOWED_CORS_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://localhost:5000',
+  'http://127.0.0.1:5173',
+  'https://rental-manager-gold.vercel.app',
+  'https://rental-manager-1-7jmg.onrender.com',
+  'https://afrinextech.co.ke',
+  'https://www.afrinextech.co.ke',
+  'https://makaziflow.afrinextech.co.ke',
+]);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or same-origin rewrites)
+    if (!origin) return callback(null, true);
+    if (
+      ALLOWED_CORS_ORIGINS.has(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.afrinextech.co.ke') ||
+      origin.endsWith('.onrender.com')
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Permissive for unified domain routing
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Disposition', 'Content-Length'],
+  optionsSuccessStatus: 204
+};
+
+// Apply CORS before Helmet & Rate Limiting so preflight OPTIONS and error/429 responses always include CORS headers
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
+
 // Security Middleware: Helmet
 // Security Middleware: Helmet with Cloudflare Turnstile & API friendly CSP
 app.use(
@@ -94,34 +133,17 @@ app.use(
   })
 );
 
-// Security Middleware: Rate Limiting
+// Security Middleware: Rate Limiting (applied after CORS and skipping OPTIONS preflights)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: 1500, // Generous per-IP budget for SPA fetches, refreshes, and PDF downloads
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
+  message: { message: 'Too many requests, please try again shortly.' }
 });
 app.use(limiter);
 
-// Standard Middleware
-app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps, curl, or same-origin rewrites)
-        if (!origin) return callback(null, true);
-        const allowedOrigins = [
-            'http://localhost:5173', 
-            'https://rental-manager-gold.vercel.app', 
-            'https://rental-manager-1-7jmg.onrender.com',
-            'https://afrinextech.co.ke',
-            'https://www.afrinextech.co.ke',
-            'https://makaziflow.afrinextech.co.ke',
-        ];
-        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.afrinextech.co.ke')) {
-            return callback(null, true);
-        }
-        return callback(null, true); // Permissive for unified domain routing
-    },
-    credentials: true
-}));
 app.use(express.json());
 
 // Lightweight Cookie Parser Middleware (Senior Standard for httpOnly JWT Cookies)
@@ -247,7 +269,7 @@ const dbBootPromise = connectDB()
 
 // Middleware to ensure DB is connected before processing API requests
 app.use(async (req, res, next) => {
-    if (req.path === '/' || req.path === '/api/health' || req.path.startsWith('/api/public')) return next();
+    if (req.method === 'OPTIONS' || req.path === '/' || req.path === '/api/health' || req.path.startsWith('/api/public')) return next();
     try {
         if (!dbReady) await dbBootPromise; // wait for boot connection if still pending
         await connectDB();

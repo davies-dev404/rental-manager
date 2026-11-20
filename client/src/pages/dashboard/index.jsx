@@ -73,6 +73,13 @@ export default function Dashboard() {
     queryFn: api.getDebtors
   });
 
+  const { data: mySubData } = useQuery({
+    queryKey: ["my-subscription"],
+    queryFn: api.getMySubscription,
+    staleTime: 60_000,
+    retry: false
+  });
+
   // Calculate live numbers
   const tenantArrears = Number(stats?.outstandingAmount || 0);
   const totalBilled = Number(stats?.expectedMonthlyRent || 0);
@@ -186,6 +193,10 @@ export default function Dashboard() {
     }
     if (type === "send_reminders") {
       setLocation("/reminders");
+      return;
+    }
+    if (type === "pay_subscription") {
+      setLocation("/billing");
       return;
     }
     setModalData(data);
@@ -829,32 +840,58 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center justify-between gap-4 py-2">
-              <div>
-                <p className="text-xs text-slate-500 flex items-center gap-1">
-                  Balance <Info className="w-3 h-3 text-slate-400" />
-                </p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
-                  0.00 KES
-                </p>
-              </div>
+              {(() => {
+                const subStatus = mySubData?.entitlement?.status || mySubData?.activeSubscription?.status || "trial";
+                const pendingSubInv = (mySubData?.invoices || []).find((inv) => inv.status === "unpaid" || inv.status === "pending");
+                const subBalance = Number(pendingSubInv?.totalAmount ?? pendingSubInv?.amount ?? 0);
+                const statusLabelMap = {
+                  active: "Active",
+                  trial: "Free Trial",
+                  grace_period: "Grace Period",
+                  restricted: "Restricted",
+                  expired: "Expired",
+                  suspended: "Suspended",
+                  cancelled: "Cancelled",
+                  pending_payment: "Pending Payment"
+                };
+                const statusLabel = statusLabelMap[subStatus] || "Active";
+                const statusColor =
+                  subStatus === "active" || subStatus === "trial"
+                    ? "text-emerald-600"
+                    : subStatus === "grace_period" || subStatus === "pending_payment"
+                    ? "text-amber-600"
+                    : "text-rose-600";
+                return (
+                  <>
+                    <div>
+                      <p className="text-xs text-slate-500 flex items-center gap-1">
+                        Balance <Info className="w-3 h-3 text-slate-400" />
+                      </p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                        {subBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KES
+                      </p>
+                    </div>
 
-              <div className="text-center">
-                <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
-                  Subscription Status <Info className="w-3 h-3 text-slate-400" />
-                </p>
-                <p className="text-sm font-bold text-emerald-600 mt-1">
-                  Active
-                </p>
-              </div>
+                    <div className="text-center">
+                      <p className="text-xs text-slate-500 flex items-center justify-center gap-1">
+                        Subscription Status <Info className="w-3 h-3 text-slate-400" />
+                      </p>
+                      <p className={`text-sm font-bold mt-1 ${statusColor}`}>
+                        {statusLabel}
+                      </p>
+                    </div>
 
-              <div>
-                <button
-                  onClick={() => openModal("pay_subscription")}
-                  className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
-                >
-                  Manage Subscription
-                </button>
-              </div>
+                    <div>
+                      <button
+                        onClick={() => setLocation("/billing")}
+                        className="px-4 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 border border-blue-500/50 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-md transition cursor-pointer"
+                      >
+                        Manage Subscription
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </CardContent>
         </Card>
