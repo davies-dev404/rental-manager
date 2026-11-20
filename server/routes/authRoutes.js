@@ -1032,6 +1032,16 @@ router.post('/google', async (req, res) => {
       await logActivity(user, 'Google Account Created', `New user registered via Google`, 'auth', 'success');
     }
 
+    const accessToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
+    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
+    if (user.refreshTokens.length > 10) user.refreshTokens.shift();
+    user.refreshToken = tokenHash;
+    await user.save();
+    setAuthCookies(res, accessToken, refreshToken);
+
     const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
 
@@ -1044,7 +1054,8 @@ router.post('/google', async (req, res) => {
       isSuperAdmin,
       avatar: user.avatar,
       authProvider: user.authProvider || 'google',
-      token: generateToken(user._id),
+      token: accessToken,
+      refreshToken,
       twoFactorEnabled: user.twoFactorEnabled,
       hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
       onboardingRole: user.onboardingRole || 'landlord',
@@ -1127,6 +1138,16 @@ router.post('/apple', async (req, res) => {
       await logActivity(user, 'Apple Account Created', `New user registered via Apple`, 'auth', 'success');
     }
 
+    const accessToken = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+    if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
+    user.refreshTokens.push({ tokenHash, createdAt: new Date() });
+    if (user.refreshTokens.length > 10) user.refreshTokens.shift();
+    user.refreshToken = tokenHash;
+    await user.save();
+    setAuthCookies(res, accessToken, refreshToken);
+
     const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
 
@@ -1139,7 +1160,8 @@ router.post('/apple', async (req, res) => {
       isSuperAdmin,
       avatar: user.avatar,
       authProvider: user.authProvider || 'apple',
-      token: generateToken(user._id),
+      token: accessToken,
+      refreshToken,
       twoFactorEnabled: user.twoFactorEnabled,
       hasCompletedOnboarding: Boolean(user.hasCompletedOnboarding),
       onboardingRole: user.onboardingRole || 'landlord',

@@ -195,7 +195,7 @@ export default function CloudflareTurnstile({
       {!isFallback ? (
         <div ref={containerRef} className="min-h-16.25 flex items-center justify-center" />
       ) : (
-        <div className="w-full max-w-[300px] px-3 py-2.5 rounded-md border border-emerald-200 bg-emerald-50/70 dark:bg-emerald-950/30 dark:border-emerald-800 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
+        <div className="w-full max-w-75 px-3 py-2.5 rounded-md border border-emerald-200 bg-emerald-50/70 dark:bg-emerald-950/30 dark:border-emerald-800 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
           <span className="flex items-center gap-1.5 font-medium">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             Security check passed

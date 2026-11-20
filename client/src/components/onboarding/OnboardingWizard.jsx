@@ -77,12 +77,14 @@ export default function OnboardingWizard({ onComplete }) {
         mode: mode // 'demo' or 'live'
       });
 
-      // 3. Update localStorage session
+      // 3. Update localStorage session preserving refreshToken & new token
       const stored = localStorage.getItem("rental_user");
       if (stored) {
         const parsed = JSON.parse(stored);
         const updated = {
           ...parsed,
+          token: response?.token || parsed.token,
+          refreshToken: response?.refreshToken || parsed.refreshToken,
           hasCompletedOnboarding: true,
           onboardingRole: selectedRole,
           unitsCount: unitsCount,
@@ -90,9 +92,6 @@ export default function OnboardingWizard({ onComplete }) {
           isDemoMode: mode === "demo"
         };
         localStorage.setItem("rental_user", JSON.stringify(updated));
-        if (updateProfile) {
-          updateProfile(updated).catch(() => {});
-        }
       }
 
       toast({

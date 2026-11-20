@@ -364,7 +364,7 @@ export default function LandingPage() {
       <PublicNavbar />
 
       {/* ────────────────── 2. HERO SECTION (Savannah Informatics Aesthetic) ────────────────── */}
-      <section className="relative overflow-hidden border-b border-slate-200/80 bg-gradient-to-b from-[#f8faff] via-white to-white px-4 pt-12 pb-16 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-24">
+      <section className="relative overflow-hidden border-b border-slate-200/80 bg-linear-to-b from-[#f8faff] via-white to-white px-4 pt-12 pb-16 sm:pt-16 sm:pb-20 lg:pt-20 lg:pb-24">
         {/* Subtle decorative background gradient glows */}
         <div className="pointer-events-none absolute -top-40 right-1/4 h-96 w-96 rounded-full bg-blue-100/40 blur-3xl" />
         <div className="pointer-events-none absolute top-1/2 left-0 h-80 w-80 rounded-full bg-indigo-50/50 blur-3xl" />
@@ -397,7 +397,7 @@ export default function LandingPage() {
 
               <h1 className="text-[2.6rem] font-black tracking-[-0.04em] text-slate-950 sm:text-[3.3rem] sm:leading-[1.06] lg:text-[3.9rem] lg:leading-[1.03]">
                 <span className="block text-slate-950">Smart Property Operations.</span>
-                <span className="block bg-gradient-to-r from-[#2546e8] via-[#384ad3] to-[#00A99D] bg-clip-text text-transparent">
+                <span className="block bg-linear-to-r from-[#2546e8] via-[#384ad3] to-[#00A99D] bg-clip-text text-transparent">
                   Built For Clear Cashflow.
                 </span>
               </h1>
@@ -473,7 +473,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────────────────── 3. "WHO WE ARE" SECTION (Savannah Informatics Signature) ────────────────── */}
-      <section id="who-we-are" className="py-16 sm:py-24 border-b border-slate-200 bg-gradient-to-b from-white via-[#f9faff] to-white scroll-mt-20">
+      <section id="who-we-are" className="py-16 sm:py-24 border-b border-slate-200 bg-linear-to-b from-white via-[#f9faff] to-white scroll-mt-20">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           
           <div className="mx-auto max-w-3xl text-center mb-14">
@@ -617,7 +617,7 @@ export default function LandingPage() {
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent pointer-events-none" />
                   <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-slate-900/85 px-2 py-0.5 rounded backdrop-blur-xs">
                     M-Pesa Auto-Posting
                   </span>
@@ -663,7 +663,7 @@ export default function LandingPage() {
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent pointer-events-none" />
                   <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-slate-900/85 px-2 py-0.5 rounded backdrop-blur-xs">
                     Signed PDF Agreement
                   </span>
@@ -709,7 +709,7 @@ export default function LandingPage() {
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent pointer-events-none" />
                   <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-slate-900/85 px-2 py-0.5 rounded backdrop-blur-xs">
                     Sub-Meter Calculator
                   </span>
@@ -755,7 +755,7 @@ export default function LandingPage() {
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent pointer-events-none" />
                   <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-slate-900/85 px-2 py-0.5 rounded backdrop-blur-xs">
                     Verified WhatsApp Bot
                   </span>
@@ -801,7 +801,7 @@ export default function LandingPage() {
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-linear-to-t from-slate-950/60 to-transparent pointer-events-none" />
                   <span className="absolute bottom-2 left-2 text-[10px] font-bold text-white bg-slate-900/85 px-2 py-0.5 rounded backdrop-blur-xs">
                     Tenant KYC Profile
                   </span>
@@ -981,7 +981,7 @@ export default function LandingPage() {
       </section>
 
       {/* ────────────────── 8. GOOGLE RATINGS & CLIENT STORIES ────────────────── */}
-      <section className="py-16 sm:py-24 border-b border-slate-200 bg-gradient-to-b from-[#f8faff] to-white">
+      <section className="py-16 sm:py-24 border-b border-slate-200 bg-linear-to-b from-[#f8faff] to-white">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
           
           <div className="flex flex-col items-center gap-3 text-center mb-10">
