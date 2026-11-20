@@ -12,6 +12,7 @@ const {
   seedDefaultPlans,
   calculateSubscriptionPrice,
   ensureLandlordEntitlement,
+  getSubscriptionLockState,
   logSubscriptionAudit
 } = require('../services/subscriptionService');
 const { createStructuredInvoice } = require('../services/invoiceService');
@@ -70,10 +71,13 @@ router.post('/calculate', protect, async (req, res) => {
 router.get('/my', protect, async (req, res) => {
   try {
     const landlordId = req.user._id || req.user.id;
-    const entitlement = await ensureLandlordEntitlement(landlordId);
-    const activeSubscription = entitlement.subscriptionId
-      ? await LandlordSubscription.findById(entitlement.subscriptionId).populate('planId')
-      : await LandlordSubscription.findOne({ landlordId }).sort({ createdAt: -1 }).populate('planId');
+    const lockState = await getSubscriptionLockState(landlordId, req.user, { resyncCount: true });
+    const entitlement = lockState.entitlement || await ensureLandlordEntitlement(landlordId, { resyncCount: true });
+    const activeSubscription = lockState.activeSubscription || (
+      entitlement.subscriptionId
+        ? await LandlordSubscription.findById(entitlement.subscriptionId).populate('planId')
+        : await LandlordSubscription.findOne({ landlordId }).sort({ createdAt: -1 }).populate('planId')
+    );
 
     const history = await LandlordSubscription.find({ landlordId }).sort({ createdAt: -1 }).limit(20);
     const invoices = await Invoice.find({ landlordId, invoiceCategory: 'subscription' }).sort({ createdAt: -1 }).limit(30);
@@ -100,6 +104,10 @@ router.get('/my', protect, async (req, res) => {
         isCompliant: entitlement.isUnlimited || registeredUnits <= purchasedUnits
       },
       activeSubscription,
+      isLocked: Boolean(lockState.isLocked),
+      lockReason: lockState.lockReason || '',
+      daysRemaining: lockState.daysRemaining,
+      isTrialExpiringSoon: Boolean(lockState.isTrialExpiringSoon),
       history,
       invoices,
       receipts,

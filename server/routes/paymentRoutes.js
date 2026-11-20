@@ -541,6 +541,7 @@ router.post('/send-invoice', protect, async (req, res) => {
 
                 await sendEmail({
                     email: recipientEmail,
+                    toName: recipientName,
                     fromName: businessName,
                     replyToEmail: settings?.orgEmail || undefined,
                     subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,

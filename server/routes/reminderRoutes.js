@@ -197,6 +197,7 @@ router.post('/', protect, async (req, res) => {
               const displayBrand = businessProfile.companyName || businessProfile.orgName || propName || businessProfile.landlordName || 'Property Management';
               await sendEmail({
                 email: tenant.email,
+                toName: tenant.name,
                 fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
                 subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
@@ -321,6 +322,7 @@ router.post('/', protect, async (req, res) => {
               const displayBrand = businessProfile.companyName || businessProfile.orgName || propName || businessProfile.landlordName || 'Property Management';
               await sendEmail({
                 email: tenant.email,
+                toName: tenant.name,
                 fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
                 subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
@@ -446,6 +448,7 @@ router.post('/:id/send', protect, async (req, res) => {
 
       await sendEmail({
         email: recipientEmail,
+        toName: reminder.recipientName || reminder.tenantId?.name || undefined,
         fromName: displayBrand,
         replyToEmail: businessProfile.orgEmail || undefined,
         subject: reminder.title,

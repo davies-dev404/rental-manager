@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -45,6 +47,16 @@ import SuperAdminDashboardPage from "@/pages/super-admin";
 
 function PrivateRoute({ component: Component, ...rest }) {
     const { user, isLoading } = useAuth();
+    const [location] = useLocation();
+
+    const isSuperAdmin = Boolean(user?.isSuperAdmin || user?.role === "superadmin");
+    const { data: subState } = useQuery({
+      queryKey: ["my-subscription"],
+      queryFn: api.getMySubscription,
+      enabled: Boolean(user && user.hasCompletedOnboarding !== false && !isSuperAdmin && user.role !== "tenant"),
+      staleTime: 60_000,
+      retry: false
+    });
 
     if (isLoading) {
       return (
@@ -71,6 +83,11 @@ function PrivateRoute({ component: Component, ...rest }) {
         </ErrorBoundary>
       );
     }
+
+    // Lock system after 14-day trial / subscription expires until paid in Billing
+    if (subState?.isLocked && !location.startsWith("/billing")) {
+      return <Redirect to="/billing" />;
+    }
     
     return (
       <AppLayout>
@@ -81,12 +98,6 @@ function PrivateRoute({ component: Component, ...rest }) {
     );
 }
 function Router() {
-    const [location] = useLocation();
-
-    useEffect(() => {
-      trackPageView(location);
-    }, [location]);
-
     return (<Switch>
       {/* Public Marketing & Auth Pages */}
       <Route path="/" component={LandingPage}/>

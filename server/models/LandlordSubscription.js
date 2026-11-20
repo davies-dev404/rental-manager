@@ -39,6 +39,8 @@ const landlordSubscriptionSchema = new mongoose.Schema({
     limitNear80: { type: Boolean, default: false },
     limitReached100: { type: Boolean, default: false }
   },
+  lastBillingReminderDate: { type: String, default: '' },
+  billingReminderCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

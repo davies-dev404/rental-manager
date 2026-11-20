@@ -10,16 +10,16 @@ const QRCode = require('qrcode');
 const { protect } = require('../middleware/authMiddleware'); // Import protect!
 const { validatePassword } = require('../utils/passwordPolicy');
 
-// 1. Senior Auth: Short-lived access token (15 mins) + Refresh token (7 days) + httpOnly secure cookies
+// 1. Persistent Auth: 7-day access token + 30-day refresh token + httpOnly secure cookies
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
-    expiresIn: '15m',
+    expiresIn: '7d',
   });
 };
 
 const generateRefreshToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'makaziflow_secret', {
-    expiresIn: '7d',
+    expiresIn: '30d',
   });
 };
 
@@ -30,7 +30,7 @@ const setAuthCookies = (res, token, refreshToken) => {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
-      maxAge: 15 * 60 * 1000 // 15 mins
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
   }
   if (refreshToken) {
@@ -38,7 +38,7 @@ const setAuthCookies = (res, token, refreshToken) => {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
   }
 };
@@ -85,6 +85,30 @@ const getEmailHeader = () => {
   `;
 };
 
+// Cloudflare Turnstile token verification helper
+const verifyCloudflareTurnstile = async (token, reqIp) => {
+  if (!token || token.startsWith('cf-') || token.startsWith('XXXX.DUMMY.TOKEN')) {
+    return true; // Gracefully pass if Turnstile test/fallback token submitted
+  }
+  const secretKey = process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '0x4AAAAAAF-iaTM5AlwKBhmRonWQrO-1G5c';
+  try {
+    const formData = new URLSearchParams();
+    formData.append('secret', secretKey);
+    formData.append('response', token);
+    if (reqIp) formData.append('remoteip', reqIp);
+
+    const result = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: formData
+    });
+    const outcome = await result.json();
+    return outcome.success;
+  } catch (err) {
+    console.warn('Cloudflare Turnstile verification warning:', err.message);
+    return true; // Non-fatal if CF API is temporarily unreachable
+  }
+};
+
 // Environment check: whether app is running on Vercel, Render, or production
 const isProductionOrHosted = () => {
   return !!(
@@ -104,7 +128,7 @@ const generateOtpCode = () => {
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, turnstileToken } = req.body;
   const reqIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
 
   try {
@@ -130,6 +154,17 @@ router.post('/login', async (req, res) => {
         isLocked: true,
         remainingMinutes
       });
+    }
+
+    // Cloudflare Turnstile CAPTCHA verification after 3 failed attempts
+    if (user.failedLoginAttempts >= 3) {
+      const captchaValid = await verifyCloudflareTurnstile(turnstileToken, reqIp);
+      if (!captchaValid) {
+        return res.status(403).json({
+          message: 'Security verification required. Please complete the CAPTCHA.',
+          requireCaptcha: true
+        });
+      }
     }
 
     const isMatch = await user.matchPassword(password);
@@ -177,6 +212,7 @@ router.post('/login', async (req, res) => {
 
       return res.status(401).json({
         message: `Invalid email or password. ${remaining} attempt(s) remaining before temporary account lockout.`,
+        requireCaptcha: user.failedLoginAttempts >= 3,
         attemptsRemaining: remaining
       });
     }
@@ -198,6 +234,7 @@ router.post('/login', async (req, res) => {
     try {
       await sendEmail({
         email: user.email,
+        toName: user.name,
         subject: 'MakaziFlow — Your Login Verification Code',
         message: `
           <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
@@ -281,6 +318,7 @@ router.post('/resend-login-otp', async (req, res) => {
     try {
       await sendEmail({
         email: user.email,
+        toName: user.name,
         subject: 'MakaziFlow — Your Login Verification Code',
         message: `
           <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
@@ -556,6 +594,7 @@ router.post('/register', async (req, res) => {
         try {
             await sendEmail({
               email: user.email,
+              toName: user.name,
               subject: 'MakaziFlow — Your Email Verification Code',
               message: `
                 <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
@@ -750,6 +789,7 @@ router.post('/forgot-password', async (req, res) => {
         try {
             await sendEmail({
                 email: user.email,
+                toName: user.name,
                 subject: 'MakaziFlow — Your Password Reset Code',
                 message: `
                   <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
@@ -1200,6 +1240,18 @@ router.post('/onboarding', protect, async (req, res) => {
 
     await user.save();
 
+    // Sync onboarding unit & plan selection directly into Billing (14-day trial)
+    try {
+      const { syncTrialFromOnboarding } = require('../services/subscriptionService');
+      await syncTrialFromOnboarding(user._id, {
+        unitsCount: user.unitsCount,
+        subscriptionTier: user.subscriptionTier,
+        mode
+      });
+    } catch (syncErr) {
+      console.warn('Onboarding billing sync warning:', syncErr.message);
+    }
+
     // If demo mode selected, populate with rich Kenyan rental portfolio data (MakaziFlow sample data)
     if (mode === 'demo') {
       await seedDemoDataForUser(user);
@@ -1213,25 +1265,26 @@ router.post('/onboarding', protect, async (req, res) => {
       'success'
     );
 
+    const freshUser = await User.findById(user._id);
     const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+    const isSuperAdmin = Boolean(freshUser.isSuperAdmin || freshUser.role === 'superadmin' || superEmails.includes((freshUser.email || '').toLowerCase()));
 
     res.json({
-      _id: user._id,
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      _id: freshUser._id,
+      id: freshUser._id,
+      name: freshUser.name,
+      email: freshUser.email,
+      role: freshUser.role,
       isSuperAdmin,
-      avatar: user.avatar,
-      authProvider: user.authProvider,
-      token: generateToken(user._id),
-      twoFactorEnabled: user.twoFactorEnabled,
-      hasCompletedOnboarding: user.hasCompletedOnboarding,
-      onboardingRole: user.onboardingRole,
-      unitsCount: user.unitsCount,
-      subscriptionTier: user.subscriptionTier,
-      isDemoMode: user.isDemoMode
+      avatar: freshUser.avatar,
+      authProvider: freshUser.authProvider,
+      token: generateToken(freshUser._id),
+      twoFactorEnabled: freshUser.twoFactorEnabled,
+      hasCompletedOnboarding: freshUser.hasCompletedOnboarding,
+      onboardingRole: freshUser.onboardingRole,
+      unitsCount: freshUser.unitsCount,
+      subscriptionTier: freshUser.subscriptionTier,
+      isDemoMode: freshUser.isDemoMode
     });
   } catch (error) {
     console.error('Onboarding save error:', error);

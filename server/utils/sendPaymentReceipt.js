@@ -74,6 +74,7 @@ const sendPaymentReceipt = async (paymentId) => {
 
             await sendEmail({
                 email: tenant.email,
+                toName: tenant.name,
                 fromName: businessName,
                 replyToEmail: settings?.orgEmail || undefined,
                 subject: `Official Payment Receipt - ${businessName} - #${reference}`,

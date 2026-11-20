@@ -18,6 +18,40 @@ const getApiUrl = () => {
 
 export const API_URL = getApiUrl();
 
+let refreshPromise = null;
+
+export async function refreshAuthSession() {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      const storedRaw = localStorage.getItem("rental_user");
+      if (!storedRaw) return null;
+      const stored = JSON.parse(storedRaw);
+      if (!stored?.refreshToken) return null;
+
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ refreshToken: stored.refreshToken })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.token) {
+        const updated = { ...stored, ...data };
+        localStorage.setItem("rental_user", JSON.stringify(updated));
+        return updated;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
 export async function smartFetch(url, options = {}) {
   let targetUrl = url;
   if (typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
@@ -25,8 +59,21 @@ export async function smartFetch(url, options = {}) {
       targetUrl = targetUrl.replace(/^\/api/, RENDER_PROD_API);
     }
   }
+  const isAuthEndpoint = typeof targetUrl === 'string' && (
+    targetUrl.includes('/auth/login') ||
+    targetUrl.includes('/auth/register') ||
+    targetUrl.includes('/auth/refresh') ||
+    targetUrl.includes('/auth/verify-login-otp')
+  );
   try {
     let res = await fetch(targetUrl, options);
+    if (res.status === 401 && !isAuthEndpoint && typeof window !== 'undefined') {
+      const refreshed = await refreshAuthSession();
+      if (refreshed?.token) {
+        const nextHeaders = { ...(options.headers || {}), Authorization: `Bearer ${refreshed.token}` };
+        res = await fetch(targetUrl, { ...options, headers: nextHeaders });
+      }
+    }
     if (!res.ok && res.status >= 500 && typeof targetUrl === 'string' && targetUrl.startsWith('/api')) {
       const cloned = res.clone();
       const txt = await cloned.text().catch(() => '');
@@ -117,11 +164,11 @@ export const api = {
     }
   },
   // Users
-  login: async (email, password) => {
+  login: async (email, password, turnstileToken) => {
     const response = await smartFetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, turnstileToken })
     });
     return await parseApiResponse(response, 'Login failed');
   },

@@ -227,12 +227,17 @@ const dbBootPromise = connectDB()
           await seedDefaultPlans();
           await PaymentService.seedProviders();
           const cron = require('node-cron');
-          // Run daily subscription expiry & pre-expiry notification sweep at 06:00 EAT
-          cron.schedule('0 6 * * *', () => {
+          // Run hourly sweep; per-day date key guarantees max 1 reminder email/day per expired/expiring landlord
+          cron.schedule('0 * * * *', () => {
             if (mongoose.connection.readyState === 1) {
               processSubscriptionExpirations().catch((e) => console.warn('Expiry sweep warning:', e.message));
             }
           });
+          setTimeout(() => {
+            if (mongoose.connection.readyState === 1) {
+              processSubscriptionExpirations().catch((e) => console.warn('Initial expiry sweep warning:', e.message));
+            }
+          }, 5000);
         } catch (seedErr) {
           console.warn('SaaS seed notice:', seedErr.message);
         }
@@ -263,20 +268,21 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const unitRoutes = require('./routes/unitRoutes');
 const userRoutes = require('./routes/userRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const { requireActiveSubscription } = require('./middleware/subscriptionLockMiddleware');
 
 app.use('/api/auth', authRoutes);
-app.use('/api/properties', propertyRoutes);
-app.use('/api/tenants', tenantRoutes);
+app.use('/api/properties', requireActiveSubscription, propertyRoutes);
+app.use('/api/tenants', requireActiveSubscription, tenantRoutes);
 app.use('/api/settings', require('./routes/settingsRoutes'));
-app.use('/api/dashboard', require('./routes/dashboardRoutes'));
-app.use('/api/reports', require('./routes/reportRoutes'));
-app.use('/api/expenses', require('./routes/expenseRoutes'));
-app.use('/api/units', unitRoutes);
+app.use('/api/dashboard', requireActiveSubscription, require('./routes/dashboardRoutes'));
+app.use('/api/reports', requireActiveSubscription, require('./routes/reportRoutes'));
+app.use('/api/expenses', requireActiveSubscription, require('./routes/expenseRoutes'));
+app.use('/api/units', requireActiveSubscription, unitRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/reminders', require('./routes/reminderRoutes'));
+app.use('/api/payments', requireActiveSubscription, paymentRoutes);
+app.use('/api/reminders', requireActiveSubscription, require('./routes/reminderRoutes'));
 app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
-app.use('/api/mpesa', require('./routes/mpesaRoutes'));
+app.use('/api/mpesa', requireActiveSubscription, require('./routes/mpesaRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
 app.use('/api/super-admin', require('./routes/superAdminRoutes'));

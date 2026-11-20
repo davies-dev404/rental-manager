@@ -107,42 +107,30 @@ function ExpenseFormView({ properties, onBack, onAdd }) {
 
     setLoading(true);
     try {
-      const newExpense = {
-        _id: "EXP-" + Date.now().toString().slice(-6),
-        propertyId,
-        propertyName: selectedProp?.name || "General Property",
-        unit: unit || "General",
+      const basePayload = {
+        propertyId: propertyId || undefined,
+        propertyName: selectedProp?.name || "",
+        unit: unit || "",
         amount: Number(amount),
         paymentMethod: paymentMethod || "other",
-        category: category || "other",
+        category: (category || "other").toLowerCase(),
         date: expenseDate,
         status,
         description: description || `${category || "Expense"} for ${selectedProp?.name || "property"}`
       };
 
-      try {
-        await api.addExpense({
-          amount: Number(amount),
-          category: (category || "other").toLowerCase(),
-          description: newExpense.description,
-          date: expenseDate,
-          propertyId: propertyId || undefined
-        });
-      } catch {
-        // Fallback for client offline mode
-      }
-
-      onAdd(newExpense);
+      const saved = await api.addExpense(basePayload);
+      onAdd(saved, true);
       toast({
         title: "Expense Created",
         description: `Expense of KES ${Number(amount).toLocaleString()} saved successfully.`
       });
       onBack();
-    } catch {
+    } catch (err) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Could not create expense record."
+        title: "Error Saving Expense",
+        description: err.message || "Could not create expense record."
       });
     } finally {
       setLoading(false);
@@ -457,21 +445,29 @@ export default function ExpensesPage() {
     return [];
   });
 
-  const handleAddExpense = (newExp) => {
-    setCustomExpenses((prev) => {
-      const next = [newExp, ...prev];
-      try {
-        localStorage.setItem("dwello_custom_expenses", JSON.stringify(next));
-      } catch (e) {
-        console.error(e);
-      }
-      return next;
-    });
+  const handleAddExpense = (newExp, savedToServer = false) => {
+    if (!savedToServer) {
+      setCustomExpenses((prev) => {
+        const next = [newExp, ...prev];
+        try {
+          localStorage.setItem("dwello_custom_expenses", JSON.stringify(next));
+        } catch (e) {
+          console.error(e);
+        }
+        return next;
+      });
+    }
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     queryClient.invalidateQueries({ queryKey: ["stats"] });
   };
 
-  const allExpenses = [...customExpenses, ...expenses];
+  const apiExpenseKeys = new Set(
+    expenses.map((e) => `${e.description || e.title || ""}|${Number(e.amount || 0)}|${(e.date || "").slice(0, 10)}`)
+  );
+  const uniqueCustomExpenses = customExpenses.filter(
+    (c) => !apiExpenseKeys.has(`${c.description || c.title || ""}|${Number(c.amount || 0)}|${(c.date || "").slice(0, 10)}`)
+  );
+  const allExpenses = [...expenses, ...uniqueCustomExpenses];
 
   // Filters
   const [search, setSearch] = useState("");
@@ -530,12 +526,23 @@ export default function ExpensesPage() {
         </Button>
         <Button
           variant="outline"
-          onClick={() =>
+          onClick={() => {
+            const res = downloadRowsAsCSV(
+              filtered.map((e) => ({
+                Date: e.date ? new Date(e.date).toLocaleDateString("en-KE") : "",
+                Property: e.propertyId?.name || e.propertyName || "General",
+                Category: e.category || "other",
+                Description: e.description || e.title || "Expense",
+                Amount: Number(e.amount || 0)
+              })),
+              "expenses_report"
+            );
             toast({
-              title: "Exported",
-              description: "Expenses report CSV downloaded."
-            })
-          }
+              variant: res.success ? "default" : "destructive",
+              title: res.success ? "Exported" : "Export Notice",
+              description: res.success ? `Downloaded ${res.filename}` : res.message
+            });
+          }}
           className="text-xs h-8 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />

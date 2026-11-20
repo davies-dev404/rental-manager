@@ -161,10 +161,27 @@ export default function StatementsPage() {
     queryFn: api.getPayments
   });
 
-  const { data: expenses = [] } = useQuery({
+  const { data: apiExpenses = [] } = useQuery({
     queryKey: ["expenses"],
     queryFn: api.getExpenses
   });
+
+  const expenses = useMemo(() => {
+    let localList = [];
+    try {
+      const raw = localStorage.getItem("dwello_custom_expenses");
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) localList = parsed;
+    } catch {}
+
+    const apiKeys = new Set(
+      apiExpenses.map((e) => `${e.description || e.title || ""}|${Number(e.amount || 0)}|${getRecordDateStr(e.date || e.createdAt)}`)
+    );
+    const localOnly = localList.filter(
+      (c) => !apiKeys.has(`${c.description || c.title || ""}|${Number(c.amount || 0)}|${getRecordDateStr(c.date || c.createdAt)}`)
+    );
+    return [...apiExpenses, ...localOnly];
+  }, [apiExpenses]);
 
   const { data: debtors = [] } = useQuery({
     queryKey: ["debtors"],
@@ -288,7 +305,7 @@ export default function StatementsPage() {
     const ePropId = typeof e.propertyId === "object"
       ? String(e.propertyId?._id || e.propertyId?.id || "")
       : String(e.propertyId || (typeof e.property === "object" ? (e.property?._id || e.property?.id || "") : ""));
-    const ePropName = e.property?.name || e.propertyName || (typeof e.property === "string" ? e.property : "");
+    const ePropName = e.propertyId?.name || e.property?.name || e.propertyName || (typeof e.property === "string" ? e.property : "");
 
     if (ePropId && ePropId === String(propFilter)) return true;
     if (foundProp && ePropName && ePropName.toLowerCase() === foundProp.name?.toLowerCase()) return true;
@@ -526,7 +543,7 @@ export default function StatementsPage() {
         date: formatDisplayDate(e.date || e.createdAt),
         title: e.title || e.description || "General Expense",
         category: e.category || "General",
-        property: e.property?.name || e.propertyName || "Unlinked",
+        property: e.propertyId?.name || e.property?.name || e.propertyName || "Unlinked",
         amount: formatKES(e.amount)
       }));
     } else if (activeReport === "month_on_month") {

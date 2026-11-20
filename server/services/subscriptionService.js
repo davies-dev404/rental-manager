@@ -233,6 +233,7 @@ async function notifyLandlordSubscriptionEvent({ user, subject, title, bodyHtml,
     if (user.email) {
       await sendEmail({
         email: user.email,
+        toName: user.name || undefined,
         subject,
         message: getEmailTemplate(title, bodyHtml, { orgName: BUSINESS_CONFIG.name, orgEmail: BUSINESS_CONFIG.email, orgPhone: BUSINESS_CONFIG.phone })
       });
@@ -249,6 +250,144 @@ async function notifyLandlordSubscriptionEvent({ user, subject, title, bodyHtml,
   }
 }
 
+function getTodayDateKey() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi' }).format(new Date());
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
+
+async function resolvePlanBySelection(unitsCount, subscriptionTier = '') {
+  await seedDefaultPlans();
+  const count = Number(unitsCount) || 0;
+  const tierLower = String(subscriptionTier || '').toLowerCase();
+
+  let targetCode = '';
+  if (count > 0) {
+    if (count <= 5) targetCode = 'starter';
+    else if (count <= 10) targetCode = 'basic';
+    else if (count <= 25) targetCode = 'growth';
+    else if (count <= 50) targetCode = 'professional';
+    else if (count <= 100) targetCode = 'business';
+    else targetCode = 'enterprise';
+  } else if (tierLower) {
+    for (const c of ['enterprise', 'business', 'professional', 'growth', 'basic', 'starter']) {
+      if (tierLower.includes(c)) {
+        targetCode = c;
+        break;
+      }
+    }
+  }
+
+  const plan = await SubscriptionPlan.findOne({ code: targetCode || 'starter', isActive: true })
+    || await SubscriptionPlan.findOne({ isActive: true }).sort({ sortOrder: 1 });
+  return plan;
+}
+
+/**
+ * Syncs onboarding plan & unit selection into LandlordSubscription + UnitEntitlement
+ * on a 14-day free trial (never overwrites an already paid active subscription).
+ */
+async function syncTrialFromOnboarding(landlordId, { unitsCount, subscriptionTier, mode } = {}) {
+  const existingPaid = await LandlordSubscription.findOne({
+    landlordId,
+    status: 'active'
+  }).sort({ createdAt: -1 });
+  if (existingPaid) {
+    return await ensureLandlordEntitlement(landlordId, { resyncCount: true });
+  }
+
+  const user = await User.findById(landlordId);
+  const plan = await resolvePlanBySelection(unitsCount ?? user?.unitsCount, subscriptionTier ?? user?.subscriptionTier);
+  if (!plan) return null;
+
+  const chosenCount = Number(unitsCount ?? user?.unitsCount ?? 0);
+  const desiredLimit = plan.isCustomUnlimited
+    ? Math.max(101, chosenCount || 150)
+    : Math.max(1, Math.min(plan.maxUnits, chosenCount > 0 ? chosenCount : plan.maxUnits));
+
+  const actualUnits = await Unit.countDocuments({ user: landlordId });
+  const now = new Date();
+  const baseStart = user?.createdAt ? new Date(user.createdAt) : now;
+  const validStart = isNaN(baseStart.getTime()) ? now : baseStart;
+  const trialDays = plan.trialDays || 14;
+  const expiryDate = new Date(validStart.getTime() + trialDays * 24 * 60 * 60 * 1000);
+  const isTrialExpired = now >= expiryDate;
+
+  let trialSub = await LandlordSubscription.findOne({
+    landlordId,
+    status: { $in: ['trial', 'grace_period', 'expired'] }
+  }).sort({ createdAt: -1 });
+
+  if (!trialSub) {
+    trialSub = await LandlordSubscription.create({
+      landlordId,
+      planId: plan._id,
+      planCode: plan.code,
+      planName: plan.name,
+      billingCycle: 'monthly',
+      purchasedUnits: desiredLimit,
+      maxPlanUnits: plan.maxUnits,
+      isCustomUnlimited: Boolean(plan.isCustomUnlimited),
+      baseAmount: plan.pricing?.monthly || 0,
+      priceAmount: 0,
+      currency: 'KES',
+      status: isTrialExpired ? 'expired' : 'trial',
+      startDate: validStart,
+      expiryDate,
+      renewalDate: expiryDate,
+      graceEndDate: expiryDate
+    });
+  } else if (trialSub.status === 'trial' || !trialSub.lastPaymentTransactionId) {
+    trialSub.planId = plan._id;
+    trialSub.planCode = plan.code;
+    trialSub.planName = plan.name;
+    trialSub.purchasedUnits = desiredLimit;
+    trialSub.maxPlanUnits = plan.maxUnits;
+    trialSub.isCustomUnlimited = Boolean(plan.isCustomUnlimited);
+    trialSub.baseAmount = plan.pricing?.monthly || 0;
+    trialSub.startDate = trialSub.startDate || validStart;
+    trialSub.expiryDate = trialSub.expiryDate || expiryDate;
+    trialSub.renewalDate = trialSub.expiryDate;
+    trialSub.graceEndDate = trialSub.expiryDate;
+    if (now >= new Date(trialSub.expiryDate)) {
+      trialSub.status = 'expired';
+    }
+    trialSub.updatedAt = now;
+    await trialSub.save();
+  }
+
+  const finalStatus = trialSub.status === 'expired' ? 'expired' : 'trial';
+  const entitlement = await UnitEntitlement.findOneAndUpdate(
+    { landlordId },
+    {
+      $set: {
+        subscriptionId: trialSub._id,
+        planCode: trialSub.planCode,
+        planName: trialSub.planName,
+        purchasedLimit: trialSub.purchasedUnits,
+        isUnlimited: Boolean(trialSub.isCustomUnlimited),
+        activeUnitCount: actualUnits,
+        status: finalStatus,
+        expiresAt: trialSub.expiryDate,
+        graceEndsAt: trialSub.expiryDate,
+        updatedAt: now
+      }
+    },
+    { upsert: true, returnDocument: 'after' }
+  );
+
+  if (user) {
+    user.activeSubscriptionId = trialSub._id;
+    user.subscriptionTier = trialSub.planCode;
+    if (chosenCount > 0) user.unitsCount = chosenCount;
+    await user.save();
+  }
+
+  return entitlement;
+}
+
 /**
  * Ensures a UnitEntitlement and initial trial subscription exist for a landlord.
  * Preserves any existing legacy units without deleting data.
@@ -258,47 +397,50 @@ async function ensureLandlordEntitlement(landlordId, { resyncCount = false } = {
 
   if (!entitlement) {
     const actualUnits = await Unit.countDocuments({ user: landlordId });
-    await seedDefaultPlans();
-    const starterPlan = await SubscriptionPlan.findOne({ code: 'starter' });
     const user = await User.findById(landlordId);
+    const plan = await resolvePlanBySelection(user?.unitsCount, user?.subscriptionTier);
     const now = new Date();
-    const trialDays = starterPlan?.trialDays || 14;
-    const expiryDate = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
-    const graceDays = starterPlan?.gracePeriodDays || 7;
-    const graceEndDate = new Date(expiryDate.getTime() + graceDays * 24 * 60 * 60 * 1000);
+    const startBase = user?.createdAt ? new Date(user.createdAt) : now;
+    const validStart = isNaN(startBase.getTime()) ? now : startBase;
+    const trialDays = plan?.trialDays || 14;
+    const expiryDate = new Date(validStart.getTime() + trialDays * 24 * 60 * 60 * 1000);
+    const chosenUnits = Number(user?.unitsCount || 0);
+    const desiredUnits = plan?.isCustomUnlimited
+      ? Math.max(101, chosenUnits || 150)
+      : Math.min(plan?.maxUnits || 5, chosenUnits > 0 ? chosenUnits : (plan?.maxUnits || 5));
 
     let subscription = await LandlordSubscription.findOne({
       landlordId,
-      status: { $in: ['active', 'trial', 'grace_period'] }
+      status: { $in: ['active', 'trial', 'grace_period', 'expired'] }
     }).sort({ createdAt: -1 });
 
-    if (!subscription && starterPlan) {
+    if (!subscription && plan) {
       subscription = await LandlordSubscription.create({
         landlordId,
-        planId: starterPlan._id,
-        planCode: starterPlan.code,
-        planName: starterPlan.name,
+        planId: plan._id,
+        planCode: plan.code,
+        planName: plan.name,
         billingCycle: 'monthly',
-        purchasedUnits: starterPlan.maxUnits,
-        maxPlanUnits: starterPlan.maxUnits,
-        isCustomUnlimited: false,
-        baseAmount: 0,
+        purchasedUnits: desiredUnits,
+        maxPlanUnits: plan.maxUnits,
+        isCustomUnlimited: Boolean(plan.isCustomUnlimited),
+        baseAmount: plan.pricing?.monthly || 0,
         priceAmount: 0,
         currency: 'KES',
-        status: 'trial',
-        startDate: now,
+        status: now >= expiryDate ? 'expired' : 'trial',
+        startDate: validStart,
         expiryDate,
         renewalDate: expiryDate,
-        graceEndDate
+        graceEndDate: expiryDate
       });
       if (user) {
         user.activeSubscriptionId = subscription._id;
-        user.subscriptionTier = starterPlan.code;
+        user.subscriptionTier = plan.code;
         await user.save();
       }
     }
 
-    const limit = subscription ? subscription.purchasedUnits : 5;
+    const limit = subscription ? subscription.purchasedUnits : desiredUnits;
     try {
       entitlement = await UnitEntitlement.findOneAndUpdate(
         { landlordId },
@@ -306,14 +448,14 @@ async function ensureLandlordEntitlement(landlordId, { resyncCount = false } = {
           $setOnInsert: {
             landlordId,
             subscriptionId: subscription?._id,
-            planCode: subscription?.planCode || 'starter',
-            planName: subscription?.planName || 'Starter Trial',
+            planCode: subscription?.planCode || plan?.code || 'starter',
+            planName: subscription?.planName || plan?.name || 'Starter',
             purchasedLimit: limit,
             isUnlimited: Boolean(subscription?.isCustomUnlimited),
             activeUnitCount: actualUnits,
-            status: subscription?.status || 'trial',
+            status: subscription?.status || (now >= expiryDate ? 'expired' : 'trial'),
             expiresAt: subscription?.expiryDate || expiryDate,
-            graceEndsAt: subscription?.graceEndDate || graceEndDate
+            graceEndsAt: subscription?.graceEndDate || expiryDate
           }
         },
         { upsert: true, returnDocument: 'after' }
@@ -325,18 +467,96 @@ async function ensureLandlordEntitlement(landlordId, { resyncCount = false } = {
         throw dupErr;
       }
     }
-  } else if (resyncCount) {
-    const actualUnits = await Unit.countDocuments({ user: landlordId });
-    if (entitlement.activeUnitCount !== actualUnits) {
+  } else {
+    const actualUnits = resyncCount ? await Unit.countDocuments({ user: landlordId }) : entitlement.activeUnitCount;
+    const now = new Date();
+    const updates = {};
+
+    if (resyncCount && entitlement.activeUnitCount !== actualUnits) {
+      updates.activeUnitCount = actualUnits;
+    }
+
+    // Lock unpaid trial immediately at the end of its 14-day period
+    if (entitlement.status === 'trial' && entitlement.expiresAt && now >= new Date(entitlement.expiresAt)) {
+      updates.status = 'expired';
+      if (entitlement.subscriptionId) {
+        await LandlordSubscription.findOneAndUpdate(
+          { _id: entitlement.subscriptionId, status: 'trial' },
+          { $set: { status: 'expired', updatedAt: now } }
+        );
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = now;
       entitlement = await UnitEntitlement.findOneAndUpdate(
         { _id: entitlement._id },
-        { $set: { activeUnitCount: actualUnits, updatedAt: new Date() } },
+        { $set: updates },
         { returnDocument: 'after' }
       );
     }
   }
 
   return entitlement;
+}
+
+async function getSubscriptionLockState(landlordId, user = null, { resyncCount = false } = {}) {
+  const role = String(user?.role || '').toLowerCase();
+  if (role === 'superadmin' || role === 'tenant' || user?.isSuperAdmin === true) {
+    return { isLocked: false, lockReason: '', daysRemaining: null, isTrialExpiringSoon: false };
+  }
+
+  const entitlement = await ensureLandlordEntitlement(landlordId, { resyncCount });
+  let activeSubscription = entitlement?.subscriptionId
+    ? await LandlordSubscription.findById(entitlement.subscriptionId).populate('planId')
+    : await LandlordSubscription.findOne({ landlordId }).sort({ createdAt: -1 }).populate('planId');
+
+  const now = new Date();
+
+  if (activeSubscription && activeSubscription.status === 'trial' && (!activeSubscription.startDate || !activeSubscription.expiryDate)) {
+    const start = activeSubscription.startDate || activeSubscription.createdAt || user?.createdAt || now;
+    const exp = activeSubscription.expiryDate || new Date(new Date(start).getTime() + 14 * 24 * 60 * 60 * 1000);
+    activeSubscription.startDate = start;
+    activeSubscription.expiryDate = exp;
+    activeSubscription.renewalDate = activeSubscription.renewalDate || exp;
+    activeSubscription.graceEndDate = activeSubscription.graceEndDate || exp;
+    if (now >= exp) {
+      activeSubscription.status = 'expired';
+    }
+    await activeSubscription.save();
+    if (now >= exp && entitlement) {
+      entitlement.status = 'expired';
+      entitlement.expiresAt = exp;
+      entitlement.graceEndsAt = exp;
+      await entitlement.save();
+    }
+  }
+
+  if (activeSubscription?.status === 'active' && activeSubscription.expiryDate && new Date(activeSubscription.expiryDate) > now) {
+    const daysRemaining = Math.max(1, Math.ceil((new Date(activeSubscription.expiryDate) - now) / (24 * 60 * 60 * 1000)));
+    return { isLocked: false, lockReason: '', daysRemaining, isTrialExpiringSoon: false, entitlement, activeSubscription };
+  }
+
+  const expDate = activeSubscription?.expiryDate || entitlement?.expiresAt;
+  const daysRemaining = expDate
+    ? Math.max(0, Math.ceil((new Date(expDate) - now) / (24 * 60 * 60 * 1000)))
+    : 0;
+
+  const isTrialExpired = activeSubscription?.status === 'trial' && expDate && now >= new Date(expDate);
+  const isLocked = Boolean(
+    isTrialExpired ||
+    ['expired', 'suspended'].includes(entitlement?.status) ||
+    ['expired', 'suspended'].includes(activeSubscription?.status)
+  );
+
+  const lockReason = isLocked
+    ? activeSubscription?.planCode && !activeSubscription?.lastPaymentTransactionId
+      ? 'Your 14-day free trial has ended. Please complete payment in Billing & Plans to unlock your workspace.'
+      : 'Your subscription has expired. Please renew your plan in Billing & Plans to continue enjoying MakaziFlow.'
+    : '';
+
+  const isTrialExpiringSoon = !isLocked && activeSubscription?.status === 'trial' && daysRemaining <= 4;
+  return { isLocked, lockReason, daysRemaining, isTrialExpiringSoon, entitlement, activeSubscription };
 }
 
 /**
@@ -597,43 +817,92 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
 }
 
 /**
- * Automated Subscription Expiry, Pre-Expiry Warning & Grace Period Sweep
+ * Automated Subscription Expiry, Pre-Expiry Warning & Consecutive Daily Reminder Sweep
+ * - Approaching end of 14-day trial (1-4 days left): max 1 email/day
+ * - At end of 14 days (trial expired): locks account & sends daily reminder email
+ * - After expiration (unpaid expired accounts): sends 1 consecutive daily email per day until paid
  */
 async function processSubscriptionExpirations() {
   const now = new Date();
+  const todayKey = getTodayDateKey();
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const subs = await LandlordSubscription.find({
-    status: { $in: ['active', 'trial', 'grace_period'] }
-  });
+    status: { $in: ['active', 'trial', 'grace_period', 'expired'] }
+  }).sort({ createdAt: -1 });
 
   let warningsSent = 0;
   let movedToGrace = 0;
   let expiredCount = 0;
+  const processedLandlords = new Set();
 
   for (const sub of subs) {
+    const landlordKey = String(sub.landlordId);
+    if (processedLandlords.has(landlordKey)) continue;
+
+    // If landlord already has a newer active subscription, skip older expired records
+    const newerActive = await LandlordSubscription.findOne({
+      landlordId: sub.landlordId,
+      _id: { $ne: sub._id },
+      status: 'active',
+      expiryDate: { $gt: now }
+    }).lean();
+    if (newerActive) continue;
+    processedLandlords.add(landlordKey);
+
     const user = await User.findById(sub.landlordId);
+    if (!user || user.role === 'superadmin' || user.isSuperAdmin) continue;
+
     const exp = sub.expiryDate ? new Date(sub.expiryDate) : null;
-    const graceEnd = sub.graceEndDate ? new Date(sub.graceEndDate) : exp;
+    const graceEnd = sub.status === 'trial'
+      ? exp
+      : (sub.graceEndDate ? new Date(sub.graceEndDate) : exp);
 
     if (!exp) continue;
 
-    // 1. Pre-expiry 7-day notification
-    if (sub.status !== 'grace_period' && exp > now && exp <= in7Days && !sub.notificationsSent?.preExpiry7d) {
+    const msLeft = exp.getTime() - now.getTime();
+    const daysLeft = Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+    const alreadyRemindedToday = sub.lastBillingReminderDate === todayKey;
+
+    // 1. Pre-expiry approaching end of 14 days / renewal window (1 email per day)
+    if (sub.status === 'trial' && exp > now && daysLeft >= 1 && daysLeft <= 4 && !alreadyRemindedToday) {
+      sub.lastBillingReminderDate = todayKey;
+      sub.billingReminderCount = (sub.billingReminderCount || 0) + 1;
       sub.notificationsSent.preExpiry7d = true;
+      await sub.save();
+      warningsSent++;
+      await notifyLandlordSubscriptionEvent({
+        user,
+        subject: `MakaziFlow: ${daysLeft} day${daysLeft === 1 ? '' : 's'} left on your ${sub.planName} trial — Pay to continue`,
+        title: '14-Day Trial Ending Soon',
+        bodyHtml: `
+          <p>Dear ${user.name || 'Landlord'},</p>
+          <p>You have <strong>${daysLeft} day${daysLeft === 1 ? '' : 's'}</strong> remaining in your 14-day free trial for the <strong>${sub.planName} Plan (${sub.purchasedUnits} units)</strong> (ending <strong>${exp.toLocaleDateString('en-KE')}</strong>).</p>
+          <p>Please complete payment in your <strong>Billing &amp; Plans</strong> dashboard before your trial expires to continue enjoying uninterrupted access to your properties, tenants, receipts, and M-Pesa tools.</p>
+        `,
+        smsText: `MakaziFlow: ${daysLeft} day(s) left on your ${sub.planName} trial. Pay in Billing & Plans before ${exp.toLocaleDateString('en-KE')} to keep your account active.`
+      });
+      continue;
+    }
+
+    if (sub.status === 'active' && exp > now && exp <= in7Days && !sub.notificationsSent?.preExpiry7d && !alreadyRemindedToday) {
+      sub.notificationsSent.preExpiry7d = true;
+      sub.lastBillingReminderDate = todayKey;
+      sub.billingReminderCount = (sub.billingReminderCount || 0) + 1;
       await sub.save();
       warningsSent++;
       await notifyLandlordSubscriptionEvent({
         user,
         subject: `MakaziFlow Renewal Notice: ${sub.planName} expires on ${exp.toLocaleDateString('en-KE')}`,
         title: 'Upcoming Subscription Renewal',
-        bodyHtml: `<p>Dear ${user?.name || 'Landlord'},</p><p>Your <strong>${sub.planName}</strong> subscription (${sub.purchasedUnits} units) expires on <strong>${exp.toLocaleDateString('en-KE')}</strong>. Please renew early to avoid disruption.</p>`,
-        smsText: `MakaziFlow: Your ${sub.planName} plan expires on ${exp.toLocaleDateString('en-KE')}. Renew in Billing to keep adding units.`
+        bodyHtml: `<p>Dear ${user.name || 'Landlord'},</p><p>Your <strong>${sub.planName}</strong> subscription (${sub.purchasedUnits} units) expires on <strong>${exp.toLocaleDateString('en-KE')}</strong>. Please renew early to continue enjoying uninterrupted service.</p>`,
+        smsText: `MakaziFlow: Your ${sub.planName} plan expires on ${exp.toLocaleDateString('en-KE')}. Renew in Billing to avoid service lock.`
       });
+      continue;
     }
 
-    // 2. Move expired active/trial into grace_period
-    if (['active', 'trial'].includes(sub.status) && now > exp && graceEnd && now <= graceEnd) {
+    // 2. Paid plan grace period transition
+    if (sub.status === 'active' && now > exp && graceEnd && now <= graceEnd) {
       sub.status = 'grace_period';
       await sub.save();
       await UnitEntitlement.findOneAndUpdate(
@@ -649,31 +918,47 @@ async function processSubscriptionExpirations() {
       });
     }
 
-    // 3. Expire after graceEndDate
-    if (graceEnd && now > graceEnd) {
-      sub.status = 'expired';
-      if (!sub.notificationsSent?.expired) {
-        sub.notificationsSent.expired = true;
+    // 3. Expire trial immediately after 14 days (or paid plan after graceEndDate) and lock + send consecutive daily emails
+    const isNowExpired = (sub.status === 'trial' && now >= exp) || (graceEnd && now > graceEnd) || sub.status === 'expired';
+    if (isNowExpired) {
+      const newlyExpired = sub.status !== 'expired';
+      if (newlyExpired) {
+        sub.status = 'expired';
+        if (!sub.notificationsSent?.expired) {
+          sub.notificationsSent.expired = true;
+        }
+        expiredCount++;
+        await UnitEntitlement.findOneAndUpdate(
+          { landlordId: sub.landlordId },
+          { $set: { status: 'expired', updatedAt: now } }
+        );
+        await logSubscriptionAudit({
+          landlordId: sub.landlordId,
+          subscriptionId: sub._id,
+          action: 'subscription_expired',
+          newState: { status: 'expired' }
+        });
       }
-      await sub.save();
-      await UnitEntitlement.findOneAndUpdate(
-        { landlordId: sub.landlordId },
-        { $set: { status: 'expired', updatedAt: now } }
-      );
-      expiredCount++;
-      await logSubscriptionAudit({
-        landlordId: sub.landlordId,
-        subscriptionId: sub._id,
-        action: 'subscription_expired',
-        newState: { status: 'expired' }
-      });
-      await notifyLandlordSubscriptionEvent({
-        user,
-        subject: `MakaziFlow Subscription Expired — Renew ${sub.planName}`,
-        title: 'Subscription Expired',
-        bodyHtml: `<p>Dear ${user?.name || 'Landlord'},</p><p>Your <strong>${sub.planName}</strong> subscription has expired. Existing property & tenant records remain safe, but adding new rental units is paused until renewal.</p>`,
-        smsText: `MakaziFlow: Your ${sub.planName} subscription has expired. Existing records remain preserved; renew in Billing to resume adding units.`
-      });
+
+      if (!alreadyRemindedToday) {
+        sub.lastBillingReminderDate = todayKey;
+        sub.billingReminderCount = (sub.billingReminderCount || 0) + 1;
+        await sub.save();
+        warningsSent++;
+        await notifyLandlordSubscriptionEvent({
+          user,
+          subject: `Action Required: Renew ${sub.planName} Plan to Unlock Your MakaziFlow Account`,
+          title: 'Account Locked — Payment Required',
+          bodyHtml: `
+            <p>Dear ${user.name || 'Landlord'},</p>
+            <p>Your 14-day ${sub.planName} (${sub.purchasedUnits} units) period ended on <strong>${exp.toLocaleDateString('en-KE')}</strong> and access to your workspace is currently paused until payment is received.</p>
+            <p>All of your properties, units, tenants, and payment records remain safely stored. Please sign in and complete your payment in <strong>Billing &amp; Plans</strong> to immediately unlock your account and continue enjoying MakaziFlow services.</p>
+          `,
+          smsText: `MakaziFlow: Your ${sub.planName} period has expired and your account is locked. Complete payment in Billing & Plans to unlock access immediately.`
+        });
+      } else if (newlyExpired) {
+        await sub.save();
+      }
     }
   }
 
@@ -686,6 +971,9 @@ module.exports = {
   getBillingMonths,
   addBillingDuration,
   calculateSubscriptionPrice,
+  resolvePlanBySelection,
+  syncTrialFromOnboarding,
+  getSubscriptionLockState,
   ensureLandlordEntitlement,
   reserveUnitSlot,
   releaseUnitSlot,

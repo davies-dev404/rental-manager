@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { api } from "./api";
+import { api, refreshAuthSession } from "./api";
 import { useToast } from "@/hooks/use-toast";
 const AuthContext = createContext(undefined);
 export function AuthProvider({ children }) {
@@ -7,48 +7,67 @@ export function AuthProvider({ children }) {
     const [isLoading, setIsLoading] = useState(true);
     const { toast } = useToast();
     useEffect(() => {
-        const storedUser = localStorage.getItem("rental_user");
-        if (storedUser) {
-            try {
-                const parsed = JSON.parse(storedUser);
-                if (parsed && parsed.token) {
-                    // Check if token has expired
-                    const tokenParts = parsed.token.split('.');
-                    if (tokenParts.length === 3) {
-                        try {
-                            const payload = JSON.parse(atob(tokenParts[1]));
-                            if (payload.exp && Date.now() >= payload.exp * 1000) {
+        let isMounted = true;
+        const initAuth = async () => {
+            const storedUser = localStorage.getItem("rental_user");
+            if (storedUser) {
+                try {
+                    const parsed = JSON.parse(storedUser);
+                    if (parsed && parsed.token) {
+                        let isExpired = false;
+                        const tokenParts = parsed.token.split('.');
+                        if (tokenParts.length === 3) {
+                            try {
+                                const payload = JSON.parse(atob(tokenParts[1]));
+                                if (payload.exp && Date.now() >= payload.exp * 1000) {
+                                    isExpired = true;
+                                }
+                            } catch (e) {}
+                        }
+
+                        if (isExpired) {
+                            const refreshed = await refreshAuthSession();
+                            if (!isMounted) return;
+                            if (refreshed?.token) {
+                                setUser(refreshed);
+                            } else {
                                 console.log("Session token expired, clearing stored session.");
                                 localStorage.removeItem("rental_user");
                                 setUser(null);
-                                setIsLoading(false);
-                                return;
                             }
-                        } catch (e) {}
+                            setIsLoading(false);
+                            return;
+                        }
+
+                        if (isMounted) setUser(parsed);
+                    } else {
+                        localStorage.removeItem("rental_user");
+                        if (isMounted) setUser(null);
                     }
-                    setUser(parsed);
-                } else {
+                } catch {
                     localStorage.removeItem("rental_user");
-                    setUser(null);
+                    if (isMounted) setUser(null);
                 }
-            } catch {
-                localStorage.removeItem("rental_user");
-                setUser(null);
             }
-        }
-        setIsLoading(false);
+            if (isMounted) setIsLoading(false);
+        };
+
+        initAuth();
 
         const handleLogoutEvent = () => {
             setUser(null);
             localStorage.removeItem("rental_user");
         };
         window.addEventListener("auth:logout", handleLogoutEvent);
-        return () => window.removeEventListener("auth:logout", handleLogoutEvent);
+        return () => {
+            isMounted = false;
+            window.removeEventListener("auth:logout", handleLogoutEvent);
+        };
     }, []);
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
-    const login = async (email, password) => {
-        const result = await api.login(email, password);
+    const login = async (email, password, turnstileToken) => {
+        const result = await api.login(email, password, turnstileToken);
         // Server returns requiresOTP: true after credentials pass
         if (result.requiresOTP) {
             return result;

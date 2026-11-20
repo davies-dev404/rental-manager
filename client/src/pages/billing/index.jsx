@@ -257,9 +257,9 @@ export default function BillingDashboardPage() {
           <Button
             size="sm"
             onClick={() => {
-              if (plans.length > 0 && activeSub?.planCode) {
-                setSelectedPlanCode(activeSub.planCode);
-                setDesiredUnits(activeSub.purchasedUnits || 10);
+              if (plans.length > 0 && (activeSub?.planCode || entitlement?.planCode)) {
+                setSelectedPlanCode(activeSub?.planCode || entitlement.planCode);
+                setDesiredUnits(activeSub?.purchasedUnits || entitlement?.purchasedUnits || 10);
               }
               setUpgradeOpen(true);
             }}
@@ -269,6 +269,68 @@ export default function BillingDashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Account Locked Banner after 14-day Trial or Subscription Expiry */}
+      {mySubData?.isLocked && (
+        <div className="rounded-xl border border-rose-300 bg-rose-50 dark:bg-rose-950/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-rose-950 dark:text-rose-100">
+              <p className="font-bold text-sm">
+                Workspace Locked — Payment Required to Continue
+              </p>
+              <p className="mt-0.5 text-rose-800 dark:text-rose-200">
+                {mySubData.lockReason || "Your 14-day free trial has expired. Complete payment below to unlock your properties, tenants, invoices, and reports immediately."}
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (activeSub?.planCode || entitlement?.planCode) {
+                setSelectedPlanCode(activeSub?.planCode || entitlement.planCode);
+                setDesiredUnits(activeSub?.purchasedUnits || entitlement?.purchasedUnits || 5);
+              }
+              setUpgradeOpen(true);
+            }}
+            className="bg-rose-600 hover:bg-rose-700 text-white text-xs shrink-0 cursor-pointer"
+          >
+            Pay Now to Unlock
+          </Button>
+        </div>
+      )}
+
+      {/* 14-Day Trial Countdown Banner */}
+      {!mySubData?.isLocked && statusKey === "trial" && typeof mySubData?.daysRemaining === "number" && (
+        <div className={`rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          mySubData.daysRemaining <= 4
+            ? "border-amber-300 bg-amber-50 dark:bg-amber-950/30 text-amber-950 dark:text-amber-100"
+            : "border-blue-200 bg-blue-50/70 dark:bg-blue-950/30 text-blue-950 dark:text-blue-100"
+        }`}>
+          <div className="text-xs">
+            <p className="font-bold">
+              {mySubData.daysRemaining} day{mySubData.daysRemaining === 1 ? "" : "s"} remaining in your 14-day free trial ({entitlement.planName || activeSub?.planName || "Starter"} — {purchasedUnits} units)
+            </p>
+            <p className="mt-0.5 opacity-85">
+              Complete subscription payment via Pesaflow before your trial ends on{" "}
+              <strong>{activeSub?.expiryDate ? new Date(activeSub.expiryDate).toLocaleDateString("en-KE") : "expiry"}</strong> to avoid workspace lock.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (activeSub?.planCode || entitlement?.planCode) {
+                setSelectedPlanCode(activeSub?.planCode || entitlement.planCode);
+                setDesiredUnits(activeSub?.purchasedUnits || entitlement?.purchasedUnits || 5);
+              }
+              setUpgradeOpen(true);
+            }}
+            className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs shrink-0 cursor-pointer"
+          >
+            Pay &amp; Activate Plan
+          </Button>
+        </div>
+      )}
 
       {/* Warning Banner when Unit Limit Reached or Downgrade Restricted */}
       {!entitlement.isUnlimited && registeredUnits >= Number(purchasedUnits) && (

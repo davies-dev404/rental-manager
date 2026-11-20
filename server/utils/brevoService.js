@@ -136,9 +136,14 @@ async function sendTransactionalEmail({
   const fromName = (senderName || process.env.FROM_NAME || BUSINESS_CONFIG.name).trim();
   const replyTo = (replyToEmail || preferredEmail).trim();
 
+  const recipientObj = { email: to.trim() };
+  if (toName && String(toName).trim()) {
+    recipientObj.name = String(toName).trim();
+  }
+
   const payload = {
     sender: { name: fromName, email: fromEmail },
-    to: [{ email: to.trim(), name: toName || to.split('@')[0] }],
+    to: [recipientObj],
     subject,
     htmlContent,
     replyTo: { name: fromName, email: replyTo }
@@ -177,6 +182,7 @@ async function sendSmtpRelayEmail({
   user,
   pass,
   to,
+  toName,
   subject,
   html,
   fromName,
@@ -208,10 +214,14 @@ async function sendSmtpRelayEmail({
   const senderAddr = smtpSenderCheck.email || preferredAddr;
   const senderLabel = (fromName || process.env.FROM_NAME || BUSINESS_CONFIG.name).trim();
 
+  const formattedTo = toName && String(toName).trim()
+    ? `"${String(toName).trim().replace(/"/g, '')}" <${to.trim()}>`
+    : to;
+
   return await transporter.sendMail({
     from: `"${senderLabel}" <${senderAddr}>`,
     replyTo: preferredAddr,
-    to,
+    to: formattedTo,
     subject,
     html,
     attachments

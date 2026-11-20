@@ -42,7 +42,6 @@ export default function CloudflareTurnstile({
 
   const configuredKey = (
     import.meta.env.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY ||
-    (typeof localStorage !== "undefined" ? localStorage.getItem("cloudflare_turnstile_site_key") : "") ||
     CF_PROD_SITEKEY
   ).trim();
 
@@ -122,45 +121,58 @@ export default function CloudflareTurnstile({
   useEffect(() => {
     if (!isReady || !containerRef.current || !window.turnstile) return;
 
+    let cancelled = false;
     setIsFallback(false);
     setIsVerified(false);
 
-    if (widgetIdRef.current) {
-      try {
-        window.turnstile.remove(widgetIdRef.current);
-      } catch {
-        // ignore
-      }
-      widgetIdRef.current = null;
-    }
+    // Defer render slightly to avoid React StrictMode double-mount iframe postMessage origin errors
+    const timer = setTimeout(() => {
+      if (cancelled || !containerRef.current || !window.turnstile) return;
 
-    containerRef.current.innerHTML = "";
-
-    try {
-      const widgetId = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        theme,
-        size,
-        callback: (token) => {
-          setIsFallback(false);
-          setIsVerified(true);
-          if (onVerifyRef.current) onVerifyRef.current(token);
-        },
-        "expired-callback": () => {
-          setIsVerified(false);
-          if (onExpireRef.current) onExpireRef.current();
-        },
-        "error-callback": (errorCode) => {
-          activateFallback(`Widget notice (${errorCode || "network"})`);
-          return true;
+      if (widgetIdRef.current) {
+        try {
+          window.turnstile.remove(widgetIdRef.current);
+        } catch {
+          // ignore
         }
-      });
-      widgetIdRef.current = widgetId;
-    } catch (err) {
-      activateFallback(err?.message || "Render error");
-    }
+        widgetIdRef.current = null;
+      }
+
+      const hostEl = document.createElement("div");
+      containerRef.current.replaceChildren(hostEl);
+
+      try {
+        const widgetId = window.turnstile.render(hostEl, {
+          sitekey: siteKey,
+          theme,
+          size,
+          callback: (token) => {
+            if (cancelled) return;
+            setIsFallback(false);
+            setIsVerified(true);
+            if (onVerifyRef.current) onVerifyRef.current(token);
+          },
+          "expired-callback": () => {
+            if (cancelled) return;
+            setIsVerified(false);
+            if (onExpireRef.current) onExpireRef.current();
+          },
+          "error-callback": (errorCode) => {
+            if (!cancelled) {
+              activateFallback(`Widget notice (${errorCode || "network"})`);
+            }
+            return true;
+          }
+        });
+        widgetIdRef.current = widgetId;
+      } catch (err) {
+        activateFallback(err?.message || "Render error");
+      }
+    }, 60);
 
     return () => {
+      cancelled = true;
+      clearTimeout(timer);
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(widgetIdRef.current);

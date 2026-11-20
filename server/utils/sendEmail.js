@@ -52,6 +52,28 @@ const sendEmail = async (options) => {
   const replyToEmail = options.replyToEmail || settings?.orgEmail || orgEmail;
   const errors = [];
 
+  // Resolve the recipient's registered name from DB if caller omitted toName
+  let resolvedToName = (options.toName || '').trim();
+  if (!resolvedToName && options.email && mongoose.connection && mongoose.connection.readyState === 1) {
+    try {
+      const escapedEmail = String(options.email).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const emailRegex = new RegExp(`^${escapedEmail}$`, 'i');
+      const Tenant = require('../models/Tenant');
+      const tenantDoc = await Tenant.findOne({ email: emailRegex }).select('name').maxTimeMS(1000).lean();
+      if (tenantDoc?.name) {
+        resolvedToName = tenantDoc.name.trim();
+      } else {
+        const User = require('../models/User');
+        const userDoc = await User.findOne({ email: emailRegex }).select('name').maxTimeMS(1000).lean();
+        if (userDoc?.name) {
+          resolvedToName = userDoc.name.trim();
+        }
+      }
+    } catch {
+      // Non-fatal fallback
+    }
+  }
+
   // 1. Brevo Transactional Email REST API v3
   const brevoApiKey = resolveBrevoApiKey(process.env.BREVO_API_KEY || settings?.integrations?.email?.brevo?.apiKey);
   if (brevoApiKey) {
@@ -59,7 +81,7 @@ const sendEmail = async (options) => {
       const result = await sendTransactionalEmail({
         apiKey: brevoApiKey,
         to: options.email,
-        toName: options.toName,
+        toName: resolvedToName || undefined,
         subject: options.subject,
         htmlContent: options.message || options.html,
         senderName: orgName,
@@ -87,6 +109,7 @@ const sendEmail = async (options) => {
         user: brevoSmtpUser,
         pass: brevoSmtpKey,
         to: options.email,
+        toName: resolvedToName || undefined,
         subject: options.subject,
         html: options.message || options.html,
         fromName: orgName,
@@ -103,7 +126,7 @@ const sendEmail = async (options) => {
 
   // 3. Custom Org DB SMTP (only if explicitly configured and non-placeholder)
   const smtpSettings = settings?.integrations?.email?.smtp;
-  const isPlaceholder = (h) => !h || h.trim() === '' || h.toLowerCase().includes('example.com') || h.toLowerCase() === 'smtp.mailtrap.io';
+  const isPlaceholder = (h) => !h || h.trim() === '' || h.toLowerCase().includes('example.com') || h.toLowerCase().includes('smtp.mailtrap.io');
   if (smtpSettings?.host && !isPlaceholder(smtpSettings.host) && smtpSettings.user && smtpSettings.pass) {
     try {
       const port = Number(smtpSettings.port) || 587;
@@ -115,9 +138,12 @@ const sendEmail = async (options) => {
         connectionTimeout: 10000,
         tls: { rejectUnauthorized: false }
       });
+      const formattedTo = resolvedToName
+        ? `"${resolvedToName.replace(/"/g, '')}" <${options.email.trim()}>`
+        : options.email;
       await transporter.sendMail({
         from: `"${orgName}" <${smtpSettings.fromEmail || orgEmail}>`,
-        to: options.email,
+        to: formattedTo,
         subject: options.subject,
         html: options.message || options.html,
         attachments: options.attachments
