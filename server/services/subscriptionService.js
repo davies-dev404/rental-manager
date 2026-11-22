@@ -705,10 +705,14 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
 
   // Strict Sandbox vs Production isolation guard:
   // Sandbox transactions must NEVER activate real production subscriptions.
-  const txnEnv = (paymentTransaction?.gatewayEnvironment || (paymentTransaction?.isSandbox ? 'sandbox' : '') || (process.env.INTASEND_ENV || 'sandbox')).toLowerCase();
+  const txnEnv = (paymentTransaction?.gatewayEnvironment || (paymentTransaction?.isSandbox ? 'sandbox' : '') || (process.env.PESAPAL_ENV || process.env.INTASEND_ENV || 'sandbox')).toLowerCase();
   const isTxnSandbox = Boolean(paymentTransaction?.isSandbox) || txnEnv === 'sandbox';
-  if (paymentTransaction?.provider === 'intasend') {
-    const activeGatewayEnv = (process.env.INTASEND_ENV || 'sandbox').trim().toLowerCase();
+  if (paymentTransaction?.provider === 'intasend' || paymentTransaction?.provider === 'pesapal') {
+    const activeGatewayEnv = (
+      paymentTransaction.provider === 'pesapal'
+        ? (process.env.PESAPAL_ENV || 'sandbox')
+        : (process.env.INTASEND_ENV || 'sandbox')
+    ).trim().toLowerCase();
     if (activeGatewayEnv === 'production' && isTxnSandbox) {
       const err = new Error('Security Policy Violation: Sandbox transactions cannot activate production subscriptions.');
       err.code = 'SANDBOX_PRODUCTION_ISOLATION';

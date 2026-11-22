@@ -17,7 +17,6 @@ const {
 } = require('../services/subscriptionService');
 const { createStructuredInvoice } = require('../services/invoiceService');
 const PaymentService = require('../services/payments/PaymentService');
-const { getIntaSendConfig } = require('../config/intasendConfig');
 const { paymentCheckoutLimiter } = require('../middleware/securityMiddleware');
 
 // @desc    Get all active subscription plans
@@ -128,7 +127,8 @@ router.get('/my', protect, async (req, res) => {
       lockReason: lockState.lockReason || '',
       daysRemaining: lockState.daysRemaining,
       isTrialExpiringSoon: Boolean(lockState.isTrialExpiringSoon),
-      gatewayEnvironment: getIntaSendConfig({ requireConfigured: false }).environment,
+      gatewayProvider: PaymentService.getActiveGatewayStatus().provider,
+      gatewayEnvironment: PaymentService.getActiveGatewayStatus().environment || 'sandbox',
       history,
       invoices,
       receipts,
@@ -152,6 +152,7 @@ router.post('/subscribe', protect, admin, paymentCheckoutLimiter, async (req, re
       provider = '',
       promoCode = '',
       phone = '',
+      enableRecurring = false,
       idempotencyKey = ''
     } = req.body;
 
@@ -265,7 +266,15 @@ router.post('/subscribe', protect, admin, paymentCheckoutLimiter, async (req, re
         customerName: req.user.name,
         customerEmail: req.user.email,
         customerPhone: phone || req.user.phone || '',
-        description: `MakaziFlow ${plan.name} (${requestedUnits} Units - ${quote.billingCycle})`
+        description: `MakaziFlow ${plan.name} (${requestedUnits} Units - ${quote.billingCycle})`,
+        metadata: enableRecurring ? {
+          enableRecurring: true,
+          subscriptionDetails: {
+            start_date: new Date().toLocaleDateString('en-GB').replace(/\//g, '-'),
+            end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB').replace(/\//g, '-'),
+            frequency: quote.billingCycle === 'annual' ? 'YEARLY' : 'MONTHLY'
+          }
+        } : {}
       });
 
       return res.status(201).json({

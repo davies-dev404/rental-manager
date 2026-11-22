@@ -84,6 +84,7 @@ export default function BillingDashboardPage() {
   const [paymentChannel, setPaymentChannel] = useState("hosted_checkout");
   const [promoCode, setPromoCode] = useState("");
   const [phoneInput, setPhoneInput] = useState("");
+  const [enableRecurring, setEnableRecurring] = useState(false);
   const [downgradeNote, setDowngradeNote] = useState(null);
   const [activeGatewaySession, setActiveGatewaySession] = useState(null);
 
@@ -120,29 +121,70 @@ export default function BillingDashboardPage() {
   // Handle hosted checkout redirect return securely via backend status verification
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const hasReturn = params.get("payment_return") || params.get("tracking_id") || params.get("checkout_id") || params.get("invoice_id") || params.get("txnId");
+    const isCancelled = params.get("payment_cancelled");
+    const trackingParam =
+      params.get("OrderTrackingId") ||
+      params.get("orderTrackingId") ||
+      params.get("tracking_id") ||
+      params.get("invoice_id") ||
+      "";
+    const merchantRefParam =
+      params.get("OrderMerchantReference") ||
+      params.get("orderMerchantReference") ||
+      params.get("ref") ||
+      "";
+    const checkoutIdParam = params.get("checkout_id") || "";
+    const hasReturn =
+      params.get("payment_return") ||
+      isCancelled ||
+      trackingParam ||
+      checkoutIdParam ||
+      params.get("txnId");
     if (!hasReturn) return;
+
+    const providerParam = (
+      params.get("provider") ||
+      (params.get("OrderTrackingId") ? "pesapal" : mySubData?.gatewayProvider || "pesapal")
+    ).toLowerCase();
 
     const payload = {
       txnId: params.get("txnId") || "",
-      ref: params.get("ref") || "",
-      tracking_id: params.get("tracking_id") || params.get("invoice_id") || "",
-      checkout_id: params.get("checkout_id") || "",
+      ref: merchantRefParam,
+      OrderMerchantReference: merchantRefParam,
+      OrderTrackingId: params.get("OrderTrackingId") || trackingParam,
+      tracking_id: trackingParam,
+      checkout_id: checkoutIdParam,
       signature: params.get("signature") || ""
     };
 
     window.history.replaceState({}, "", window.location.pathname);
-    api.verifyIntaSendCallback(payload)
+
+    if (isCancelled && !trackingParam && !checkoutIdParam) {
+      toast({
+        variant: "destructive",
+        title: "Payment Cancelled",
+        description: "Checkout was cancelled before completion. No charge was applied."
+      });
+      return;
+    }
+
+    api.verifyPaymentCallback(providerParam, payload)
       .then((res) => {
         if (res?.transaction?.status === "paid" || res?.alreadySettled) {
           toast({
             title: "Payment Verified & Subscription Active",
             description: "Your payment has been verified and your subscription is now active."
           });
+        } else if (["failed", "cancelled"].includes(res?.transaction?.status)) {
+          toast({
+            variant: "destructive",
+            title: `Payment ${res.transaction.status}`,
+            description: res.transaction.failureReason || "The payment was not completed."
+          });
         } else {
           toast({
-            title: `Payment Status: ${res?.transaction?.status || "pending"}`,
-            description: "Click Refresh Status or Verify once payment completes."
+            title: `Payment Status: ${res?.transaction?.status || "processing"}`,
+            description: "Waiting for gateway confirmation. Click Refresh Status shortly if you just paid."
           });
         }
         queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
@@ -316,7 +358,8 @@ export default function BillingDashboardPage() {
     if (subscribeMutation.isPending) return;
     const cleanPhone = String(phoneInput || "").replace(/[\s()-]/g, "").trim();
     const isValidKePhone = /^(?:254|0|\+254)?[17]\d{8}$/.test(cleanPhone);
-    if (paymentChannel === "mpesa_stk" && !isValidKePhone) {
+    const isDirectIntaSendStk = mySubData?.gatewayProvider === "intasend" && paymentChannel === "mpesa_stk";
+    if (isDirectIntaSendStk && !isValidKePhone) {
       toast({
         variant: "destructive",
         title: "Invalid M-Pesa Phone Number",
@@ -329,9 +372,9 @@ export default function BillingDashboardPage() {
       desiredUnits,
       billingCycle: selectedCycle,
       paymentChannel,
-      provider: "intasend",
       promoCode,
       phone: cleanPhone,
+      enableRecurring: paymentChannel === "card" ? enableRecurring : false,
       idempotencyKey: `sub_${selectedPlanCode}_${desiredUnits}_${selectedCycle}_${Date.now()}`
     });
   };
@@ -631,28 +674,37 @@ export default function BillingDashboardPage() {
               <p className="font-semibold text-white">Tel: 0790264792 | info@afrinextech.co.ke</p>
             </div>
             <div className="pt-3 border-t border-white/10 text-center">
-              <a
-                href="https://intasend.com/security"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block"
-              >
-                <img
-                  src="https://intasend-prod-static.s3.amazonaws.com/img/trust-badges/intasend-trust-badge-with-mpesa-hr-dark.png"
-                  alt="IntaSend Secure Payments (PCI-DSS Compliant)"
-                  className="mx-auto w-full max-w-[320px] h-auto"
-                />
-              </a>
-              <strong>
-                <a
-                  href="https://intasend.com/security"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-[#fafafa] no-underline text-[11px] mt-1.5 hover:underline"
-                >
-                  Secured by IntaSend Payments
-                </a>
-              </strong>
+              {mySubData?.gatewayProvider === "intasend" ? (
+                <>
+                  <a
+                    href="https://intasend.com/security"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block"
+                  >
+                    <img
+                      src="https://intasend-prod-static.s3.amazonaws.com/img/trust-badges/intasend-trust-badge-with-mpesa-hr-dark.png"
+                      alt="IntaSend Secure Payments (PCI-DSS Compliant)"
+                      className="mx-auto w-full max-w-[320px] h-auto"
+                    />
+                  </a>
+                  <strong>
+                    <a
+                      href="https://intasend.com/security"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-[#fafafa] no-underline text-[11px] mt-1.5 hover:underline"
+                    >
+                      Secured by IntaSend Payments
+                    </a>
+                  </strong>
+                </>
+              ) : (
+                <div className="rounded-lg bg-white/10 px-3 py-2.5 text-[11px] text-slate-200 space-y-1">
+                  <p className="font-semibold text-white">Secured by Pesapal API 3.0</p>
+                  <p className="text-[10px] text-cyan-200">Supports M-Pesa · Airtel Money · Visa · Mastercard</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -964,6 +1016,17 @@ export default function BillingDashboardPage() {
                 <p className="text-[11px] text-slate-500">
                   M-Pesa renewals require explicit payment confirmation per cycle; recurring card billing applies only where enabled with your consent at checkout.
                 </p>
+                {paymentChannel === "card" && (
+                  <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 pt-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={enableRecurring}
+                      onChange={(e) => setEnableRecurring(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>Enable optional automatic card renewal (where supported on Pesapal checkout)</span>
+                  </label>
+                )}
               </div>
 
               {/* Calculated Total */}

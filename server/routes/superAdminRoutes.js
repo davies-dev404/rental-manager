@@ -127,7 +127,8 @@ router.get('/overview', async (req, res) => {
     const totalAllocatedUnits = entitlements.reduce((s, e) => s + (e.isUnlimited ? 0 : Number(e.purchasedLimit || 0)), 0);
     const totalRentCollected = rentPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
 
-    const activeGatewayEnvironment = getIntaSendConfig({ requireConfigured: false }).environment;
+    const gwStatus = PaymentService.getActiveGatewayStatus();
+    const activeGatewayEnvironment = gwStatus.environment || 'sandbox';
 
     res.json({
       metrics: {

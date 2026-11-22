@@ -84,7 +84,10 @@ app.use(
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com",
-          "https://*.intasend.com"
+          "https://*.intasend.com",
+          "https://cybqa.pesapal.com",
+          "https://pay.pesapal.com",
+          "https://*.pesapal.com"
         ],
         connectSrc: [
           "'self'",
@@ -108,6 +111,9 @@ app.use(
           "https://api.intasend.com",
           "https://sandbox.intasend.com",
           "https://payment.intasend.com",
+          "https://cybqa.pesapal.com",
+          "https://pay.pesapal.com",
+          "https://*.pesapal.com",
           "https://etims-api-sbx.kra.go.ke",
           "https://etims-api.kra.go.ke"
         ],
@@ -337,19 +343,8 @@ app.get('/api/health', async (req, res) => {
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     const dbState = states[mongoose.connection.readyState] || 'unknown';
     const rawKey = (process.env.BREVO_API_KEY || '').trim();
-    let paymentGateway = { provider: 'intasend', configured: false };
-    try {
-        const { getIntaSendConfig } = require('./config/intasendConfig');
-        const gwCfg = getIntaSendConfig({ requireConfigured: false });
-        paymentGateway = {
-            provider: 'intasend',
-            environment: gwCfg.environment,
-            configured: gwCfg.isConfigured,
-            webhookChallengeConfigured: Boolean(gwCfg.webhookChallenge)
-        };
-    } catch (gwErr) {
-        paymentGateway = { provider: 'intasend', configured: false, configError: gwErr.code || 'CONFIG_ERROR' };
-    }
+    const PaymentService = require('./services/payments/PaymentService');
+    const paymentGateway = PaymentService.getActiveGatewayStatus();
     res.json({
         status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),

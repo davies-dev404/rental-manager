@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const { validateIntaSendConfig } = require('../config/intasendConfig');
+const { validatePesapalConfig } = require('../config/pesapalConfig');
 
 const IS_TEST = () => process.env.NODE_ENV === 'test';
 const IS_HOSTED_OR_PROD = () =>
@@ -31,6 +32,7 @@ function getJwtSecret() {
 function validateSecurityConfig() {
   getJwtSecret();
   validateIntaSendConfig();
+  validatePesapalConfig();
 
   const mongoUri = (process.env.MONGODB_URI || '').trim();
   if (IS_HOSTED_OR_PROD()) {

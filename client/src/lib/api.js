@@ -859,6 +859,16 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to verify transaction");
   },
+  verifyPaymentCallback: async (provider = "pesapal", payload = {}) => {
+    const prov = encodeURIComponent(String(provider || "pesapal").toLowerCase());
+    const response = await smartFetch(`${API_URL}/v2/payments/callback/${prov}`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to verify payment callback");
+  },
   verifyIntaSendCallback: async (payload) => {
     const response = await smartFetch(`${API_URL}/v2/payments/callback/intasend`, {
       method: "POST",

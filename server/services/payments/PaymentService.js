@@ -9,8 +9,10 @@ const Payment = require('../../models/Payment');
 const Tenant = require('../../models/Tenant');
 const User = require('../../models/User');
 const Unit = require('../../models/Unit');
+const PesapalAdapter = require('./PesapalAdapter');
 const IntaSendAdapter = require('./IntaSendAdapter');
 const PesaflowAdapter = require('./PesaflowAdapter');
+const { getPesapalConfig } = require('../../config/pesapalConfig');
 const { getIntaSendConfig } = require('../../config/intasendConfig');
 const { EquityEazzyBizAdapter, KcbBuniAdapter, CoopBankAdapter } = require('./BankAdapters');
 const { activatePaidSubscription } = require('../subscriptionService');
@@ -20,6 +22,7 @@ const logActivity = require('../../utils/logActivity');
 class PaymentService {
   constructor() {
     this.adapters = {
+      pesapal: new PesapalAdapter(),
       intasend: new IntaSendAdapter(),
       pesaflow: new PesaflowAdapter(),
       equity_eazzybiz: new EquityEazzyBizAdapter(),
@@ -31,9 +34,45 @@ class PaymentService {
   resolveDefaultProvider() {
     const explicit = (process.env.PAYMENT_DEFAULT_PROVIDER || '').trim().toLowerCase();
     if (explicit && this.adapters[explicit]) return explicit;
+    if (this.adapters.pesapal.isConfigured()) return 'pesapal';
     if (this.adapters.intasend.isConfigured()) return 'intasend';
     if (this.adapters.pesaflow.isConfigured()) return 'pesaflow';
-    return 'intasend';
+    return 'pesapal';
+  }
+
+  getActiveGatewayStatus() {
+    const defaultProvider = this.resolveDefaultProvider();
+    try {
+      if (defaultProvider === 'pesapal') {
+        const cfg = getPesapalConfig({ requireConfigured: false });
+        return {
+          provider: 'pesapal',
+          environment: cfg.environment,
+          configured: cfg.isConfigured,
+          ipnConfigured: Boolean(cfg.ipnUrl || cfg.ipnId)
+        };
+      }
+      if (defaultProvider === 'intasend') {
+        const cfg = getIntaSendConfig({ requireConfigured: false });
+        return {
+          provider: 'intasend',
+          environment: cfg.environment,
+          configured: cfg.isConfigured,
+          webhookChallengeConfigured: Boolean(cfg.webhookChallenge)
+        };
+      }
+      return {
+        provider: defaultProvider,
+        environment: 'sandbox',
+        configured: this.adapters[defaultProvider]?.isConfigured?.() || false
+      };
+    } catch (err) {
+      return {
+        provider: defaultProvider,
+        configured: false,
+        configError: err.code || 'CONFIG_ERROR'
+      };
+    }
   }
 
   getAdapter(providerCode) {
@@ -46,19 +85,31 @@ class PaymentService {
   }
 
   async seedProviders() {
+    const pesapalCfg = getPesapalConfig({ requireConfigured: false });
     const intasendCfg = getIntaSendConfig({ requireConfigured: false });
     const defaultProvider = this.resolveDefaultProvider();
     const defs = [
+      {
+        code: 'pesapal',
+        name: 'Pesapal API 3.0 Gateway',
+        isPrimary: defaultProvider === 'pesapal',
+        enabled: pesapalCfg.isConfigured,
+        environment: pesapalCfg.environment,
+        supportedChannels: ['hosted_checkout', 'mpesa_stk', 'card', 'bank_transfer'],
+        accountPrefix: 'MF',
+        requiresMerchantAuthorization: false,
+        notes: 'Primary payment gateway supporting M-Pesa, Airtel Money, Visa, and Mastercard via Pesapal API 3.0.'
+      },
       {
         code: 'intasend',
         name: 'IntaSend Payment Gateway',
         isPrimary: defaultProvider === 'intasend',
         enabled: intasendCfg.isConfigured,
         environment: intasendCfg.environment,
-        supportedChannels: ['hosted_checkout', 'mpesa_stk', 'card'],
+        supportedChannels: ['hosted_checkout', 'mpesa_stk', 'card', 'bank_transfer'],
         accountPrefix: 'MF',
         requiresMerchantAuthorization: false,
-        notes: 'Primary payment gateway supporting M-Pesa STK Push, Visa, and Mastercard Hosted Checkout.'
+        notes: 'Secondary payment gateway supporting M-Pesa STK Push, Visa, and Mastercard Hosted Checkout.'
       },
       {
         code: 'pesaflow',
@@ -176,7 +227,9 @@ class PaymentService {
     const adapter = this.getAdapter(resolvedProvider);
 
     let gatewayEnv = 'sandbox';
-    if (resolvedProvider === 'intasend') {
+    if (resolvedProvider === 'pesapal') {
+      gatewayEnv = getPesapalConfig({ requireConfigured: true }).environment;
+    } else if (resolvedProvider === 'intasend') {
       gatewayEnv = getIntaSendConfig({ requireConfigured: true }).environment;
     } else if (resolvedProvider === 'pesaflow') {
       gatewayEnv = (process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
@@ -231,7 +284,9 @@ class PaymentService {
         description,
         customerName,
         customerEmail,
-        customerPhone
+        customerPhone,
+        enableRecurring: Boolean(metadata?.enableRecurring),
+        subscriptionDetails: metadata?.subscriptionDetails || null
       });
 
       txn.gatewayInvoiceNumber = gatewayResult.gatewayInvoiceNumber || gatewayResult.trackingId || '';
@@ -291,9 +346,11 @@ class PaymentService {
     const adapter = this.getAdapter(cleanProvider);
     const signatureValid = adapter.verifyWebhookSignature(payload, headers);
     const parsed = adapter.parseWebhookPayload(payload);
-    const activeEnv = cleanProvider === 'intasend'
-      ? getIntaSendConfig({ requireConfigured: false }).environment
-      : ((process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox');
+    const activeEnv = cleanProvider === 'pesapal'
+      ? getPesapalConfig({ requireConfigured: false }).environment
+      : (cleanProvider === 'intasend'
+        ? getIntaSendConfig({ requireConfigured: false }).environment
+        : ((process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox'));
 
     // Log callback receipt immediately for auditability
     const callbackRecord = await PaymentCallback.create({
@@ -348,7 +405,7 @@ class PaymentService {
 
     // Cross-environment isolation check (never allow sandbox callback to affect production txn or vice versa)
     const txnEnv = txn.gatewayEnvironment || (txn.isSandbox === false ? 'production' : 'sandbox');
-    if (cleanProvider === 'intasend' && txnEnv !== activeEnv) {
+    if (['intasend', 'pesapal'].includes(cleanProvider) && txnEnv !== activeEnv) {
       callbackRecord.processingStatus = 'environment_mismatch';
       callbackRecord.processingMessage = `Blocked cross-environment webhook: txn is ${txnEnv}, server is ${activeEnv}`;
       await callbackRecord.save();
@@ -358,7 +415,7 @@ class PaymentService {
     }
 
     // Duplicate & Idempotency Guard
-    if (txn.status === 'paid' && parsed.status === 'paid') {
+    if (txn.status === 'paid' && (cleanProvider === 'pesapal' || parsed.status === 'paid')) {
       callbackRecord.isDuplicate = true;
       callbackRecord.processingStatus = 'ignored_duplicate';
       callbackRecord.processingMessage = 'Transaction already settled and verified; duplicate IPN safely ignored';
@@ -366,9 +423,9 @@ class PaymentService {
       return { status: 'duplicate_ignored', transaction: txn, callback: callbackRecord };
     }
 
-    // Authoritative 10-step Verification: For IntaSend, ALWAYS verify status directly from IntaSend API before trusting webhook state!
+    // Authoritative 10-step Verification: For IntaSend and Pesapal, ALWAYS verify status directly from Gateway API before trusting webhook state!
     let verifiedState = parsed;
-    if (cleanProvider === 'intasend') {
+    if (cleanProvider === 'intasend' || cleanProvider === 'pesapal') {
       const trackingToVerify = parsed.trackingId || txn.trackingId || txn.gatewayInvoiceNumber || parsed.checkoutId || txn.checkoutId;
       verifiedState = await adapter.verifyTransaction({
         accountReference: txn.accountReference,
@@ -577,7 +634,9 @@ class PaymentService {
       const sAmt = Number(bd.serviceCharge || 0);
       const pAmt = Number(bd.penalty || 0);
       const dAmt = Number(bd.deposit || 0);
-      const providerLabel = transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow';
+      const providerLabel = transaction.provider === 'pesapal'
+        ? 'Pesapal'
+        : (transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow');
 
       rentPaymentRecord = await Payment.create({
         tenantId: transaction.tenantId,

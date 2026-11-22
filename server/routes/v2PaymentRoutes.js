@@ -30,18 +30,28 @@ router.get('/providers', protect, async (req, res) => {
   }
 });
 
-// @desc    Payment Gateway Webhook / IPN Listener (IntaSend / Pesaflow - Verified & Idempotent)
-// @route   POST /api/v2/payments/webhooks/:provider
-// @access  Public (Verified cryptographically via Challenge / HMAC + Server Status Verification)
-router.post('/webhooks/:provider', paymentWebhookLimiter, async (req, res) => {
+// @desc    Payment Gateway Webhook / IPN Listener (Pesapal / IntaSend / Pesaflow - Verified & Idempotent)
+// @route   POST|GET /api/v2/payments/webhooks/:provider
+// @access  Public (Verified cryptographically / via Server Status Verification)
+async function handleGatewayWebhook(req, res) {
+  const providerCode = String(req.params.provider || 'pesapal').toLowerCase();
+  const payload = req.method === 'GET' ? (req.query || {}) : (req.body || {});
   try {
-    const providerCode = req.params.provider || 'intasend';
     const result = await PaymentService.processWebhook({
       providerCode,
-      payload: req.body,
+      payload,
       headers: req.headers,
       sourceIp: req.ip || req.headers['x-forwarded-for'] || ''
     });
+
+    if (providerCode === 'pesapal') {
+      return res.status(200).json({
+        orderNotificationType: payload.OrderNotificationType || payload.orderNotificationType || 'IPNCHANGE',
+        orderTrackingId: payload.OrderTrackingId || payload.orderTrackingId || '',
+        orderMerchantReference: payload.OrderMerchantReference || payload.orderMerchantReference || '',
+        status: 200
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -50,28 +60,57 @@ router.post('/webhooks/:provider', paymentWebhookLimiter, async (req, res) => {
     });
   } catch (err) {
     const code = err.statusCode || 400;
+    if (providerCode === 'pesapal') {
+      return res.status(code === 403 ? 403 : 200).json({
+        orderNotificationType: payload.OrderNotificationType || payload.orderNotificationType || 'IPNCHANGE',
+        orderTrackingId: payload.OrderTrackingId || payload.orderTrackingId || '',
+        orderMerchantReference: payload.OrderMerchantReference || payload.orderMerchantReference || '',
+        status: 500,
+        message: err.message
+      });
+    }
     return res.status(code).json({
       success: false,
       message: err.message
     });
   }
-});
+}
 
-// @desc    IntaSend Redirect Callback Verification (Never trusts redirect flags alone; queries IntaSend Status API directly)
-// @route   POST /api/v2/payments/callback/intasend
+router.post('/webhooks/:provider', paymentWebhookLimiter, handleGatewayWebhook);
+router.get('/webhooks/:provider', paymentWebhookLimiter, handleGatewayWebhook);
+
+// @desc    Gateway Redirect Callback Verification (Never trusts redirect flags alone; queries Gateway Status API directly)
+// @route   POST /api/v2/payments/callback/:provider
 // @access  Private
-router.post('/callback/intasend', protect, paymentCheckoutLimiter, async (req, res) => {
+router.post('/callback/:provider', protect, paymentCheckoutLimiter, async (req, res) => {
   try {
-    const { txnId, ref, tracking_id, trackingId, invoice_id, checkout_id, checkoutId, signature } = req.body;
+    const {
+      txnId,
+      ref,
+      OrderMerchantReference,
+      orderMerchantReference,
+      OrderTrackingId,
+      orderTrackingId,
+      tracking_id,
+      trackingId,
+      invoice_id,
+      checkout_id,
+      checkoutId,
+      signature
+    } = req.body;
+
+    const cleanRef = String(ref || OrderMerchantReference || orderMerchantReference || '').trim();
+    const cleanTracking = String(OrderTrackingId || orderTrackingId || tracking_id || trackingId || invoice_id || '').trim();
+    const cleanCheckout = String(checkout_id || checkoutId || '').trim();
+
     const orClauses = [];
     if (txnId && isValidObjectId(String(txnId))) orClauses.push({ _id: txnId });
-    if (ref) orClauses.push({ accountReference: String(ref).trim() });
-    if (tracking_id || trackingId || invoice_id) {
-      const tid = String(tracking_id || trackingId || invoice_id).trim();
-      orClauses.push({ trackingId: tid }, { gatewayInvoiceNumber: tid });
+    if (cleanRef) orClauses.push({ accountReference: cleanRef });
+    if (cleanTracking) {
+      orClauses.push({ trackingId: cleanTracking }, { gatewayInvoiceNumber: cleanTracking });
     }
-    if (checkout_id || checkoutId) {
-      orClauses.push({ checkoutId: String(checkout_id || checkoutId).trim() });
+    if (cleanCheckout) {
+      orClauses.push({ checkoutId: cleanCheckout });
     }
 
     if (orClauses.length === 0) {
@@ -96,14 +135,39 @@ router.post('/callback/intasend', protect, paymentCheckoutLimiter, async (req, r
     }
 
     const result = await PaymentService.verifyTransactionStatus(txn._id, {
-      trackingId: tracking_id || trackingId || invoice_id || '',
-      checkoutId: checkout_id || checkoutId || '',
+      trackingId: cleanTracking,
+      checkoutId: cleanCheckout,
       signature: signature || ''
     });
 
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+// @desc    Super Admin: List or Register Pesapal IPN URLs for current environment
+router.get('/pesapal/ipns', protect, superAdmin, async (req, res) => {
+  try {
+    const adapter = PaymentService.getAdapter('pesapal');
+    const cfg = adapter.getConfig({ requireConfigured: true });
+    const list = await adapter.listRegisteredIpns(cfg);
+    res.json({ environment: cfg.environment, ipnUrl: cfg.ipnUrl, configuredIpnId: cfg.ipnId, ipns: list });
+  } catch (err) {
+    res.status(err.statusCode || 502).json({ message: err.message });
+  }
+});
+
+router.post('/pesapal/register-ipn', protect, superAdmin, async (req, res) => {
+  try {
+    const adapter = PaymentService.getAdapter('pesapal');
+    const cfg = adapter.getConfig({ requireConfigured: true });
+    const url = req.body?.url || cfg.ipnUrl;
+    const type = req.body?.notificationType || 'POST';
+    const registered = await adapter.registerIpn(cfg, url, type);
+    res.json({ success: true, environment: cfg.environment, registered });
+  } catch (err) {
+    res.status(err.statusCode || 502).json({ message: err.message });
   }
 });
 
