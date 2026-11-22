@@ -1,61 +1,160 @@
-import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { usePreferences } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
+import { ActionModals } from "@/components/dashboard/Modals";
 import {
-  FileText,
-  Send,
-  Trash2,
   ChevronDown,
   Minus,
   ChevronLeft,
   ChevronRight,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 
+const UTILITY_TYPE_OPTIONS = [
+  { id: "water", label: "Water", defaultRate: 150 },
+  { id: "electricity", label: "Electricity", defaultRate: 28 },
+  { id: "garbage", label: "Garbage", defaultRate: 500 },
+  { id: "sewer", label: "Sewer", defaultRate: 300 },
+  { id: "gas", label: "Gas", defaultRate: 250 },
+  { id: "generator", label: "Generator", defaultRate: 100 }
+];
+
 // ─── Add Utilities Form View (MakaziFlow Layout) ──────────────────────────────
-function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
+function AddUtilitiesFormView({ properties, existingReadings = [], onBack, onSuccess }) {
   const { toast } = useToast();
+  const { formatCurrency } = usePreferences();
   const [step, setStep] = useState(1);
   const [propertyId, setPropertyId] = useState("");
-  const [utilityType, setUtilityType] = useState("");
-  const [readings, setReadings] = useState({});
+  const [utilityType, setUtilityType] = useState("water");
+  const [readingDate, setReadingDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [unitRows, setUnitRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const selectedProp = properties.find((p) => (p._id || p.id) === propertyId);
-  const units = selectedProp?.units || [];
 
   const handleContinueToReadings = () => {
-    if (!propertyId && properties.length > 0) {
+    if (!propertyId) {
       toast({
         variant: "destructive",
         title: "Property Required",
-        description: "Please select a property."
+        description: "Please select a property first."
       });
       return;
     }
+    if (!utilityType) {
+      toast({
+        variant: "destructive",
+        title: "Utility Required",
+        description: "Please select a utility item."
+      });
+      return;
+    }
+
+    const propUnits = Array.isArray(selectedProp?.units) ? selectedProp.units : [];
+    if (propUnits.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Units Found",
+        description: `${selectedProp?.name || "This property"} does not have units configured yet.`
+      });
+      return;
+    }
+
+    const opt = UTILITY_TYPE_OPTIONS.find((u) => u.id === utilityType);
+    const defaultRate = opt ? opt.defaultRate : 150;
+
+    const prepared = propUnits.map((u) => {
+      const unitNum = u.unitNumber || u.name || "";
+      const latest = existingReadings.find(
+        (r) =>
+          (r.propertyIdStr === propertyId || String(r.propertyId?._id || r.propertyId || "") === propertyId) &&
+          String(r.unit || r.unitNumber || "").toLowerCase() === String(unitNum).toLowerCase() &&
+          String(r.item || "").toLowerCase() === utilityType.toLowerCase()
+      );
+      return {
+        unitId: u._id || u.id,
+        unitNumber: unitNum,
+        previous: latest ? String(latest.current ?? 0) : "0",
+        current: "",
+        rate: latest && Number(latest.rate) > 0 ? String(latest.rate) : String(defaultRate)
+      };
+    });
+
+    setUnitRows(prepared);
     setStep(2);
   };
 
+  const updateRow = (idx, field, value) => {
+    setUnitRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  };
+
+  const preparedEntries = useMemo(() => {
+    return unitRows
+      .filter((r) => r.current !== "" && Number(r.current) >= Number(r.previous || 0))
+      .map((r) => {
+        const prev = Number(r.previous || 0);
+        const curr = Number(r.current || 0);
+        const rate = Number(r.rate || 0);
+        const consumed = Math.max(0, curr - prev);
+        return {
+          unitId: r.unitId,
+          unitNumber: r.unitNumber,
+          item: utilityType,
+          previous: prev,
+          current: curr,
+          consumed,
+          rate,
+          total: Number((consumed * rate).toFixed(2)),
+          date: readingDate
+        };
+      });
+  }, [unitRows, utilityType, readingDate]);
+
   const handleCreateInvoices = async () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    if (preparedEntries.length === 0) {
       toast({
-        title: "Utility Invoices Created",
-        description: `Successfully recorded readings and generated invoices for ${selectedProp?.name || "property"}.`
+        variant: "destructive",
+        title: "No Valid Readings",
+        description: "Enter current readings (>= previous reading) for at least one unit."
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.recordUtilitiesBatch({
+        propertyId,
+        item: utilityType,
+        date: readingDate,
+        source: "manual",
+        generateInvoices: true,
+        entries: preparedEntries
+      });
+
+      toast({
+        title: "Utility Readings Recorded",
+        description: `Saved ${res.count} ${utilityType} reading(s) for ${selectedProp?.name || "property"} (${res.invoicesCreated || 0} invoice(s) generated).`
       });
       if (onSuccess) onSuccess();
       onBack();
-    }, 600);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to Save Utilities",
+        description: err.message || "Could not record utility readings."
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
-      {/* Top Back Button */}
       <div>
         <button
           type="button"
@@ -66,82 +165,41 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
         </button>
       </div>
 
-      {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
           Add Utilities Form
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Use this form to add utility readings for a property.
+          Record meter readings or consumption for a property&apos;s units and sync invoices automatically.
         </p>
       </div>
 
-      {/* Form Card (matching Screenshot 3) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-8">
-        {/* Stepper Wizard Header */}
+        {/* Stepper */}
         <div className="flex items-center justify-center gap-6 sm:gap-10 pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                step >= 1
-                  ? "bg-[#0096ff] text-white"
-                  : "bg-slate-200 text-slate-600"
-              }`}
-            >
-              1
-            </span>
-            <span
-              className={`text-xs font-medium ${
-                step === 1 ? "text-[#0096ff] font-semibold" : "text-slate-500"
-              }`}
-            >
-              Select Filters
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                step >= 2
-                  ? "bg-[#0096ff] text-white"
-                  : "bg-slate-200 dark:bg-slate-700 text-slate-500"
-              }`}
-            >
-              2
-            </span>
-            <span
-              className={`text-xs font-medium ${
-                step === 2 ? "text-[#0096ff] font-semibold" : "text-slate-400"
-              }`}
-            >
-              Current Readings
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                step >= 3
-                  ? "bg-[#0096ff] text-white"
-                  : "bg-slate-200 dark:bg-slate-700 text-slate-500"
-              }`}
-            >
-              3
-            </span>
-            <span
-              className={`text-xs font-medium ${
-                step === 3 ? "text-[#0096ff] font-semibold" : "text-slate-400"
-              }`}
-            >
-              Create Invoices
-            </span>
-          </div>
+          {[
+            { num: 1, label: "Select Filters" },
+            { num: 2, label: "Current Readings" },
+            { num: 3, label: "Save & Invoice" }
+          ].map((s) => (
+            <div key={s.num} className="flex items-center gap-2">
+              <span
+                className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                  step >= s.num ? "bg-[#0096ff] text-white" : "bg-slate-200 dark:bg-slate-700 text-slate-500"
+                }`}
+              >
+                {s.num}
+              </span>
+              <span className={`text-xs font-medium ${step === s.num ? "text-[#0096ff] font-semibold" : "text-slate-500"}`}>
+                {s.label}
+              </span>
+            </div>
+          ))}
         </div>
 
-        {/* STEP 1: Select Property & Utility */}
+        {/* STEP 1 */}
         {step === 1 && (
-          <div className="space-y-6 max-w-2xl mx-auto py-2">
-            {/* Row 1: Select Property */}
+          <div className="space-y-5 max-w-2xl mx-auto py-2">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
               <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
                 Select Property
@@ -154,7 +212,7 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
                 >
                   <option value="">
                     {properties.length === 0
-                      ? "No properties yet — add one from the Properties page"
+                      ? "No properties yet — add one from Properties page"
                       : "Select Property"}
                   </option>
                   {properties.map((p) => (
@@ -166,7 +224,6 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
               </div>
             </div>
 
-            {/* Row 2: Select Utility */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
               <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
                 Select Utility
@@ -177,18 +234,27 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
                   onChange={(e) => setUtilityType(e.target.value)}
                   className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
                 >
-                  <option value="">Select Utility</option>
-                  <option value="water">Water</option>
-                  <option value="electricity">Electricity</option>
-                  <option value="garbage">Garbage</option>
-                  <option value="sewer">Sewer</option>
-                  <option value="gas">Gas</option>
-                  <option value="generator">Generator</option>
+                  {UTILITY_TYPE_OPTIONS.map((u) => (
+                    <option key={u.id} value={u.id}>{u.label}</option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            {/* Action Row */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+              <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
+                Reading Date
+              </label>
+              <div className="flex-1">
+                <input
+                  type="date"
+                  value={readingDate}
+                  onChange={(e) => setReadingDate(e.target.value)}
+                  className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+                />
+              </div>
+            </div>
+
             <div className="flex justify-end pt-4">
               <Button
                 type="button"
@@ -201,68 +267,99 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
           </div>
         )}
 
-        {/* STEP 2: Current Readings */}
+        {/* STEP 2 */}
         {step === 2 && (
           <div className="space-y-6 max-w-3xl mx-auto py-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                Enter Current Readings ({utilityType || "Water"})
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 capitalize">
+                Enter {utilityType} Readings — {selectedProp?.name}
               </h3>
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs text-blue-600 hover:underline cursor-pointer"
               >
                 Change Property / Utility
               </button>
             </div>
 
-            <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+            <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800 border-b text-slate-600 dark:text-slate-300">
                   <tr>
                     <th className="py-2.5 px-3">Unit</th>
-                    <th className="py-2.5 px-3">Previous Reading</th>
-                    <th className="py-2.5 px-3">Current Reading</th>
+                    <th className="py-2.5 px-3">Previous</th>
+                    <th className="py-2.5 px-3">Current</th>
+                    <th className="py-2.5 px-3">Consumed</th>
                     <th className="py-2.5 px-3">Rate (KES)</th>
+                    <th className="py-2.5 px-3 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {(units.length > 0 ? units : [{ id: "1", unitNumber: "1A" }, { id: "2", unitNumber: "1B" }]).map((u) => (
-                    <tr key={u.id || u.unitNumber}>
-                      <td className="py-2 px-3 font-medium">Unit {u.unitNumber || u.id}</td>
-                      <td className="py-2 px-3 text-slate-500">120</td>
-                      <td className="py-2 px-3">
-                        <input
-                          type="number"
-                          placeholder="e.g. 135"
-                          value={readings[u.unitNumber || u.id] || ""}
-                          onChange={(e) =>
-                            setReadings({ ...readings, [u.unitNumber || u.id]: e.target.value })
-                          }
-                          className="h-8 w-28 px-2 border rounded text-xs"
-                        />
-                      </td>
-                      <td className="py-2 px-3 text-slate-500">KES 150/unit</td>
-                    </tr>
-                  ))}
+                  {unitRows.map((u, idx) => {
+                    const prev = Number(u.previous || 0);
+                    const curr = u.current === "" ? null : Number(u.current);
+                    const rate = Number(u.rate || 0);
+                    const consumed = curr !== null && curr >= prev ? curr - prev : 0;
+                    const rowTotal = consumed * rate;
+                    return (
+                      <tr key={u.unitId || u.unitNumber}>
+                        <td className="py-2 px-3 font-medium">Unit {u.unitNumber}</td>
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            value={u.previous}
+                            onChange={(e) => updateRow(idx, "previous", e.target.value)}
+                            className="h-8 w-24 px-2 border rounded text-xs bg-background"
+                          />
+                        </td>
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            placeholder="e.g. 135"
+                            value={u.current}
+                            onChange={(e) => updateRow(idx, "current", e.target.value)}
+                            className="h-8 w-24 px-2 border rounded text-xs bg-background"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
+                          {curr !== null ? consumed : "—"}
+                        </td>
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            value={u.rate}
+                            onChange={(e) => updateRow(idx, "rate", e.target.value)}
+                            className="h-8 w-24 px-2 border rounded text-xs bg-background"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-right font-semibold text-emerald-600">
+                          {curr !== null ? formatCurrency(rowTotal) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             <div className="flex justify-between pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setStep(1)}
-                className="text-xs"
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => setStep(1)} className="text-xs">
                 &lt; Back
               </Button>
               <Button
                 type="button"
-                onClick={() => setStep(3)}
+                onClick={() => {
+                  if (preparedEntries.length === 0) {
+                    toast({
+                      variant: "destructive",
+                      title: "Enter Readings",
+                      description: "Enter a current reading (>= previous) for at least one unit to continue."
+                    });
+                    return;
+                  }
+                  setStep(3);
+                }}
                 className="bg-[#06083b] hover:bg-[#0b1065] text-white text-xs font-semibold px-6 h-9 rounded-md transition cursor-pointer"
               >
                 Continue &gt;
@@ -271,32 +368,27 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
           </div>
         )}
 
-        {/* STEP 3: Create Invoices */}
+        {/* STEP 3 */}
         {step === 3 && (
           <div className="space-y-6 max-w-2xl mx-auto py-2 text-center">
             <div className="space-y-2">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Generate Invoices
+                Confirm &amp; Record Utilities
               </h3>
               <p className="text-xs text-slate-500">
-                Ready to generate utility billing invoices for the entered meter readings.
+                Save {preparedEntries.length} unit reading(s) and generate corresponding utility invoices.
               </p>
             </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-1 text-slate-700 dark:text-slate-300">
-              <p><strong>Property:</strong> {selectedProp?.name || "Selected Property"}</p>
-              <p><strong>Utility:</strong> {utilityType || "Water"}</p>
-              <p><strong>Billing Cycle:</strong> {new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
+            <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+              <p><strong>Property:</strong> {selectedProp?.name}</p>
+              <p className="capitalize"><strong>Utility:</strong> {utilityType}</p>
+              <p><strong>Units Recorded:</strong> {preparedEntries.length}</p>
+              <p><strong>Total Billed:</strong> {formatCurrency(preparedEntries.reduce((s, r) => s + r.total, 0))}</p>
             </div>
 
             <div className="flex justify-center gap-3 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setStep(2)}
-                className="text-xs"
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => setStep(2)} className="text-xs">
                 &lt; Edit Readings
               </Button>
               <Button
@@ -306,55 +398,52 @@ function AddUtilitiesFormView({ properties, onBack, onSuccess }) {
                 className="bg-[#06083b] hover:bg-[#0b1065] text-white text-xs font-semibold px-6 h-9 rounded-md transition cursor-pointer"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
-                Generate Invoices
+                Save &amp; Generate Invoices
               </Button>
             </div>
           </div>
         )}
       </div>
-
-      {/* Bottom Back Button */}
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
-        </button>
-      </div>
     </div>
   );
 }
 
-// ─── Reset Utilities Form View (MakaziFlow Layout) ────────────────────────────
+// ─── Reset Utilities Form View ────────────────────────────────────────────────
 function ResetUtilitiesFormView({ properties, onBack, onReset }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");
   const [unitSelection, setUnitSelection] = useState("");
-  const [utilitySelection, setUtilitySelection] = useState("");
+  const [utilitySelection, setUtilitySelection] = useState("all");
   const [loading, setLoading] = useState(false);
 
-  const selectedProp = properties.find((p) => (p._id || p.id) === propertyId);
-  const units = selectedProp?.units || [];
-
-  const handleResetSubmit = (e) => {
+  const handleResetSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await api.resetUtilities({
+        propertyId: propertyId || "all",
+        unitSelection,
+        item: utilitySelection || "all"
+      });
       toast({
         title: "Utilities Reset",
-        description: `Utility readings and invoices have been cleared successfully.`
+        description: res.message || "Utility readings cleared successfully."
       });
       if (onReset) onReset();
       onBack();
-    }, 600);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Reset Failed",
+        description: err.message || "Could not clear utility readings."
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
-      {/* Top Back Button */}
       <div>
         <button
           type="button"
@@ -365,22 +454,19 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
         </button>
       </div>
 
-      {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-          Reset Utilties Form
+          Reset Utilities Form
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Use this form to reset/clear all utilities for a single unit or multiple units. This action will clear all utility readings and invoices for the selected unit(s).
+          Clear utility readings and open utility invoices for selected unit(s) or property.
         </p>
       </div>
 
-      {/* Form Card (matching Screenshot 4) */}
       <form
         onSubmit={handleResetSubmit}
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 sm:p-10 shadow-xs space-y-5"
       >
-        {/* Row 1: Select Property */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
           <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
             Select Property
@@ -392,9 +478,7 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
               className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
             >
               <option value="">
-                {properties.length === 0
-                  ? "No properties yet — add one from the Properties page"
-                  : "Select Property"}
+                {properties.length === 0 ? "No properties yet" : "All Properties"}
               </option>
               {properties.map((p) => (
                 <option key={p._id || p.id} value={p._id || p.id}>
@@ -405,7 +489,6 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
           </div>
         </div>
 
-        {/* Row 2: Select Unit(s) */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
           <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
             Select Unit(s)
@@ -415,13 +498,12 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
               type="text"
               value={unitSelection}
               onChange={(e) => setUnitSelection(e.target.value)}
-              placeholder="e.g. Unit 1A, Unit 1B (or leave blank for all)"
+              placeholder="e.g. 1A, 1B (or leave blank for all)"
               className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
             />
           </div>
         </div>
 
-        {/* Row 3: Select Utility */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
           <label className="sm:w-44 sm:text-right text-xs font-normal text-slate-700 dark:text-slate-300 shrink-0">
             Select Utility
@@ -432,17 +514,14 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
               onChange={(e) => setUtilitySelection(e.target.value)}
               className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
             >
-              <option value="">No item selected</option>
               <option value="all">All Utilities</option>
-              <option value="water">Water</option>
-              <option value="electricity">Electricity</option>
-              <option value="garbage">Garbage</option>
-              <option value="sewer">Sewer</option>
+              {UTILITY_TYPE_OPTIONS.map((u) => (
+                <option key={u.id} value={u.id}>{u.label}</option>
+              ))}
             </select>
           </div>
         </div>
 
-        {/* Action Button & Note (matching Screenshot 4) */}
         <div className="pt-4 max-w-lg mx-auto sm:ml-50 space-y-2">
           <Button
             type="submit"
@@ -452,23 +531,11 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Reset Utilities
           </Button>
-
           <p className="text-xs text-slate-500 italic pt-2">
-            Note that the utilities for the selected unit(s) will be cleared.
+            Note that the matching utility readings will be cleared permanently.
           </p>
         </div>
       </form>
-
-      {/* Bottom Back Button */}
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-[#0b1065] dark:text-blue-400 border border-[#0b1065] dark:border-blue-400 bg-white dark:bg-slate-900 rounded-md hover:bg-[#0b1065]/5 transition cursor-pointer"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
-        </button>
-      </div>
     </div>
   );
 }
@@ -477,46 +544,71 @@ function ResetUtilitiesFormView({ properties, onBack, onReset }) {
 export default function UtilitiesPage() {
   const { toast } = useToast();
   const { formatCurrency } = usePreferences();
+  const queryClient = useQueryClient();
 
-  // View state: 'list' | 'add_utilities' | 'reset_utilities'
   const [view, setView] = useState("list");
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
 
-  // Filters state
   const [utilityItems, setUtilityItems] = useState({
     water: true,
-    electricity: true
+    electricity: true,
+    garbage: true,
+    sewer: true,
+    gas: true,
+    generator: true
   });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [selectedProperty, setSelectedProperty] = useState("all");
 
-  // Collapsible sections state
   const [collapseItem, setCollapseItem] = useState(false);
   const [collapseDate, setCollapseDate] = useState(false);
   const [collapseProperty, setCollapseProperty] = useState(false);
   const [collapseTable, setCollapseTable] = useState(false);
 
-  // Pagination state
   const [perPage, setPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Selected table rows
   const [selectedRows, setSelectedRows] = useState([]);
 
-  // Fetch properties for property dropdown
   const { data: properties = [] } = useQuery({
     queryKey: ["properties"],
     queryFn: api.getProperties
   });
 
-  // Clean utilities data list
-  const [utilitiesData, setUtilitiesData] = useState([]);
-
-  const filteredUtilities = utilitiesData.filter((u) => {
-    if (!utilityItems[u.item?.toLowerCase()]) return false;
-    if (selectedProperty !== "all" && u.propertyId !== selectedProperty) return false;
-    return true;
+  const { data: utilitiesData = [] } = useQuery({
+    queryKey: ["utilities"],
+    queryFn: () => api.getUtilities()
   });
+
+  useEffect(() => {
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ["utilities"] });
+    window.addEventListener("dwello_utility_added", refresh);
+    return () => window.removeEventListener("dwello_utility_added", refresh);
+  }, [queryClient]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedRows([]);
+  }, [utilityItems, startDate, endDate, selectedProperty]);
+
+  const filteredUtilities = useMemo(() => {
+    return (Array.isArray(utilitiesData) ? utilitiesData : []).filter((u) => {
+      const itemKey = String(u.item || "").toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(utilityItems, itemKey) && !utilityItems[itemKey]) {
+        return false;
+      }
+      const propId = u.propertyIdStr || (u.propertyId?._id ? String(u.propertyId._id) : String(u.propertyId || ""));
+      if (selectedProperty !== "all" && propId !== selectedProperty) return false;
+
+      if (startDate || endDate) {
+        const d = u.date ? new Date(u.date) : null;
+        const iso = d && !isNaN(d.getTime()) ? d.toISOString().split("T")[0] : "";
+        if (startDate && iso && iso < startDate) return false;
+        if (endDate && iso && iso > endDate) return false;
+      }
+      return true;
+    });
+  }, [utilitiesData, utilityItems, selectedProperty, startDate, endDate]);
 
   const totalPages = Math.max(1, Math.ceil(filteredUtilities.length / perPage));
   const paginated = filteredUtilities.slice(
@@ -525,46 +617,51 @@ export default function UtilitiesPage() {
   );
 
   const toggleSelectAll = (e) => {
-    if (e.target.checked) {
-      setSelectedRows(paginated.map((_, idx) => idx));
-    } else {
-      setSelectedRows([]);
-    }
+    if (e.target.checked) setSelectedRows(paginated.map((_, idx) => idx));
+    else setSelectedRows([]);
   };
 
   const toggleSelectRow = (idx) => {
-    if (selectedRows.includes(idx)) {
-      setSelectedRows(selectedRows.filter((i) => i !== idx));
-    } else {
-      setSelectedRows([...selectedRows, idx]);
+    setSelectedRows((prev) => (prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]));
+  };
+
+  const handleDeleteRow = async (id) => {
+    try {
+      await api.deleteUtility(id);
+      queryClient.invalidateQueries({ queryKey: ["utilities"] });
+      toast({ title: "Deleted", description: "Utility reading removed." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Delete Failed", description: err.message });
     }
   };
 
-  // If in Add Utilities Form view
   if (view === "add_utilities") {
     return (
       <AddUtilitiesFormView
         properties={properties}
+        existingReadings={utilitiesData}
         onBack={() => setView("list")}
-        onSuccess={() => {}}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["utilities"] });
+          queryClient.invalidateQueries({ queryKey: ["invoices"] });
+        }}
       />
     );
   }
 
-  // If in Reset Utilities Form view
   if (view === "reset_utilities") {
     return (
       <ResetUtilitiesFormView
         properties={properties}
         onBack={() => setView("list")}
-        onReset={() => setUtilitiesData([])}
+        onReset={() => queryClient.invalidateQueries({ queryKey: ["utilities"] })}
       />
     );
   }
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* ────────────────── TOP ACTIONS BAR ────────────────── */}
+      {/* Top Actions */}
       <div className="flex items-center justify-end gap-2">
         <Button
           onClick={() => setView("add_utilities")}
@@ -573,14 +670,7 @@ export default function UtilitiesPage() {
           Record Utility
         </Button>
         <Button
-          onClick={() => {
-            const ev = new CustomEvent("open_action_modal", { detail: { type: "bulk_upload_utilities" } });
-            window.dispatchEvent(ev);
-            toast({
-              title: "Bulk Upload Utilities",
-              description: "Upload Excel/CSV meter readings file."
-            });
-          }}
+          onClick={() => setBulkModalOpen(true)}
           variant="outline"
           className="text-xs h-8 px-4 text-[#0b1065] border-slate-300 hover:bg-slate-50 transition cursor-pointer"
         >
@@ -595,15 +685,31 @@ export default function UtilitiesPage() {
         </Button>
       </div>
 
-      {/* ────────────────── TWO COLUMN LAYOUT ────────────────── */}
+      {/* Main Layout */}
       <div className="flex flex-col md:flex-row gap-4 items-start">
-        {/* LEFT COLUMN: Filters Sidebar */}
+        {/* Sidebar Filters */}
         <aside className="w-full md:w-64 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4 shadow-2xs">
           <div className="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-              Filters
-            </h4>
-            <Minus className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Filters</h4>
+            <button
+              type="button"
+              onClick={() => {
+                setUtilityItems({
+                  water: true,
+                  electricity: true,
+                  garbage: true,
+                  sewer: true,
+                  gas: true,
+                  generator: true
+                });
+                setStartDate("");
+                setEndDate("");
+                setSelectedProperty("all");
+              }}
+              className="text-[11px] font-medium text-blue-600 hover:underline cursor-pointer"
+            >
+              Reset
+            </button>
           </div>
 
           {/* 1. Utility Item */}
@@ -614,41 +720,21 @@ export default function UtilitiesPage() {
               className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
             >
               <span>Utility Item</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${
-                  collapseItem ? "rotate-180" : ""
-                }`}
-              />
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapseItem ? "rotate-180" : ""}`} />
             </button>
             {!collapseItem && (
               <div className="space-y-1.5 mt-2 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={utilityItems.water}
-                    onChange={(e) =>
-                      setUtilityItems({ ...utilityItems, water: e.target.checked })
-                    }
-                    className="rounded accent-blue-600 w-3.5 h-3.5"
-                  />
-                  <span className="text-slate-600 dark:text-slate-400">water</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={utilityItems.electricity}
-                    onChange={(e) =>
-                      setUtilityItems({
-                        ...utilityItems,
-                        electricity: e.target.checked
-                      })
-                    }
-                    className="rounded accent-blue-600 w-3.5 h-3.5"
-                  />
-                  <span className="text-slate-600 dark:text-slate-400">
-                    electricity
-                  </span>
-                </label>
+                {UTILITY_TYPE_OPTIONS.map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(utilityItems[opt.id])}
+                      onChange={(e) => setUtilityItems({ ...utilityItems, [opt.id]: e.target.checked })}
+                      className="rounded accent-blue-600 w-3.5 h-3.5"
+                    />
+                    <span className="text-slate-600 dark:text-slate-400">{opt.label}</span>
+                  </label>
+                ))}
               </div>
             )}
           </div>
@@ -661,11 +747,7 @@ export default function UtilitiesPage() {
               className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
             >
               <span>Date</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${
-                  collapseDate ? "rotate-180" : ""
-                }`}
-              />
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapseDate ? "rotate-180" : ""}`} />
             </button>
             {!collapseDate && (
               <div className="space-y-1.5 mt-2">
@@ -673,14 +755,12 @@ export default function UtilitiesPage() {
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  placeholder="Start date"
                   className="w-full h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-600 dark:text-slate-300 focus:outline-none focus:border-blue-500"
                 />
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  placeholder="End date"
                   className="w-full h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-600 dark:text-slate-300 focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -695,11 +775,7 @@ export default function UtilitiesPage() {
               className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1 cursor-pointer"
             >
               <span>Property / Unit</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform ${
-                  collapseProperty ? "rotate-180" : ""
-                }`}
-              />
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapseProperty ? "rotate-180" : ""}`} />
             </button>
             {!collapseProperty && (
               <div className="mt-2">
@@ -708,7 +784,9 @@ export default function UtilitiesPage() {
                   onChange={(e) => setSelectedProperty(e.target.value)}
                   className="w-full h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 text-xs text-slate-600 dark:text-slate-300 focus:outline-none focus:border-blue-500"
                 >
-                  <option value="all">No properties yet — add one</option>
+                  <option value="all">
+                    {properties.length === 0 ? "No properties yet — add one" : "All Properties"}
+                  </option>
                   {properties.map((p) => (
                     <option key={p._id || p.id} value={p._id || p.id}>
                       {p.name}
@@ -720,10 +798,9 @@ export default function UtilitiesPage() {
           </div>
         </aside>
 
-        {/* RIGHT COLUMN: Utilities Table Card */}
+        {/* Utilities Table Card */}
         <main className="flex-1 min-w-0 w-full space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden">
-            {/* Table Header Row with Title & Collapse */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">
                 Utilities List
@@ -746,10 +823,7 @@ export default function UtilitiesPage() {
                         <th className="py-2.5 px-4 w-10">
                           <input
                             type="checkbox"
-                            checked={
-                              paginated.length > 0 &&
-                              selectedRows.length === paginated.length
-                            }
+                            checked={paginated.length > 0 && selectedRows.length === paginated.length}
                             onChange={toggleSelectAll}
                             className="rounded accent-blue-600 w-3.5 h-3.5"
                           />
@@ -763,24 +837,19 @@ export default function UtilitiesPage() {
                         <th className="py-2.5 px-4">Rate</th>
                         <th className="py-2.5 px-4">Total</th>
                         <th className="py-2.5 px-4">Date</th>
+                        <th className="py-2.5 px-4 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {paginated.length === 0 ? (
                         <tr>
-                          <td
-                            colSpan={10}
-                            className="text-center py-10 text-xs text-slate-400"
-                          >
-                            No utility records found. Click <strong>Record Utility</strong> to record meter readings.
+                          <td colSpan={11} className="text-center py-10 text-xs text-slate-400">
+                            No utility records found. Click <strong>Record Utility</strong> or <strong>Bulk Upload Utilities</strong> to add readings.
                           </td>
                         </tr>
                       ) : (
                         paginated.map((item, idx) => (
-                          <tr
-                            key={idx}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                          >
+                          <tr key={item._id || idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
                             <td className="py-2.5 px-4">
                               <input
                                 type="checkbox"
@@ -790,16 +859,30 @@ export default function UtilitiesPage() {
                               />
                             </td>
                             <td className="py-2.5 px-4 font-medium">{item.propertyName}</td>
-                            <td className="py-2.5 px-4">{item.unit}</td>
+                            <td className="py-2.5 px-4">{item.unit || item.unitNumber}</td>
                             <td className="py-2.5 px-4 capitalize">{item.item}</td>
-                            <td className="py-2.5 px-4">{item.previous}</td>
-                            <td className="py-2.5 px-4">{item.current}</td>
-                            <td className="py-2.5 px-4">{item.consumed}</td>
-                            <td className="py-2.5 px-4">{formatCurrency(item.rate)}</td>
+                            <td className="py-2.5 px-4">{item.previous ?? 0}</td>
+                            <td className="py-2.5 px-4">{item.current ?? 0}</td>
+                            <td className="py-2.5 px-4">{item.consumed ?? 0}</td>
+                            <td className="py-2.5 px-4">{formatCurrency(item.rate || 0)}</td>
                             <td className="py-2.5 px-4 font-semibold text-emerald-600">
-                              {formatCurrency(item.total)}
+                              {formatCurrency(item.total || 0)}
                             </td>
-                            <td className="py-2.5 px-4 text-slate-500">{item.date}</td>
+                            <td className="py-2.5 px-4 text-slate-500 whitespace-nowrap">
+                              {item.date ? new Date(item.date).toLocaleDateString("en-KE") : "—"}
+                            </td>
+                            <td className="py-2.5 px-4 text-right">
+                              {item._id && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRow(item._id)}
+                                  title="Delete reading"
+                                  className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}
@@ -807,7 +890,7 @@ export default function UtilitiesPage() {
                   </table>
                 </div>
 
-                {/* Pagination footer */}
+                {/* Pagination */}
                 <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
                   <div className="flex items-center gap-2">
                     <select
@@ -853,6 +936,11 @@ export default function UtilitiesPage() {
           </div>
         </main>
       </div>
+
+      <ActionModals
+        modalType={bulkModalOpen ? "bulk_upload_utilities" : null}
+        onClose={() => setBulkModalOpen(false)}
+      />
     </div>
   );
 }

@@ -962,6 +962,51 @@ export const api = {
     return await parseApiResponse(response, "Failed to confirm Paybill payment");
   },
 
+  // ─── Utilities Tracking & Bulk Upload ─────────────────────────────────────
+  getUtilities: async (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    const response = await smartFetch(`${API_URL}/utilities${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load utility records");
+  },
+  recordUtilitiesBatch: async (payload) => {
+    const response = await smartFetch(`${API_URL}/utilities/batch`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to save utility readings");
+  },
+  bulkUploadUtilities: async (payload) => {
+    const response = await smartFetch(`${API_URL}/utilities/bulk`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to upload bulk utilities");
+  },
+  resetUtilities: async (payload) => {
+    const response = await smartFetch(`${API_URL}/utilities/reset`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to reset utilities");
+  },
+  deleteUtility: async (id) => {
+    const response = await smartFetch(`${API_URL}/utilities/${id}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to delete utility reading");
+  },
+
   // ─── KRA eTIMS Compliance ─────────────────────────────────────────────────
   submitInvoiceToEtims: async (invoiceId, overrideConfig = {}) => {
     const response = await smartFetch(`${API_URL}/v2/payments/etims/submit/${invoiceId}`, {

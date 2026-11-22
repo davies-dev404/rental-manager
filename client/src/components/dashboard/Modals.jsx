@@ -13,12 +13,54 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle2, Send, Upload, DollarSign, Smartphone, Users, Building, ShieldCheck, FileSpreadsheet, Wrench } from "lucide-react";
+import { CheckCircle2, Send, Upload, Download, DollarSign, Smartphone, Users, Building, ShieldCheck, FileSpreadsheet, Wrench } from "lucide-react";
+
+function parseUtilityCsvText(text = "") {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const splitLine = (line) => line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+  const headers = splitLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+
+  const findCol = (aliases) => headers.findIndex((h) => aliases.some((a) => h === a || h.includes(a)));
+  const unitIdx = findCol(["unitnumber", "unitno", "unit"]);
+  const prevIdx = findCol(["previousreading", "previous", "prev"]);
+  const currIdx = findCol(["currentreading", "current", "curr"]);
+  const rateIdx = findCol(["rate", "price", "tariff"]);
+  const totalIdx = findCol(["total", "amount", "charge"]);
+  const itemIdx = findCol(["utilitytype", "utility", "item", "type"]);
+  const propIdx = findCol(["propertyname", "property"]);
+
+  if (unitIdx === -1) return [];
+
+  return lines.slice(1).map((line) => {
+    const cols = splitLine(line);
+    const unitNumber = cols[unitIdx] || "";
+    const prevVal = prevIdx !== -1 ? Number(cols[prevIdx] || 0) : 0;
+    const currVal = currIdx !== -1 ? Number(cols[currIdx] || 0) : 0;
+    const rateVal = rateIdx !== -1 ? Number(cols[rateIdx] || 0) : 0;
+    const totalVal = totalIdx !== -1 && cols[totalIdx] !== "" ? Number(cols[totalIdx]) : undefined;
+    return {
+      unitNumber,
+      previous: Number.isFinite(prevVal) ? prevVal : 0,
+      current: Number.isFinite(currVal) ? currVal : 0,
+      rate: Number.isFinite(rateVal) ? rateVal : 0,
+      ...(Number.isFinite(totalVal) ? { total: totalVal } : {}),
+      ...(itemIdx !== -1 && cols[itemIdx] ? { item: cols[itemIdx] } : {}),
+      ...(propIdx !== -1 && cols[propIdx] ? { propertyName: cols[propIdx] } : {})
+    };
+  }).filter((r) => r.unitNumber);
+}
 
 export function ActionModals({ modalType, onClose, initialData = {} }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  const [bulkUtilityRows, setBulkUtilityRows] = useState([]);
+  const [bulkUtilityFileName, setBulkUtilityFileName] = useState("");
 
   const { data: properties = [] } = useQuery({
     queryKey: ["properties"],
@@ -466,25 +508,48 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <Button
                 className="bg-blue-600 hover:bg-blue-700 text-white"
                 disabled={loading}
-                onClick={() => {
-                  const utilityRecord = {
-                    date: new Date().toISOString().split("T")[0],
-                    property: formData.propertyName || (properties[0]?.name || "General Property"),
-                    unit: formData.unit || "All",
-                    item: formData.utilityType || "Water",
-                    previousReading: formData.prevReading || "0",
-                    currentReading: formData.currReading || "0",
-                    invoiceNumber: "INV-UTL-" + Math.floor(1000 + Math.random() * 9000)
-                  };
-                  handleSubmit(
-                    "Utility Added",
-                    `Recorded ${formData.utilityType} bill for Unit ${formData.unit || "All"}.`,
-                    "dwello_utility_added",
-                    utilityRecord
-                  );
+                onClick={async () => {
+                  const unitNum = String(formData.unit || "").trim();
+                  if (!unitNum) {
+                    toast({ variant: "destructive", title: "Unit Required", description: "Please enter a unit number." });
+                    return;
+                  }
+                  const prev = Number(formData.prevReading || 0);
+                  const curr = Number(formData.currReading || 0);
+                  const rate = Number(formData.rate || 0);
+                  setLoading(true);
+                  try {
+                    const matchedProp = properties.find((p) => p.name === formData.propertyName) || properties[0];
+                    await api.recordUtilitiesBatch({
+                      propertyId: matchedProp?._id || matchedProp?.id || "",
+                      item: String(formData.utilityType || "Water").toLowerCase(),
+                      source: "modal",
+                      entries: [{
+                        unitNumber: unitNum,
+                        previous: prev,
+                        current: curr,
+                        rate,
+                        item: String(formData.utilityType || "Water").toLowerCase(),
+                        forceRecord: true
+                      }]
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["utilities"] });
+                    queryClient.invalidateQueries({ queryKey: ["invoices"] });
+                    queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+                    window.dispatchEvent(new CustomEvent("dwello_utility_added"));
+                    toast({
+                      title: "Utility Added",
+                      description: `Recorded ${formData.utilityType} bill for Unit ${unitNum}.`
+                    });
+                    onClose();
+                  } catch (err) {
+                    toast({ variant: "destructive", title: "Save Failed", description: err.message });
+                  } finally {
+                    setLoading(false);
+                  }
                 }}
               >
-                Save Utility
+                {loading ? "Saving..." : "Save Utility"}
               </Button>
             </DialogFooter>
           </div>
@@ -1348,20 +1413,25 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 Bulk Upload Utilities
               </DialogTitle>
               <DialogDescription>
-                Upload an Excel or CSV file containing utility meter readings across units.
+                Upload a CSV file containing utility meter readings across units.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4 text-xs">
               <div className="space-y-1.5">
                 <Label className="text-xs">Select Property</Label>
                 <select
-                  value={formData.propertyName}
-                  onChange={(e) => handleChange("propertyName", e.target.value)}
+                  value={formData.propertyId || ""}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    const p = properties.find((x) => (x._id || x.id) === pid);
+                    handleChange("propertyId", pid);
+                    handleChange("propertyName", p?.name || "");
+                  }}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
                 >
-                  <option value="">All Properties / Default</option>
+                  <option value="">All Properties / Auto-Match Unit</option>
                   {properties.map((p) => (
-                    <option key={p._id || p.id} value={p.name}>
+                    <option key={p._id || p.id} value={p._id || p.id}>
                       {p.name}
                     </option>
                   ))}
@@ -1369,9 +1439,9 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs">Utility Type</Label>
+                <Label className="text-xs">Default Utility Type</Label>
                 <select
-                  value={formData.utilityType}
+                  value={formData.utilityType || "Water"}
                   onChange={(e) => handleChange("utilityType", e.target.value)}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs"
                 >
@@ -1380,19 +1450,83 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                   <option value="Garbage">Garbage Collection</option>
                   <option value="Sewer">Sewer</option>
                   <option value="Gas">Gas</option>
+                  <option value="Generator">Generator</option>
                 </select>
               </div>
 
-              <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition">
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files?.[0];
+                  if (!file) return;
+                  const txt = await file.text();
+                  const parsed = parseUtilityCsvText(txt);
+                  setBulkUtilityFileName(file.name);
+                  setBulkUtilityRows(parsed);
+                }}
+                className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition"
+              >
+                <input
+                  type="file"
+                  accept=".csv,.txt,text/csv"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const txt = await file.text();
+                    const parsed = parseUtilityCsvText(txt);
+                    setBulkUtilityFileName(file.name);
+                    setBulkUtilityRows(parsed);
+                    if (parsed.length === 0) {
+                      toast({
+                        variant: "destructive",
+                        title: "No Rows Parsed",
+                        description: "Ensure your CSV includes a 'Unit Number' column and at least one reading row."
+                      });
+                    }
+                  }}
+                />
                 <Upload className="w-8 h-8 text-slate-400 mb-2" />
                 <p className="font-semibold text-slate-700 dark:text-slate-200">
-                  Drop meter readings spreadsheet here or browse
+                  {bulkUtilityFileName ? `Selected: ${bulkUtilityFileName}` : "Drop CSV readings file here or click to browse"}
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-1">Supported formats: .XLSX, .CSV</p>
-              </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {bulkUtilityRows.length > 0
+                    ? `${bulkUtilityRows.length} reading row(s) ready to import`
+                    : "Supported format: .CSV (use Download Template below)"}
+                </p>
+              </label>
 
-              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-[11px] text-blue-800 dark:text-blue-300">
-                <span className="font-semibold">Format tip:</span> Columns should include Unit Number, Previous Reading, Current Reading, Rate.
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-[11px] text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <span className="font-semibold">CSV Columns:</span> Unit Number, Previous Reading, Current Reading, Rate, Total
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] gap-1 bg-white dark:bg-slate-900 cursor-pointer"
+                  onClick={() => {
+                    const selectedProp = properties.find((p) => (p._id || p.id) === formData.propertyId);
+                    const propUnits = selectedProp?.units?.length ? selectedProp.units : units.filter((u) => !formData.propertyId || String(u.propertyId) === String(formData.propertyId));
+                    const sampleRows = propUnits.length > 0
+                      ? propUnits.map((u) => `${u.unitNumber},0,10,150,`)
+                      : ["1A,120,135,150,", "1B,90,102,150,"];
+                    const csv = ["Unit Number,Previous Reading,Current Reading,Rate,Total", ...sampleRows].join("\n");
+                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `utilities_template_${(selectedProp?.name || "property").replace(/[^a-z0-9]/gi, "_")}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <Download className="w-3 h-3" /> Download CSV Template
+                </Button>
               </div>
             </div>
             <DialogFooter>
@@ -1402,15 +1536,40 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <Button
                 size="sm"
                 className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs font-semibold px-4"
-                disabled={loading}
-                onClick={() =>
-                  handleSubmit(
-                    "Bulk Utilities Uploaded",
-                    `Processed meter readings file for ${formData.utilityType || "Water"}. Invoices queued.`
-                  )
-                }
+                disabled={loading || bulkUtilityRows.length === 0}
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    const res = await api.bulkUploadUtilities({
+                      rows: bulkUtilityRows,
+                      propertyId: formData.propertyId || "",
+                      propertyName: formData.propertyName || "",
+                      item: String(formData.utilityType || "Water").toLowerCase(),
+                      generateInvoices: true
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["utilities"] });
+                    queryClient.invalidateQueries({ queryKey: ["invoices"] });
+                    queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
+                    window.dispatchEvent(new CustomEvent("dwello_utility_added"));
+                    toast({
+                      title: "Bulk Utilities Uploaded",
+                      description: `Imported ${res.count} reading(s) (${res.invoicesCreated || 0} invoice(s) generated).`
+                    });
+                    setBulkUtilityRows([]);
+                    setBulkUtilityFileName("");
+                    onClose();
+                  } catch (err) {
+                    toast({
+                      variant: "destructive",
+                      title: "Bulk Upload Failed",
+                      description: err.message || "Could not process CSV rows."
+                    });
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
               >
-                {loading ? "Processing..." : "Upload & Process"}
+                {loading ? "Processing..." : `Upload & Process${bulkUtilityRows.length > 0 ? ` (${bulkUtilityRows.length})` : ""}`}
               </Button>
             </DialogFooter>
           </div>

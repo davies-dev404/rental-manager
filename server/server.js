@@ -315,6 +315,7 @@ app.use('/api/dashboard', requireActiveSubscription, require('./routes/dashboard
 app.use('/api/reports', requireActiveSubscription, require('./routes/reportRoutes'));
 app.use('/api/expenses', requireActiveSubscription, require('./routes/expenseRoutes'));
 app.use('/api/units', requireActiveSubscription, unitRoutes);
+app.use('/api/utilities', requireActiveSubscription, require('./routes/utilityRoutes'));
 app.use('/api/users', userRoutes);
 app.use('/api/payments', requireActiveSubscription, paymentRoutes);
 app.use('/api/reminders', requireActiveSubscription, require('./routes/reminderRoutes'));

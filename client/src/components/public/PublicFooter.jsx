@@ -158,7 +158,7 @@ export default function PublicFooter() {
             <img
               src="https://intasend-prod-static.s3.amazonaws.com/img/trust-badges/intasend-trust-badge-with-mpesa-hr-dark.png"
               alt="IntaSend Secure Payments (PCI-DSS Compliant)"
-              className="mx-auto w-full max-w-[375px] h-auto"
+              className="mx-auto w-full max-w-sm h-auto"
             />
           </a>
           <strong>
