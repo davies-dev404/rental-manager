@@ -10,7 +10,7 @@ const Settings = require('../models/Settings');
 const TaxSubmission = require('../models/TaxSubmission');
 const Payment = require('../models/Payment');
 const { protect, admin, superAdmin } = require('../middleware/authMiddleware');
-const { validateObjectId, isValidObjectId, escapeRegExp } = require('../middleware/securityMiddleware');
+const { validateObjectId, isValidObjectId, escapeRegExp, paymentCheckoutLimiter, paymentWebhookLimiter } = require('../middleware/securityMiddleware');
 const PaymentService = require('../services/payments/PaymentService');
 const EtimsService = require('../services/tax/EtimsService');
 const { createStructuredInvoice } = require('../services/invoiceService');
@@ -30,12 +30,12 @@ router.get('/providers', protect, async (req, res) => {
   }
 });
 
-// @desc    Pesaflow & Gateway IPN Webhook Listener (Signature Verified, Idempotent)
+// @desc    Payment Gateway Webhook / IPN Listener (IntaSend / Pesaflow - Verified & Idempotent)
 // @route   POST /api/v2/payments/webhooks/:provider
-// @access  Public (Verified cryptographically via HMAC-SHA256)
-router.post('/webhooks/:provider', async (req, res) => {
+// @access  Public (Verified cryptographically via Challenge / HMAC + Server Status Verification)
+router.post('/webhooks/:provider', paymentWebhookLimiter, async (req, res) => {
   try {
-    const providerCode = req.params.provider || 'pesaflow';
+    const providerCode = req.params.provider || 'intasend';
     const result = await PaymentService.processWebhook({
       providerCode,
       payload: req.body,
@@ -57,16 +57,66 @@ router.post('/webhooks/:provider', async (req, res) => {
   }
 });
 
-// @desc    Initiate Tenant Rent / Utility / Penalty Payment via Pesaflow
+// @desc    IntaSend Redirect Callback Verification (Never trusts redirect flags alone; queries IntaSend Status API directly)
+// @route   POST /api/v2/payments/callback/intasend
+// @access  Private
+router.post('/callback/intasend', protect, paymentCheckoutLimiter, async (req, res) => {
+  try {
+    const { txnId, ref, tracking_id, trackingId, invoice_id, checkout_id, checkoutId, signature } = req.body;
+    const orClauses = [];
+    if (txnId && isValidObjectId(String(txnId))) orClauses.push({ _id: txnId });
+    if (ref) orClauses.push({ accountReference: String(ref).trim() });
+    if (tracking_id || trackingId || invoice_id) {
+      const tid = String(tracking_id || trackingId || invoice_id).trim();
+      orClauses.push({ trackingId: tid }, { gatewayInvoiceNumber: tid });
+    }
+    if (checkout_id || checkoutId) {
+      orClauses.push({ checkoutId: String(checkout_id || checkoutId).trim() });
+    }
+
+    if (orClauses.length === 0) {
+      return res.status(400).json({ message: 'Transaction reference or tracking ID is required.' });
+    }
+
+    const txn = await PaymentTransaction.findOne({ $or: orClauses });
+    if (!txn) {
+      return res.status(404).json({ message: 'Matching transaction not found.' });
+    }
+
+    const userId = String(req.user._id || req.user.id);
+    const isLandlordOwner = String(txn.landlordId) === userId;
+    const isTenantOwner = Boolean(txn.tenantId && req.user.tenantId && String(txn.tenantId) === String(req.user.tenantId));
+    if (
+      !isLandlordOwner &&
+      !isTenantOwner &&
+      !req.user.isSuperAdmin &&
+      req.user.role !== 'superadmin'
+    ) {
+      return res.status(403).json({ message: 'Not authorized to verify this transaction.' });
+    }
+
+    const result = await PaymentService.verifyTransactionStatus(txn._id, {
+      trackingId: tracking_id || trackingId || invoice_id || '',
+      checkoutId: checkout_id || checkoutId || '',
+      signature: signature || ''
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+// @desc    Initiate Tenant Rent / Utility / Penalty Payment via Active Gateway (IntaSend / Pesaflow)
 // @route   POST /api/v2/payments/tenant/initiate
 // @access  Private (Tenant or Landlord collecting on behalf of tenant)
-router.post('/tenant/initiate', protect, async (req, res) => {
+router.post('/tenant/initiate', protect, paymentCheckoutLimiter, async (req, res) => {
   try {
     const {
       tenantId,
       invoiceId,
       paymentChannel = 'hosted_checkout',
-      provider = 'pesaflow',
+      provider = '',
       paymentCategory = 'rent',
       amount,
       phone,
@@ -165,9 +215,10 @@ router.post('/tenant/initiate', protect, async (req, res) => {
       });
     }
 
+    const chosenProvider = (provider || '').trim().toLowerCase() || PaymentService.resolveDefaultProvider();
     const result = await PaymentService.initiateTransaction({
       idempotencyKey: idempotencyKey || undefined,
-      providerCode: provider,
+      providerCode: chosenProvider,
       paymentChannel,
       paymentCategory,
       landlordId,
@@ -208,11 +259,17 @@ router.get('/verify/:transactionId', protect, validateObjectId('transactionId'),
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
 
     const userId = String(req.user._id || req.user.id);
-    if (String(txn.landlordId) !== userId && String(txn.tenantId) !== String(req.user.tenantId) && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
+    const isLandlordOwner = String(txn.landlordId) === userId;
+    const isTenantOwner = Boolean(txn.tenantId && req.user.tenantId && String(txn.tenantId) === String(req.user.tenantId));
+    if (!isLandlordOwner && !isTenantOwner && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to access this transaction' });
     }
 
-    const result = await PaymentService.verifyTransactionStatus(txn._id);
+    const result = await PaymentService.verifyTransactionStatus(txn._id, {
+      trackingId: req.query.tracking_id || req.query.trackingId || '',
+      checkoutId: req.query.checkout_id || req.query.checkoutId || '',
+      signature: req.query.signature || ''
+    });
     res.json(result);
   } catch (err) {
     res.status(err.statusCode || 400).json({ message: err.message });
@@ -362,7 +419,9 @@ router.get('/invoices/:id/pdf', protect, validateObjectId('id'), async (req, res
     if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
 
     const userId = String(req.user._id || req.user.id);
-    if (String(invoice.landlordId) !== userId && String(invoice.tenantId) !== String(req.user.tenantId) && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
+    const isLandlordOwner = String(invoice.landlordId) === userId;
+    const isTenantOwner = Boolean(invoice.tenantId && req.user.tenantId && String(invoice.tenantId) === String(req.user.tenantId));
+    if (!isLandlordOwner && !isTenantOwner && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this invoice' });
     }
 
@@ -389,7 +448,9 @@ router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res
     if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
 
     const userId = String(req.user._id || req.user.id);
-    if (String(receipt.landlordId) !== userId && String(receipt.tenantId) !== String(req.user.tenantId) && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
+    const isLandlordOwner = String(receipt.landlordId) === userId;
+    const isTenantOwner = Boolean(receipt.tenantId && req.user.tenantId && String(receipt.tenantId) === String(req.user.tenantId));
+    if (!isLandlordOwner && !isTenantOwner && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this receipt' });
     }
 

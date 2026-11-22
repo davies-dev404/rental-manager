@@ -9,7 +9,9 @@ const Payment = require('../../models/Payment');
 const Tenant = require('../../models/Tenant');
 const User = require('../../models/User');
 const Unit = require('../../models/Unit');
+const IntaSendAdapter = require('./IntaSendAdapter');
 const PesaflowAdapter = require('./PesaflowAdapter');
+const { getIntaSendConfig } = require('../../config/intasendConfig');
 const { EquityEazzyBizAdapter, KcbBuniAdapter, CoopBankAdapter } = require('./BankAdapters');
 const { activatePaidSubscription } = require('../subscriptionService');
 const { sendPaymentReceipt } = require('../../utils/sendPaymentReceipt');
@@ -18,6 +20,7 @@ const logActivity = require('../../utils/logActivity');
 class PaymentService {
   constructor() {
     this.adapters = {
+      intasend: new IntaSendAdapter(),
       pesaflow: new PesaflowAdapter(),
       equity_eazzybiz: new EquityEazzyBizAdapter(),
       kcb_buni: new KcbBuniAdapter(),
@@ -25,27 +28,49 @@ class PaymentService {
     };
   }
 
-  getAdapter(providerCode = 'pesaflow') {
-    const adapter = this.adapters[providerCode];
+  resolveDefaultProvider() {
+    const explicit = (process.env.PAYMENT_DEFAULT_PROVIDER || '').trim().toLowerCase();
+    if (explicit && this.adapters[explicit]) return explicit;
+    if (this.adapters.intasend.isConfigured()) return 'intasend';
+    if (this.adapters.pesaflow.isConfigured()) return 'pesaflow';
+    return 'intasend';
+  }
+
+  getAdapter(providerCode) {
+    const code = (providerCode || this.resolveDefaultProvider()).toLowerCase();
+    const adapter = this.adapters[code];
     if (!adapter) {
-      throw new Error(`Unsupported payment provider: ${providerCode}`);
+      throw new Error(`Unsupported payment provider: ${code}`);
     }
     return adapter;
   }
 
   async seedProviders() {
+    const intasendCfg = getIntaSendConfig({ requireConfigured: false });
+    const defaultProvider = this.resolveDefaultProvider();
     const defs = [
+      {
+        code: 'intasend',
+        name: 'IntaSend Payment Gateway',
+        isPrimary: defaultProvider === 'intasend',
+        enabled: intasendCfg.isConfigured,
+        environment: intasendCfg.environment,
+        supportedChannels: ['hosted_checkout', 'mpesa_stk', 'card'],
+        accountPrefix: 'MF',
+        requiresMerchantAuthorization: false,
+        notes: 'Primary payment gateway supporting M-Pesa STK Push, Visa, and Mastercard Hosted Checkout.'
+      },
       {
         code: 'pesaflow',
         name: 'Pesaflow Payment Gateway',
-        isPrimary: true,
-        enabled: true,
-        environment: (process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase(),
+        isPrimary: defaultProvider === 'pesaflow',
+        enabled: this.adapters.pesaflow.isConfigured(),
+        environment: (process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox',
         supportedChannels: ['hosted_checkout', 'mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer', 'ussd'],
         paybillBusinessNumber: process.env.PESAFLOW_PAYBILL_NUMBER || '',
         accountPrefix: 'MF',
         requiresMerchantAuthorization: true,
-        notes: 'Primary centralized payment gateway for M-Pesa, Cards, Bank Transfers, and USSD.'
+        notes: 'Secondary government/eCitizen payment gateway adapter.'
       },
       {
         code: 'equity_eazzybiz',
@@ -100,7 +125,7 @@ class PaymentService {
    */
   async initiateTransaction({
     idempotencyKey = null,
-    providerCode = 'pesaflow',
+    providerCode = null,
     paymentChannel = 'hosted_checkout',
     paymentCategory,
     landlordId,
@@ -109,6 +134,8 @@ class PaymentService {
     unitId = null,
     subscriptionId = null,
     invoiceId = null,
+    planCode = '',
+    billingCycle = '',
     amount,
     currency = 'KES',
     customerName = '',
@@ -130,11 +157,32 @@ class PaymentService {
     if (idempotencyKey) {
       const existing = await PaymentTransaction.findOne({ idempotencyKey });
       if (existing) {
-        return { transaction: existing, deduplicated: true };
+        return {
+          transaction: existing,
+          gateway: {
+            provider: existing.provider,
+            environment: existing.gatewayEnvironment || 'sandbox',
+            isSandbox: Boolean(existing.isSandbox),
+            checkoutUrl: existing.checkoutUrl || '',
+            trackingId: existing.trackingId || '',
+            checkoutId: existing.checkoutId || ''
+          },
+          deduplicated: true
+        };
       }
     }
 
-    const adapter = this.getAdapter(providerCode);
+    const resolvedProvider = (providerCode || this.resolveDefaultProvider()).toLowerCase();
+    const adapter = this.getAdapter(resolvedProvider);
+
+    let gatewayEnv = 'sandbox';
+    if (resolvedProvider === 'intasend') {
+      gatewayEnv = getIntaSendConfig({ requireConfigured: true }).environment;
+    } else if (resolvedProvider === 'pesaflow') {
+      gatewayEnv = (process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
+    }
+    const isSandbox = gatewayEnv === 'sandbox';
+
     const internalTransactionId = this.generateInternalId('TXN-MF');
     const prefix = paymentCategory.startsWith('subscription') || paymentCategory === 'unit_upgrade' ? 'MFSUB' : 'MFRNT';
     const accountReference = `${prefix}-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
@@ -148,23 +196,29 @@ class PaymentService {
       unitId: unitId || undefined,
       subscriptionId: subscriptionId || undefined,
       invoiceId: invoiceId || undefined,
-      provider: providerCode,
+      provider: resolvedProvider,
+      gatewayEnvironment: gatewayEnv,
+      isSandbox,
       paymentChannel,
       paymentCategory,
+      planCode: planCode || '',
+      billingCycle: billingCycle || '',
       amount: Number(amount),
       currency: cleanCurrency,
       accountReference,
+      merchantReference: accountReference,
       customerName,
       customerEmail,
       customerPhone,
       status: 'pending',
       reconciliationStatus: 'pending',
       chargeBreakdown,
-      metadata
+      metadata: { ...metadata, environment: gatewayEnv }
     });
 
     try {
       const gatewayResult = await adapter.initiatePayment({
+        transactionDbId: String(txn._id),
         internalTransactionId,
         accountReference,
         amount: Number(amount),
@@ -176,12 +230,19 @@ class PaymentService {
         customerPhone
       });
 
-      txn.gatewayInvoiceNumber = gatewayResult.gatewayInvoiceNumber || '';
+      txn.gatewayInvoiceNumber = gatewayResult.gatewayInvoiceNumber || gatewayResult.trackingId || '';
+      txn.trackingId = gatewayResult.trackingId || gatewayResult.gatewayInvoiceNumber || '';
+      txn.checkoutId = gatewayResult.checkoutId || '';
+      txn.checkoutSignature = gatewayResult.checkoutSignature || '';
       txn.checkoutUrl = gatewayResult.checkoutUrl || '';
       txn.paybillBusinessNumber = gatewayResult.paybillInstructions?.businessNumber || '';
+      txn.gatewayEnvironment = gatewayResult.environment || gatewayEnv;
+      txn.isSandbox = txn.gatewayEnvironment === 'sandbox';
       txn.metadata = {
         ...txn.metadata,
-        environment: gatewayResult.environment,
+        environment: txn.gatewayEnvironment,
+        trackingId: txn.trackingId,
+        checkoutId: txn.checkoutId,
         paybillInstructions: gatewayResult.paybillInstructions || null,
         checkoutParams: gatewayResult.checkoutParams ? { ...gatewayResult.checkoutParams, secureHash: '[SIGNED]' } : null,
         requiresFormPost: Boolean(gatewayResult.requiresFormPost)
@@ -192,9 +253,12 @@ class PaymentService {
       return {
         transaction: txn,
         gateway: {
-          provider: providerCode,
-          environment: gatewayResult.environment,
-          checkoutUrl: gatewayResult.checkoutUrl,
+          provider: resolvedProvider,
+          environment: txn.gatewayEnvironment,
+          isSandbox: txn.isSandbox,
+          trackingId: txn.trackingId,
+          checkoutId: txn.checkoutId,
+          checkoutUrl: txn.checkoutUrl,
           checkoutParams: gatewayResult.checkoutParams || null,
           paybillInstructions: gatewayResult.paybillInstructions || null,
           requiresFormPost: Boolean(gatewayResult.requiresFormPost)
@@ -219,14 +283,20 @@ class PaymentService {
    * - Triggers Subscription Activation OR Tenant Rental Allocation & Receipt generation
    */
   async processWebhook({ providerCode = 'pesaflow', payload, headers = {}, sourceIp = '' }) {
-    const adapter = this.getAdapter(providerCode);
+    const cleanProvider = String(providerCode || 'pesaflow').toLowerCase();
+    const adapter = this.getAdapter(cleanProvider);
     const signatureValid = adapter.verifyWebhookSignature(payload, headers);
     const parsed = adapter.parseWebhookPayload(payload);
+    const activeEnv = cleanProvider === 'intasend'
+      ? getIntaSendConfig({ requireConfigured: false }).environment
+      : ((process.env.PESAFLOW_ENVIRONMENT || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox');
 
     // Log callback receipt immediately for auditability
     const callbackRecord = await PaymentCallback.create({
-      provider: providerCode,
+      provider: cleanProvider,
+      gatewayEnvironment: activeEnv,
       accountReference: parsed.accountReference,
+      trackingId: parsed.trackingId || '',
       providerReference: parsed.providerReference,
       gatewayInvoiceNumber: parsed.gatewayInvoiceNumber,
       signatureValid,
@@ -235,6 +305,7 @@ class PaymentService {
       payload,
       headers: {
         'x-pesaflow-signature': headers['x-pesaflow-signature'] || undefined,
+        'x-intasend-challenge': headers['x-intasend-challenge'] || undefined,
         'content-type': headers['content-type'] || undefined
       },
       sourceIp
@@ -242,23 +313,26 @@ class PaymentService {
 
     if (!signatureValid) {
       callbackRecord.processingStatus = 'rejected_signature';
-      callbackRecord.processingMessage = 'Invalid or missing gateway webhook signature';
+      callbackRecord.processingMessage = 'Invalid or missing gateway webhook signature/challenge';
       await callbackRecord.save();
       const err = new Error('Invalid payment callback signature');
       err.statusCode = 401;
       throw err;
     }
 
-    // Find matching PaymentTransaction
+    // Find matching PaymentTransaction (scoped to matching provider & environment for IntaSend)
     const orClauses = [];
     if (parsed.accountReference) orClauses.push({ accountReference: parsed.accountReference });
+    if (parsed.trackingId) orClauses.push({ trackingId: parsed.trackingId });
+    if (parsed.checkoutId) orClauses.push({ checkoutId: parsed.checkoutId });
     if (parsed.gatewayInvoiceNumber) orClauses.push({ gatewayInvoiceNumber: parsed.gatewayInvoiceNumber });
     if (parsed.providerReference) orClauses.push({ providerReference: parsed.providerReference });
 
-    let txn = orClauses.length > 0 ? await PaymentTransaction.findOne({ $or: orClauses }) : null;
+    let txn = orClauses.length > 0
+      ? await PaymentTransaction.findOne({ provider: cleanProvider, $or: orClauses })
+      : null;
 
     if (!txn) {
-      // Unmatched Paybill / direct transfer callback: record safely for Admin reconciliation without activating any service
       callbackRecord.processingStatus = 'unmatched';
       callbackRecord.processingMessage = 'No matching pending transaction found for reference';
       await callbackRecord.save();
@@ -267,6 +341,17 @@ class PaymentService {
 
     callbackRecord.transactionId = txn._id;
     callbackRecord.internalTransactionId = txn.internalTransactionId;
+
+    // Cross-environment isolation check (never allow sandbox callback to affect production txn or vice versa)
+    const txnEnv = txn.gatewayEnvironment || (txn.isSandbox ? 'sandbox' : 'sandbox');
+    if (cleanProvider === 'intasend' && txnEnv !== activeEnv) {
+      callbackRecord.processingStatus = 'environment_mismatch';
+      callbackRecord.processingMessage = `Blocked cross-environment webhook: txn is ${txnEnv}, server is ${activeEnv}`;
+      await callbackRecord.save();
+      const err = new Error(callbackRecord.processingMessage);
+      err.statusCode = 403;
+      throw err;
+    }
 
     // Duplicate & Idempotency Guard
     if (txn.status === 'paid' && parsed.status === 'paid') {
@@ -277,22 +362,48 @@ class PaymentService {
       return { status: 'duplicate_ignored', transaction: txn, callback: callbackRecord };
     }
 
+    // Authoritative 10-step Verification: For IntaSend, ALWAYS verify status directly from IntaSend API before trusting webhook state!
+    let verifiedState = parsed;
+    if (cleanProvider === 'intasend') {
+      const trackingToVerify = parsed.trackingId || txn.trackingId || txn.gatewayInvoiceNumber || parsed.checkoutId || txn.checkoutId;
+      verifiedState = await adapter.verifyTransaction({
+        accountReference: txn.accountReference,
+        gatewayInvoiceNumber: txn.gatewayInvoiceNumber,
+        trackingId: trackingToVerify,
+        checkoutId: parsed.checkoutId || txn.checkoutId,
+        signature: txn.checkoutSignature || undefined,
+        expectedEnvironment: txnEnv
+      });
+      if (!verifiedState.verifiedReferenceMatch) {
+        callbackRecord.processingStatus = 'rejected_signature';
+        callbackRecord.processingMessage = `Reference mismatch: expected ${txn.accountReference}, gateway returned ${verifiedState.accountReference}`;
+        await callbackRecord.save();
+        const err = new Error(callbackRecord.processingMessage);
+        err.statusCode = 400;
+        throw err;
+      }
+      if (trackingToVerify && !txn.trackingId) {
+        txn.trackingId = trackingToVerify;
+      }
+    }
+
     // Handle Failed / Cancelled / Reversed states
-    if (parsed.status === 'failed' || parsed.status === 'cancelled') {
-      txn.status = parsed.status;
-      txn.failureReason = parsed.failureReason || `Gateway reported status: ${parsed.rawStatus}`;
+    if (verifiedState.status === 'failed' || verifiedState.status === 'cancelled') {
+      txn.status = verifiedState.status;
+      txn.failureReason = verifiedState.failureReason || `Gateway reported status: ${verifiedState.rawStatus}`;
+      txn.verifiedAt = new Date();
       txn.updatedAt = new Date();
       await txn.save();
       callbackRecord.processingStatus = 'failed_status';
       callbackRecord.processingMessage = txn.failureReason;
       await callbackRecord.save();
-      return { status: parsed.status, transaction: txn, callback: callbackRecord };
+      return { status: verifiedState.status, transaction: txn, callback: callbackRecord };
     }
 
-    if (parsed.status === 'reversed') {
+    if (verifiedState.status === 'reversed') {
       await this.handleReversal({
         transactionId: txn._id,
-        reason: parsed.failureReason || 'Gateway reversal / chargeback callback'
+        reason: verifiedState.failureReason || 'Gateway reversal / chargeback callback'
       });
       callbackRecord.processingStatus = 'processed';
       callbackRecord.processingMessage = 'Payment reversal processed';
@@ -300,7 +411,7 @@ class PaymentService {
       return { status: 'reversed', transaction: await PaymentTransaction.findById(txn._id), callback: callbackRecord };
     }
 
-    if (parsed.status !== 'paid') {
+    if (verifiedState.status !== 'paid') {
       txn.status = 'processing';
       txn.updatedAt = new Date();
       await txn.save();
@@ -308,9 +419,9 @@ class PaymentService {
     }
 
     // Currency & Amount Validation before settlement
-    if (parsed.currency !== txn.currency) {
+    if (verifiedState.currency !== txn.currency) {
       txn.reconciliationStatus = 'amount_mismatch';
-      txn.failureReason = `Currency mismatch: expected ${txn.currency}, received ${parsed.currency}`;
+      txn.failureReason = `Currency mismatch: expected ${txn.currency}, received ${verifiedState.currency}`;
       await txn.save();
       callbackRecord.processingStatus = 'currency_mismatch';
       callbackRecord.processingMessage = txn.failureReason;
@@ -318,10 +429,10 @@ class PaymentService {
       return { status: 'currency_mismatch', transaction: txn, callback: callbackRecord };
     }
 
-    if (Number(parsed.amountPaid) < Number(txn.amount)) {
-      txn.amountPaid = Number(parsed.amountPaid);
+    if (Number(verifiedState.amountPaid) < Number(txn.amount)) {
+      txn.amountPaid = Number(verifiedState.amountPaid);
       txn.reconciliationStatus = 'amount_mismatch';
-      txn.failureReason = `Underpayment: expected ${txn.currency} ${txn.amount}, received ${parsed.currency} ${parsed.amountPaid}`;
+      txn.failureReason = `Underpayment: expected ${txn.currency} ${txn.amount}, received ${verifiedState.currency} ${verifiedState.amountPaid}`;
       await txn.save();
       callbackRecord.processingStatus = 'amount_mismatch';
       callbackRecord.processingMessage = txn.failureReason;
@@ -331,14 +442,16 @@ class PaymentService {
 
     const settled = await this.finalizeVerifiedSettlement({
       transaction: txn,
-      providerReference: parsed.providerReference || txn.accountReference,
-      amountPaid: Number(parsed.amountPaid),
-      paymentChannel: parsed.paymentChannel || txn.paymentChannel,
-      paidAt: parsed.paidAt
+      providerReference: verifiedState.providerReference || txn.accountReference,
+      amountPaid: Number(verifiedState.amountPaid),
+      paymentChannel: verifiedState.paymentChannel || txn.paymentChannel,
+      paymentMethodDetail: verifiedState.paymentMethodDetail || '',
+      trackingId: verifiedState.trackingId || txn.trackingId || '',
+      paidAt: verifiedState.paidAt
     });
 
     callbackRecord.processingStatus = 'processed';
-    callbackRecord.processingMessage = 'Payment verified, reconciled, and settled';
+    callbackRecord.processingMessage = 'Payment independently verified with gateway, reconciled, and settled';
     await callbackRecord.save();
 
     return { status: 'paid', ...settled, callback: callbackRecord };
@@ -350,7 +463,16 @@ class PaymentService {
    * - Allocates either Subscription Activation OR Tenant Rent Collection
    * - Updates Invoice & creates PaymentReceipt
    */
-  async finalizeVerifiedSettlement({ transaction, providerReference, amountPaid, paymentChannel, paidAt = new Date(), actorId = null }) {
+  async finalizeVerifiedSettlement({
+    transaction,
+    providerReference,
+    amountPaid,
+    paymentChannel,
+    paymentMethodDetail = '',
+    trackingId = '',
+    paidAt = new Date(),
+    actorId = null
+  }) {
     // Prevent duplicate settlement
     if (transaction.status === 'paid') {
       return { transaction, alreadySettled: true };
@@ -381,6 +503,8 @@ class PaymentService {
           status: 'paid',
           amountPaid: Number(amountPaid || transaction.amount),
           providerReference: providerReference || transaction.internalTransactionId,
+          ...(trackingId ? { trackingId, gatewayInvoiceNumber: trackingId } : {}),
+          ...(paymentMethodDetail ? { paymentMethodDetail } : {}),
           paymentChannel: nextChannel,
           reconciliationStatus: 'reconciled',
           paidAt,
@@ -449,6 +573,7 @@ class PaymentService {
       const sAmt = Number(bd.serviceCharge || 0);
       const pAmt = Number(bd.penalty || 0);
       const dAmt = Number(bd.deposit || 0);
+      const providerLabel = transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow';
 
       rentPaymentRecord = await Payment.create({
         tenantId: transaction.tenantId,
@@ -465,7 +590,7 @@ class PaymentService {
         serviceChargeAmount: sAmt,
         penaltyAmount: pAmt,
         date: paidAt,
-        method: `Pesaflow (${transaction.paymentChannel})`,
+        method: `${providerLabel} (${transaction.paymentChannel})`,
         status: 'paid',
         monthCovered: `${new Date(paidAt).getFullYear()}-${String(new Date(paidAt).getMonth() + 1).padStart(2, '0')}`,
         type: transaction.paymentCategory === 'combined' ? 'Combined' : transaction.paymentCategory,
@@ -528,7 +653,7 @@ class PaymentService {
     await logActivity(
       landlord || 'System',
       'Payment Verified & Reconciled',
-      `${isSubCategory ? 'Subscription' : 'Tenant'} payment of KES ${transaction.amountPaid.toLocaleString()} verified via ${transaction.provider} (${transaction.providerReference})`,
+      `${isSubCategory ? 'Subscription' : 'Tenant'} payment of KES ${transaction.amountPaid.toLocaleString()} verified via ${transaction.provider} [${transaction.gatewayEnvironment || 'sandbox'}] (${transaction.providerReference})`,
       'payment',
       'success'
     );
@@ -544,25 +669,61 @@ class PaymentService {
   }
 
   /**
-   * Reconcile a single transaction directly by querying Pesaflow / provider API
+   * Reconcile a single transaction directly by querying IntaSend / provider status API.
+   * Never marks paid on client-supplied flags; always checks server-to-server gateway status.
    */
-  async verifyTransactionStatus(transactionId) {
+  async verifyTransactionStatus(transactionId, gatewayHints = {}) {
     const txn = await PaymentTransaction.findById(transactionId);
     if (!txn) throw new Error('Transaction not found');
     if (txn.status === 'paid') return { transaction: txn, alreadySettled: true };
 
     const adapter = this.getAdapter(txn.provider);
+    const trackingId = String(gatewayHints.trackingId || gatewayHints.invoiceId || txn.trackingId || txn.gatewayInvoiceNumber || '').trim();
+    const checkoutId = String(gatewayHints.checkoutId || txn.checkoutId || '').trim();
+    const signature = String(gatewayHints.signature || txn.checkoutSignature || '').trim();
+
     const verified = await adapter.verifyTransaction({
       accountReference: txn.accountReference,
-      gatewayInvoiceNumber: txn.gatewayInvoiceNumber
+      gatewayInvoiceNumber: txn.gatewayInvoiceNumber,
+      trackingId,
+      checkoutId,
+      signature,
+      expectedEnvironment: txn.gatewayEnvironment || (txn.isSandbox ? 'sandbox' : 'sandbox')
     });
 
-    if (verified.status === 'paid' && verified.currency === txn.currency && Number(verified.amountPaid) >= Number(txn.amount)) {
+    if (verified.verifiedReferenceMatch === false) {
+      const err = new Error(`Transaction reference mismatch: expected ${txn.accountReference}, gateway returned ${verified.accountReference}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (verified.trackingId && !txn.trackingId) {
+      txn.trackingId = verified.trackingId;
+      txn.gatewayInvoiceNumber = verified.trackingId;
+    }
+
+    if (verified.status === 'paid') {
+      if (verified.currency !== txn.currency) {
+        txn.reconciliationStatus = 'amount_mismatch';
+        txn.failureReason = `Currency mismatch: expected ${txn.currency}, received ${verified.currency}`;
+        await txn.save();
+        return { transaction: txn, gatewayStatus: verified };
+      }
+      if (Number(verified.amountPaid) < Number(txn.amount)) {
+        txn.amountPaid = Number(verified.amountPaid);
+        txn.reconciliationStatus = 'amount_mismatch';
+        txn.failureReason = `Underpayment: expected ${txn.currency} ${txn.amount}, received ${verified.currency} ${verified.amountPaid}`;
+        await txn.save();
+        return { transaction: txn, gatewayStatus: verified };
+      }
+
       return await this.finalizeVerifiedSettlement({
         transaction: txn,
         providerReference: verified.providerReference || txn.accountReference,
         amountPaid: verified.amountPaid,
         paymentChannel: verified.paymentChannel || txn.paymentChannel,
+        paymentMethodDetail: verified.paymentMethodDetail || '',
+        trackingId: verified.trackingId || trackingId,
         paidAt: verified.paidAt
       });
     }
@@ -570,6 +731,11 @@ class PaymentService {
     if (verified.status === 'failed' || verified.status === 'cancelled') {
       txn.status = verified.status;
       txn.failureReason = verified.failureReason || 'Verified failed/cancelled by gateway';
+      txn.verifiedAt = new Date();
+      txn.updatedAt = new Date();
+      await txn.save();
+    } else if (verified.status === 'processing' && txn.status !== 'processing') {
+      txn.status = 'processing';
       txn.updatedAt = new Date();
       await txn.save();
     }

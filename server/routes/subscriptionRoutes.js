@@ -17,6 +17,8 @@ const {
 } = require('../services/subscriptionService');
 const { createStructuredInvoice } = require('../services/invoiceService');
 const PaymentService = require('../services/payments/PaymentService');
+const { getIntaSendConfig } = require('../config/intasendConfig');
+const { paymentCheckoutLimiter } = require('../middleware/securityMiddleware');
 
 // @desc    Get all active subscription plans
 // @route   GET /api/subscriptions/plans
@@ -108,6 +110,7 @@ router.get('/my', protect, async (req, res) => {
       lockReason: lockState.lockReason || '',
       daysRemaining: lockState.daysRemaining,
       isTrialExpiringSoon: Boolean(lockState.isTrialExpiringSoon),
+      gatewayEnvironment: getIntaSendConfig({ requireConfigured: false }).environment,
       history,
       invoices,
       receipts,
@@ -118,17 +121,17 @@ router.get('/my', protect, async (req, res) => {
   }
 });
 
-// @desc    Initiate a subscription purchase, upgrade, downgrade or renewal via Pesaflow
+// @desc    Initiate a subscription purchase, upgrade, downgrade or renewal via configured gateway (IntaSend primary)
 // @route   POST /api/subscriptions/subscribe
 // @access  Private (Landlord / Admin)
-router.post('/subscribe', protect, admin, async (req, res) => {
+router.post('/subscribe', protect, admin, paymentCheckoutLimiter, async (req, res) => {
   try {
     const {
       planCode,
       desiredUnits,
       billingCycle = 'monthly',
       paymentChannel = 'hosted_checkout',
-      provider = 'pesaflow',
+      provider = '',
       promoCode = '',
       phone = '',
       idempotencyKey = ''
@@ -226,13 +229,16 @@ router.post('/subscribe', protect, admin, async (req, res) => {
       }
     });
 
-    // Initiate Payment Gateway Checkout via Pesaflow (or chosen provider)
+    // Initiate Payment Gateway Checkout (IntaSend primary when configured, never trusting client amounts)
+    const chosenProvider = (provider || '').trim().toLowerCase() || PaymentService.resolveDefaultProvider();
     try {
       const paymentResult = await PaymentService.initiateTransaction({
         idempotencyKey: idempotencyKey || undefined,
-        providerCode: provider || 'pesaflow',
+        providerCode: chosenProvider,
         paymentChannel,
         paymentCategory,
+        planCode: plan.code,
+        billingCycle: quote.billingCycle,
         landlordId,
         subscriptionId: subscription._id,
         invoiceId: invoice._id,
@@ -241,12 +247,13 @@ router.post('/subscribe', protect, admin, async (req, res) => {
         customerName: req.user.name,
         customerEmail: req.user.email,
         customerPhone: phone || req.user.phone || '',
-        description: `MakaziFlow ${plan.name} (${requestedUnits} Units)`
+        description: `MakaziFlow ${plan.name} (${requestedUnits} Units - ${quote.billingCycle})`
       });
 
+      const gatewayLabel = chosenProvider === 'intasend' ? 'IntaSend' : 'Pesaflow';
       return res.status(201).json({
         success: true,
-        message: 'Subscription pending payment verification. Complete payment via Pesaflow to activate.',
+        message: `Subscription pending payment verification. Complete payment via ${gatewayLabel} to activate.`,
         subscription,
         invoice,
         transaction: paymentResult.transaction,

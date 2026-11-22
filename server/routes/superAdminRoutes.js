@@ -14,6 +14,7 @@ const TaxSubmission = require('../models/TaxSubmission');
 const { protect, superAdmin } = require('../middleware/authMiddleware');
 const { validateObjectId, pickAllowed } = require('../middleware/securityMiddleware');
 const PaymentService = require('../services/payments/PaymentService');
+const { getIntaSendConfig } = require('../config/intasendConfig');
 
 const ALLOWED_PLAN_FIELDS = [
   'code', 'name', 'badge', 'description', 'maxUnits', 'minUnits', 'isCustomUnlimited',
@@ -54,7 +55,8 @@ router.get('/overview', async (req, res) => {
       TaxSubmission.find().lean()
     ]);
 
-    const activeSubscriptions = subscriptions.filter(s => ['active', 'trial'].includes(s.status)).length;
+    const activeSubscriptions = subscriptions.filter(s => ['active', 'trial'].includes(s.status) && !s.isSandbox && s.paymentEnvironment !== 'sandbox').length;
+    const activeSandboxSubscriptions = subscriptions.filter(s => ['active'].includes(s.status) && (s.isSandbox || s.paymentEnvironment === 'sandbox')).length;
     const expiredSubscriptions = subscriptions.filter(s => s.status === 'expired').length;
     const graceSubscriptions = subscriptions.filter(s => s.status === 'grace_period').length;
 
@@ -67,34 +69,65 @@ router.get('/overview', async (req, res) => {
       new Date(s.expiryDate) <= in14Days
     );
 
-    const pendingPayments = transactions.filter(t => ['pending', 'processing'].includes(t.status)).length;
-    const successfulPayments = transactions.filter(t => t.status === 'paid').length;
-    const failedPayments = transactions.filter(t => ['failed', 'cancelled'].includes(t.status)).length;
+    // Strictly separate PRODUCTION transactions vs SANDBOX test transactions
+    const isSandboxTxn = (t) => Boolean(t.isSandbox) || t.gatewayEnvironment === 'sandbox';
+    const prodTxns = transactions.filter(t => !isSandboxTxn(t));
+    const sandboxTxns = transactions.filter(t => isSandboxTxn(t));
 
-    const subPaidTxns = transactions.filter(
+    const pendingPayments = prodTxns.filter(t => ['pending', 'processing'].includes(t.status)).length;
+    const successfulPayments = prodTxns.filter(t => t.status === 'paid').length;
+    const failedPayments = prodTxns.filter(t => ['failed', 'cancelled'].includes(t.status)).length;
+
+    const subMap = new Map(subscriptions.map(s => [String(s._id), s]));
+    const subPaidProdTxns = prodTxns.filter(
       t => t.status === 'paid' && ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory)
     );
-    const totalSubscriptionRevenue = subPaidTxns.reduce((s, t) => s + Number(t.amountPaid || t.amount || 0), 0);
+    const totalSubscriptionRevenue = subPaidProdTxns.reduce((s, t) => s + Number(t.amountPaid || t.amount || 0), 0);
 
-    // Revenue by Payment Method / Channel
+    // Monthly vs Annual real revenue breakdown (production only, never sandbox)
+    let monthlyRevenue = 0;
+    let annualRevenue = 0;
+    subPaidProdTxns.forEach((t) => {
+      const sub = t.subscriptionId ? subMap.get(String(t.subscriptionId)) : null;
+      const cycle = (t.billingCycle || sub?.billingCycle || 'monthly').toLowerCase();
+      const amt = Number(t.amountPaid || t.amount || 0);
+      if (cycle === 'annual') {
+        annualRevenue += amt;
+      } else {
+        monthlyRevenue += amt;
+      }
+    });
+
+    // Revenue by Payment Method / Channel (production only)
     const revenueByChannel = {};
-    subPaidTxns.forEach((t) => {
-      const ch = t.paymentChannel || 'pesaflow';
+    subPaidProdTxns.forEach((t) => {
+      const ch = t.paymentMethodDetail || t.paymentChannel || t.provider || 'intasend';
       revenueByChannel[ch] = (revenueByChannel[ch] || 0) + Number(t.amountPaid || t.amount || 0);
     });
 
-    // Revenue by Subscription Plan
-    const subMap = new Map(subscriptions.map(s => [String(s._id), s]));
+    // Revenue by Subscription Plan (production only)
     const revenueByPlan = {};
-    subPaidTxns.forEach((t) => {
+    subPaidProdTxns.forEach((t) => {
       const sub = t.subscriptionId ? subMap.get(String(t.subscriptionId)) : null;
-      const pName = sub?.planName || 'Subscription';
+      const pName = sub?.planName || t.planCode || 'Subscription';
       revenueByPlan[pName] = (revenueByPlan[pName] || 0) + Number(t.amountPaid || t.amount || 0);
     });
 
-    const totalAllocatedUnits = entitlements.reduce((s, e) => s + (e.isUnlimited ? 0 : Number(e.purchasedLimit || 0)), 0);
+    // Sandbox test telemetry (strictly excluded from real revenue!)
+    const sandboxPaidTxns = sandboxTxns.filter(t => t.status === 'paid');
+    const sandboxMetrics = {
+      totalCount: sandboxTxns.length,
+      paidCount: sandboxPaidTxns.length,
+      pendingCount: sandboxTxns.filter(t => ['pending', 'processing'].includes(t.status)).length,
+      failedCount: sandboxTxns.filter(t => ['failed', 'cancelled'].includes(t.status)).length,
+      totalTestVolume: sandboxPaidTxns.reduce((s, t) => s + Number(t.amountPaid || t.amount || 0), 0),
+      activeSandboxSubscriptions
+    };
 
+    const totalAllocatedUnits = entitlements.reduce((s, e) => s + (e.isUnlimited ? 0 : Number(e.purchasedLimit || 0)), 0);
     const totalRentCollected = rentPayments.reduce((s, p) => s + Number(p.amount || 0), 0);
+
+    const activeGatewayEnvironment = getIntaSendConfig({ requireConfigured: false }).environment;
 
     res.json({
       metrics: {
@@ -106,6 +139,8 @@ router.get('/overview', async (req, res) => {
         successfulPayments,
         failedPayments,
         totalSubscriptionRevenue,
+        monthlyRevenue,
+        annualRevenue,
         totalAllocatedUnits,
         totalRegisteredUnits,
         upcomingRenewalsCount: upcomingRenewals.length,
@@ -113,8 +148,10 @@ router.get('/overview', async (req, res) => {
         tenantRentPaymentsCount: rentPayments.length,
         unmatchedCallbacksCount: unmatchedCallbacks,
         etimsValidatedCount: taxSubmissions.filter(x => x.status === 'validated').length,
-        etimsFailedCount: taxSubmissions.filter(x => x.status === 'failed').length
+        etimsFailedCount: taxSubmissions.filter(x => x.status === 'failed').length,
+        activeGatewayEnvironment
       },
+      sandboxMetrics,
       revenueByChannel: Object.entries(revenueByChannel).map(([channel, amount]) => ({ channel, amount })),
       revenueByPlan: Object.entries(revenueByPlan).map(([plan, amount]) => ({ plan, amount })),
       upcomingRenewals
@@ -253,15 +290,21 @@ router.post('/landlords/:id/subscription-override', validateObjectId('id'), asyn
   }
 });
 
-// @desc    Filterable Payment Transactions & Unmatched Payment Reconciliation
+// @desc    Filterable Payment Transactions (supports environment=production|sandbox separation)
 router.get('/transactions', async (req, res) => {
   try {
-    const { startDate, endDate, landlordId, provider, status, category, planCode } = req.query;
+    const { startDate, endDate, landlordId, provider, status, category, planCode, environment } = req.query;
     const filter = {};
     if (landlordId) filter.landlordId = landlordId;
     if (provider) filter.provider = provider;
     if (status) filter.status = status;
     if (category) filter.paymentCategory = category;
+    if (environment === 'production') {
+      filter.gatewayEnvironment = 'production';
+      filter.isSandbox = { $ne: true };
+    } else if (environment === 'sandbox') {
+      filter.$or = [{ gatewayEnvironment: 'sandbox' }, { isSandbox: true }];
+    }
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) filter.createdAt.$gte = new Date(startDate);
@@ -271,16 +314,77 @@ router.get('/transactions', async (req, res) => {
     let txns = await PaymentTransaction.find(filter)
       .populate('landlordId', 'name email phone')
       .populate('tenantId', 'name email phone')
-      .populate('subscriptionId', 'planCode planName purchasedUnits')
+      .populate('subscriptionId', 'planCode planName purchasedUnits billingCycle')
       .sort({ createdAt: -1 })
       .limit(300)
       .lean();
 
     if (planCode) {
-      txns = txns.filter(t => t.subscriptionId?.planCode === planCode);
+      txns = txns.filter(t => t.subscriptionId?.planCode === planCode || t.planCode === planCode);
     }
 
     res.json(txns);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Downloadable Super Admin Payment Report CSV (separated by production vs sandbox)
+router.get('/reports/transactions', async (req, res) => {
+  try {
+    const { environment = 'production', status, category, startDate, endDate } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (category) filter.paymentCategory = category;
+    if (environment === 'production') {
+      filter.gatewayEnvironment = 'production';
+      filter.isSandbox = { $ne: true };
+    } else if (environment === 'sandbox') {
+      filter.$or = [{ gatewayEnvironment: 'sandbox' }, { isSandbox: true }];
+    }
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+
+    const txns = await PaymentTransaction.find(filter)
+      .populate('landlordId', 'name email')
+      .populate('subscriptionId', 'planName billingCycle')
+      .sort({ createdAt: -1 })
+      .limit(1000)
+      .lean();
+
+    const csvEscape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const headers = [
+      'Created At', 'Verified At', 'Environment', 'Internal ID', 'Merchant Ref',
+      'Tracking ID', 'Provider Ref', 'Landlord', 'Plan', 'Billing Cycle',
+      'Category', 'Provider', 'Method', 'Currency', 'Amount', 'Amount Paid', 'Status'
+    ];
+    const rows = txns.map((t) => [
+      t.createdAt ? new Date(t.createdAt).toISOString() : '',
+      t.verifiedAt ? new Date(t.verifiedAt).toISOString() : '',
+      t.gatewayEnvironment || (t.isSandbox ? 'sandbox' : 'sandbox'),
+      t.internalTransactionId,
+      t.accountReference,
+      t.trackingId || t.gatewayInvoiceNumber || '',
+      t.providerReference || '',
+      t.landlordId?.email || t.customerEmail || '',
+      t.subscriptionId?.planName || t.planCode || '',
+      t.billingCycle || t.subscriptionId?.billingCycle || '',
+      t.paymentCategory,
+      t.provider,
+      t.paymentMethodDetail || t.paymentChannel || '',
+      t.currency || 'KES',
+      t.amount || 0,
+      t.amountPaid || 0,
+      t.status
+    ]);
+
+    const csv = [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="makaziflow-${environment}-payments-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csv);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

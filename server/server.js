@@ -83,7 +83,8 @@ app.use(
           "https://*.cloudflare.com",
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
-          "https://*.pesaflow.com"
+          "https://*.pesaflow.com",
+          "https://*.intasend.com"
         ],
         connectSrc: [
           "'self'",
@@ -103,6 +104,9 @@ app.use(
           "https://test.pesaflow.com",
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com",
+          "https://*.intasend.com",
+          "https://sandbox.intasend.com",
+          "https://payment.intasend.com",
           "https://etims-api-sbx.kra.go.ke",
           "https://etims-api.kra.go.ke"
         ],

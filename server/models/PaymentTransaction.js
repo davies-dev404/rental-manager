@@ -11,28 +11,42 @@ const paymentTransactionSchema = new mongoose.Schema({
   invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
   provider: {
     type: String,
-    enum: ['pesaflow', 'equity_eazzybiz', 'kcb_buni', 'coop_bank', 'manual'],
-    default: 'pesaflow',
+    enum: ['intasend', 'pesaflow', 'equity_eazzybiz', 'kcb_buni', 'coop_bank', 'manual'],
+    default: 'intasend',
     index: true
   },
+  gatewayEnvironment: {
+    type: String,
+    enum: ['sandbox', 'production'],
+    default: 'sandbox',
+    index: true
+  },
+  isSandbox: { type: Boolean, default: true, index: true },
   paymentChannel: {
     type: String,
     enum: ['mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer', 'ussd', 'hosted_checkout', 'manual'],
     default: 'hosted_checkout'
   },
+  paymentMethodDetail: { type: String, default: '' },
   paymentCategory: {
     type: String,
     enum: ['subscription', 'unit_upgrade', 'subscription_renewal', 'rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'combined'],
     required: true,
     index: true
   },
+  planCode: { type: String, default: '' },
+  billingCycle: { type: String, enum: ['monthly', 'quarterly', 'semi_annual', 'annual', ''], default: '' },
   amount: { type: Number, required: true, min: 0 },
   amountPaid: { type: Number, default: 0 },
   currency: { type: String, default: 'KES', uppercase: true },
-  accountReference: { type: String, required: true, index: true }, // Unique billRefNumber / Paybill A/C ref
+  accountReference: { type: String, required: true, index: true }, // Unique api_ref / billRefNumber
+  merchantReference: { type: String, index: true, sparse: true },
   paybillBusinessNumber: { type: String, default: '' },
   providerReference: { type: String, index: true, sparse: true }, // Immutable external confirmation code once paid
-  gatewayInvoiceNumber: { type: String, index: true, sparse: true }, // Pesaflow invoice_number
+  trackingId: { type: String, index: true, sparse: true }, // IntaSend invoice_id / tracking_id
+  checkoutId: { type: String, index: true, sparse: true },
+  checkoutSignature: { type: String, default: '' },
+  gatewayInvoiceNumber: { type: String, index: true, sparse: true }, // Gateway invoice_id / invoice_number
   checkoutUrl: { type: String, default: '' },
   customerName: { type: String, default: '' },
   customerEmail: { type: String, default: '' },
@@ -70,6 +84,8 @@ const paymentTransactionSchema = new mongoose.Schema({
 });
 
 paymentTransactionSchema.index({ provider: 1, providerReference: 1 }, { unique: true, sparse: true });
+paymentTransactionSchema.index({ provider: 1, gatewayEnvironment: 1, accountReference: 1 }, { unique: true });
+paymentTransactionSchema.index({ gatewayEnvironment: 1, paymentCategory: 1, status: 1, createdAt: -1 });
 paymentTransactionSchema.index({ landlordId: 1, paymentCategory: 1, status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('PaymentTransaction', paymentTransactionSchema);

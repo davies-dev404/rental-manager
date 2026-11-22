@@ -58,9 +58,10 @@ router.post('/stk-push', protect, async (req, res) => {
     }
 
     const landlordId = tenant?.user || req.user._id || req.user.id;
+    const activeProvider = PaymentService.resolveDefaultProvider();
 
     const result = await PaymentService.initiateTransaction({
-      providerCode: 'pesaflow',
+      providerCode: activeProvider,
       paymentChannel: 'mpesa_stk',
       paymentCategory: 'rent',
       landlordId,
@@ -71,20 +72,20 @@ router.post('/stk-push', protect, async (req, res) => {
       customerName: tenant?.name || req.user.name || 'Tenant',
       customerEmail: tenant?.email || req.user.email || '',
       customerPhone: phoneNumber,
-      description: accountReference || 'Rental Payment via Pesaflow'
+      description: accountReference || `Rental Payment via ${activeProvider === 'intasend' ? 'IntaSend' : 'Pesaflow'}`
     });
 
     await logActivity(
       req.user,
-      'Pesaflow M-Pesa Payment Initiated',
-      `Initiated KES ${amount} via Pesaflow for ${phoneNumber}`,
+      `${activeProvider === 'intasend' ? 'IntaSend' : 'Pesaflow'} M-Pesa Payment Initiated`,
+      `Initiated KES ${amount} via ${activeProvider} for ${phoneNumber}`,
       'payment',
       'info'
     );
 
     res.json({
       success: true,
-      message: 'Payment initiated via Pesaflow gateway.',
+      message: `Payment initiated via ${activeProvider === 'intasend' ? 'IntaSend' : 'Pesaflow'} gateway.`,
       transactionId: result.transaction._id,
       internalTransactionId: result.transaction.internalTransactionId,
       accountReference: result.transaction.accountReference,
@@ -126,7 +127,9 @@ router.get('/status/:id', protect, validateObjectId('id'), async (req, res) => {
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
     const userId = String(req.user._id || req.user.id);
     const isSuper = Boolean(req.user.isSuperAdmin || req.user.role === 'superadmin');
-    if (!isSuper && String(txn.landlordId) !== userId && String(txn.tenantId) !== String(req.user.tenantId)) {
+    const isLandlordOwner = String(txn.landlordId) === userId;
+    const isTenantOwner = Boolean(txn.tenantId && req.user.tenantId && String(txn.tenantId) === String(req.user.tenantId));
+    if (!isSuper && !isLandlordOwner && !isTenantOwner) {
       return res.status(403).json({ message: 'Not authorized to view this transaction' });
     }
     const result = await PaymentService.verifyTransactionStatus(txn._id);

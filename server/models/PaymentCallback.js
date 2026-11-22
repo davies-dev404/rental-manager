@@ -2,9 +2,11 @@ const mongoose = require('mongoose');
 
 const paymentCallbackSchema = new mongoose.Schema({
   provider: { type: String, required: true, index: true },
+  gatewayEnvironment: { type: String, enum: ['sandbox', 'production'], default: 'sandbox', index: true },
   transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentTransaction' },
   internalTransactionId: { type: String, default: '' },
   accountReference: { type: String, default: '', index: true },
+  trackingId: { type: String, default: '', index: true },
   providerReference: { type: String, default: '', index: true },
   gatewayInvoiceNumber: { type: String, default: '' },
   signatureValid: { type: Boolean, default: false },
@@ -13,7 +15,7 @@ const paymentCallbackSchema = new mongoose.Schema({
   currencyReceived: { type: String, default: 'KES' },
   processingStatus: {
     type: String,
-    enum: ['processed', 'ignored_duplicate', 'rejected_signature', 'unmatched', 'amount_mismatch', 'currency_mismatch', 'failed_status', 'error'],
+    enum: ['processed', 'ignored_duplicate', 'rejected_signature', 'environment_mismatch', 'unmatched', 'amount_mismatch', 'currency_mismatch', 'failed_status', 'error'],
     default: 'processed'
   },
   processingMessage: { type: String, default: '' },

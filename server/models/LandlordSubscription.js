@@ -32,6 +32,8 @@ const landlordSubscriptionSchema = new mongoose.Schema({
   suspensionReason: { type: String, default: '' },
   autoRenew: { type: Boolean, default: true },
   lastPaymentTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentTransaction' },
+  paymentEnvironment: { type: String, enum: ['sandbox', 'production', 'trial', 'none'], default: 'none', index: true },
+  isSandbox: { type: Boolean, default: false, index: true },
   notificationsSent: {
     preExpiry7d: { type: Boolean, default: false },
     preExpiry1d: { type: Boolean, default: false },

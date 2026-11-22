@@ -851,6 +851,15 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to verify transaction");
   },
+  verifyIntaSendCallback: async (payload) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/callback/intasend`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to verify IntaSend payment callback");
+  },
   getGatewayTransactions: async (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     const response = await smartFetch(`${API_URL}/v2/payments/transactions${qs ? `?${qs}` : ""}`, {
@@ -966,6 +975,25 @@ export const api = {
       credentials: "include"
     });
     return await parseApiResponse(response, "Failed to load Super Admin transactions");
+  },
+  downloadSuperAdminReport: async (params = {}) => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== "" && v !== undefined && v !== "all"));
+    const qs = new URLSearchParams(clean).toString();
+    const response = await smartFetch(`${API_URL}/super-admin/reports/transactions${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    if (!response.ok) throw new Error("Failed to export payment report");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `makaziflow-${clean.environment || "all"}-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
   },
   getSuperAdminUnmatched: async () => {
     const response = await smartFetch(`${API_URL}/super-admin/unmatched`, {

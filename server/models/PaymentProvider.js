@@ -5,7 +5,7 @@ const paymentProviderSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    enum: ['pesaflow', 'equity_eazzybiz', 'kcb_buni', 'coop_bank']
+    enum: ['intasend', 'pesaflow', 'equity_eazzybiz', 'kcb_buni', 'coop_bank']
   },
   name: { type: String, required: true },
   isPrimary: { type: Boolean, default: false },

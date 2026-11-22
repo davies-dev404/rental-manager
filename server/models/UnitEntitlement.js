@@ -15,6 +15,8 @@ const unitEntitlementSchema = new mongoose.Schema({
   },
   expiresAt: { type: Date },
   graceEndsAt: { type: Date },
+  paymentEnvironment: { type: String, enum: ['sandbox', 'production', 'trial', 'none'], default: 'trial' },
+  isSandbox: { type: Boolean, default: false },
   updatedAt: { type: Date, default: Date.now }
 });
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -52,12 +52,9 @@ const BILLING_CYCLES = [
 ];
 
 const PAYMENT_CHANNELS = [
-  { id: "hosted_checkout", label: "Pesaflow All-in-One Checkout (M-Pesa, Cards, Bank, USSD)", icon: ShieldCheck },
-  { id: "mpesa_stk", label: "M-Pesa STK Push (via Pesaflow)", icon: Smartphone },
-  { id: "mpesa_paybill", label: "M-Pesa Paybill Instructions (via Pesaflow)", icon: Hash },
-  { id: "card", label: "Visa / Mastercard (via Pesaflow)", icon: CreditCard },
-  { id: "bank_transfer", label: "Bank Transfer (via Pesaflow)", icon: Building2 },
-  { id: "ussd", label: "USSD Channel (via Pesaflow)", icon: Smartphone }
+  { id: "hosted_checkout", label: "IntaSend Checkout (M-Pesa, Visa, Mastercard)", icon: ShieldCheck },
+  { id: "mpesa_stk", label: "M-Pesa STK Push (via IntaSend)", icon: Smartphone },
+  { id: "card", label: "Visa / Mastercard (via IntaSend)", icon: CreditCard }
 ];
 
 export default function BillingDashboardPage() {
@@ -98,6 +95,46 @@ export default function BillingDashboardPage() {
     enabled: Boolean(upgradeOpen && selectedPlanCode)
   });
 
+  // Handle IntaSend hosted checkout redirect return securely via backend status verification
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hasReturn = params.get("payment_return") || params.get("tracking_id") || params.get("checkout_id") || params.get("invoice_id") || params.get("txnId");
+    if (!hasReturn) return;
+
+    const payload = {
+      txnId: params.get("txnId") || "",
+      ref: params.get("ref") || "",
+      tracking_id: params.get("tracking_id") || params.get("invoice_id") || "",
+      checkout_id: params.get("checkout_id") || "",
+      signature: params.get("signature") || ""
+    };
+
+    window.history.replaceState({}, "", window.location.pathname);
+    api.verifyIntaSendCallback(payload)
+      .then((res) => {
+        if (res?.transaction?.status === "paid" || res?.alreadySettled) {
+          toast({
+            title: "Payment Verified & Subscription Active",
+            description: "IntaSend verified your payment and updated your subscription."
+          });
+        } else {
+          toast({
+            title: `Payment Status: ${res?.transaction?.status || "pending"}`,
+            description: "Verification checked with IntaSend. Click Refresh or Verify if still processing."
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+      })
+      .catch((err) => {
+        toast({
+          variant: "destructive",
+          title: "Payment Verification Notice",
+          description: err.message
+        });
+      });
+  }, []);
+
   const subscribeMutation = useMutation({
     mutationFn: api.subscribeToPlan,
     onSuccess: (res) => {
@@ -108,8 +145,10 @@ export default function BillingDashboardPage() {
         subscription: res.subscription
       });
       toast({
-        title: "Checkout Initiated via Pesaflow",
-        description: "Complete payment on Pesaflow. Activation occurs automatically once Pesaflow verifies payment."
+        title: "Checkout Initiated via IntaSend",
+        description: res.gateway?.checkoutUrl
+          ? "Complete payment on IntaSend Hosted Checkout. Activation happens automatically once verified."
+          : "Check your phone for the M-Pesa STK prompt, then click Verify Payment Status."
       });
       queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
     },
@@ -129,7 +168,7 @@ export default function BillingDashboardPage() {
       if (res.transaction?.status === "paid" || res.alreadySettled) {
         toast({
           title: "Subscription Activated",
-          description: "Pesaflow verified your payment and unlocked your unit entitlement."
+          description: "IntaSend verified your payment and unlocked your unit entitlement."
         });
         setActiveGatewaySession(null);
         setUpgradeOpen(false);
@@ -138,7 +177,7 @@ export default function BillingDashboardPage() {
       } else {
         toast({
           title: `Status: ${res.transaction?.status || "pending"}`,
-          description: "Waiting for Pesaflow settlement confirmation."
+          description: "Waiting for IntaSend settlement confirmation."
         });
       }
     },
@@ -193,6 +232,7 @@ export default function BillingDashboardPage() {
       desiredUnits,
       billingCycle: selectedCycle,
       paymentChannel,
+      provider: "intasend",
       promoCode,
       phone: phoneInput,
       idempotencyKey: `sub_${selectedPlanCode}_${desiredUnits}_${selectedCycle}_${Date.now()}`
@@ -241,7 +281,12 @@ export default function BillingDashboardPage() {
             Billing &amp; Subscription Management
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Manage your MakaziFlow rental unit allowance, Pesaflow payments, invoices, and receipts.
+            Manage your MakaziFlow rental unit allowance, IntaSend payments, invoices, and receipts.
+            {mySubData?.gatewayEnvironment === "sandbox" && (
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[10px] uppercase">
+                Sandbox Mode
+              </span>
+            )}
           </p>
         </div>
 
@@ -467,11 +512,11 @@ export default function BillingDashboardPage() {
           <CardHeader>
             <div className="flex items-center gap-2 text-cyan-300 text-xs font-bold uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4" />
-              <span>Pesaflow Verified Gateway</span>
+              <span>IntaSend Verified Gateway</span>
             </div>
             <CardTitle className="text-lg mt-1">Need Higher Capacity?</CardTitle>
             <CardDescription className="text-slate-300 text-xs">
-              Upgrade directly via M-Pesa STK Push, Paybill, Visa/Mastercard, Bank Transfer, or USSD through Pesaflow.
+              Upgrade directly via M-Pesa STK Push, Visa, or Mastercard through IntaSend Hosted Checkout.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -559,7 +604,7 @@ export default function BillingDashboardPage() {
               Payment History &amp; Receipts
             </CardTitle>
             <CardDescription className="text-xs">
-              Verify pending Pesaflow payments or download verified PDF receipts.
+              Verify pending IntaSend payments or download verified PDF receipts.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -626,7 +671,7 @@ export default function BillingDashboardPage() {
           <DialogHeader>
             <DialogTitle>Upgrade or Renew MakaziFlow Subscription</DialogTitle>
             <DialogDescription>
-              Choose your plan, rental unit allowance, billing cycle, and pay securely via Pesaflow.
+              Choose your plan, rental unit allowance, billing cycle (Monthly/Annual), and pay securely via IntaSend.
             </DialogDescription>
           </DialogHeader>
 
@@ -634,43 +679,43 @@ export default function BillingDashboardPage() {
             <div className="space-y-4 py-2">
               <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-blue-900">Pending Pesaflow Payment Verification</span>
-                  <Badge className="bg-amber-100 text-amber-800">Pending IPN Confirmation</Badge>
+                  <span className="font-bold text-blue-900">
+                    Pending IntaSend Payment Verification
+                    {activeGatewaySession.gateway?.isSandbox && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px]">SANDBOX</span>
+                    )}
+                  </span>
+                  <Badge className="bg-amber-100 text-amber-800">Pending Gateway Verification</Badge>
                 </div>
                 <p className="text-blue-800">
-                  Reference: <strong className="font-mono">{activeGatewaySession.transaction?.accountReference}</strong> · Amount:{" "}
-                  <strong>KES {Number(activeGatewaySession.transaction?.amount || 0).toLocaleString()}</strong>
+                  Reference: <strong className="font-mono">{activeGatewaySession.transaction?.accountReference}</strong>
+                  {activeGatewaySession.gateway?.trackingId && (
+                    <> · Tracking ID: <strong className="font-mono">{activeGatewaySession.gateway.trackingId}</strong></>
+                  )}
+                  {" "}· Amount: <strong>KES {Number(activeGatewaySession.transaction?.amount || 0).toLocaleString()}</strong>
                 </p>
-                {activeGatewaySession.gateway?.paybillInstructions && (
-                  <div className="rounded-lg bg-white border p-3 space-y-1 text-slate-800">
-                    <p className="font-bold">M-Pesa Paybill Instructions (Pesaflow):</p>
-                    <p>Business Number: <strong className="font-mono">{activeGatewaySession.gateway.paybillInstructions.businessNumber}</strong></p>
-                    <p>Account Number: <strong className="font-mono">{activeGatewaySession.gateway.paybillInstructions.accountReference}</strong></p>
-                    <p>Exact Amount: <strong>KES {Number(activeGatewaySession.gateway.paybillInstructions.amount).toLocaleString()}</strong></p>
-                  </div>
-                )}
-                {activeGatewaySession.gateway?.checkoutUrl && (
-                  <div className="pt-2 flex flex-wrap gap-2">
+                <div className="pt-2 flex flex-wrap gap-2">
+                  {activeGatewaySession.gateway?.checkoutUrl && (
                     <a
                       href={activeGatewaySession.gateway.checkoutUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#0b1065] text-white font-semibold hover:bg-[#161c8a]"
                     >
-                      Open Pesaflow Checkout <ExternalLink className="w-3.5 h-3.5" />
+                      Open IntaSend Checkout <ExternalLink className="w-3.5 h-3.5" />
                     </a>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={verifyMutation.isPending}
-                      onClick={() => verifyMutation.mutate(activeGatewaySession.transaction._id)}
-                      className="cursor-pointer"
-                    >
-                      {verifyMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
-                      Verify Payment Status
-                    </Button>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={verifyMutation.isPending}
+                    onClick={() => verifyMutation.mutate(activeGatewaySession.transaction._id)}
+                    className="cursor-pointer"
+                  >
+                    {verifyMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
+                    Verify Payment Status
+                  </Button>
+                </div>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setActiveGatewaySession(null)} className="text-xs">
                 Choose Another Plan / Method
@@ -774,8 +819,8 @@ export default function BillingDashboardPage() {
 
               {/* Payment Channel */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">3. Choose Payment Channel (Centralized Pesaflow)</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Label className="text-xs font-semibold">3. Choose Payment Channel (IntaSend Gateway)</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {PAYMENT_CHANNELS.map((ch) => (
                     <button
                       key={ch.id}
@@ -792,12 +837,15 @@ export default function BillingDashboardPage() {
                     </button>
                   ))}
                 </div>
+                <p className="text-[11px] text-slate-500">
+                  M-Pesa renewals require explicit payment confirmation per cycle; recurring card billing applies only where enabled with customer consent on IntaSend Checkout.
+                </p>
               </div>
 
               {/* Calculated Total */}
               <div className="rounded-xl bg-slate-50 dark:bg-slate-800/70 border p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-500">Total Payable (Inclusive of Configured Tax)</p>
+                  <p className="text-xs text-slate-500">Total Payable (Verified Server Pricing · KES)</p>
                   <p className="text-xl font-black text-slate-900 dark:text-white">
                     KES {Number(quoteData?.finalAmount ?? selectedPlanObj?.pricing?.[selectedCycle] ?? 0).toLocaleString()}
                   </p>
@@ -808,7 +856,7 @@ export default function BillingDashboardPage() {
                   className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-10 px-6 cursor-pointer"
                 >
                   {subscribeMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
-                  Proceed to Pesaflow Payment
+                  Proceed to IntaSend Payment
                 </Button>
               </div>
             </div>

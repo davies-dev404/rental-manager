@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
+const { validateIntaSendConfig } = require('../config/intasendConfig');
 
 const IS_TEST = () => process.env.NODE_ENV === 'test';
 const IS_HOSTED_OR_PROD = () =>
@@ -29,6 +30,7 @@ function getJwtSecret() {
  */
 function validateSecurityConfig() {
   getJwtSecret();
+  validateIntaSendConfig();
 
   const mongoUri = (process.env.MONGODB_URI || '').trim();
   if (IS_HOSTED_OR_PROD()) {
@@ -259,6 +261,24 @@ const authResetLimiter = rateLimit({
   message: { message: 'Too many password reset attempts. Please try again later.' }
 });
 
+const paymentCheckoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => IS_TEST() || req.method === 'OPTIONS',
+  message: { message: 'Too many payment requests. Please wait a few minutes and try again.' }
+});
+
+const paymentWebhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => IS_TEST() || req.method === 'OPTIONS',
+  message: { message: 'Webhook rate limit exceeded.' }
+});
+
 module.exports = {
   getJwtSecret,
   validateSecurityConfig,
@@ -272,5 +292,7 @@ module.exports = {
   runWithOptionalTransaction,
   authLoginLimiter,
   authOtpLimiter,
-  authResetLimiter
+  authResetLimiter,
+  paymentCheckoutLimiter,
+  paymentWebhookLimiter
 };

@@ -25,7 +25,7 @@ const INITIAL_PLANS = [
     gracePeriodDays: 7,
     features: [
       'Up to 5 rental units',
-      'Pesaflow M-Pesa, Paybill & Card collection',
+      'IntaSend M-Pesa, Visa & Mastercard collection',
       'Automated tenant email & SMS notifications',
       'Official PDF payment receipts & invoices',
       'KRA tax compliance exports'
@@ -703,6 +703,26 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
   const sub = await LandlordSubscription.findById(subscriptionId);
   if (!sub) throw new Error('Subscription record not found');
 
+  // Strict Sandbox vs Production isolation guard:
+  // Sandbox transactions must NEVER activate real production subscriptions.
+  const txnEnv = (paymentTransaction?.gatewayEnvironment || (paymentTransaction?.isSandbox ? 'sandbox' : '') || (process.env.INTASEND_ENV || 'sandbox')).toLowerCase();
+  const isTxnSandbox = Boolean(paymentTransaction?.isSandbox) || txnEnv === 'sandbox';
+  if (paymentTransaction?.provider === 'intasend') {
+    const activeGatewayEnv = (process.env.INTASEND_ENV || 'sandbox').trim().toLowerCase();
+    if (activeGatewayEnv === 'production' && isTxnSandbox) {
+      const err = new Error('Security Policy Violation: Sandbox transactions cannot activate production subscriptions.');
+      err.code = 'SANDBOX_PRODUCTION_ISOLATION';
+      err.statusCode = 403;
+      throw err;
+    }
+    if (txnEnv !== activeGatewayEnv) {
+      const err = new Error(`Environment mismatch: cannot activate ${activeGatewayEnv} subscription from ${txnEnv} payment.`);
+      err.code = 'ENVIRONMENT_MISMATCH';
+      err.statusCode = 403;
+      throw err;
+    }
+  }
+
   const plan = await SubscriptionPlan.findById(sub.planId) || await SubscriptionPlan.findOne({ code: sub.planCode });
   const graceDays = plan?.gracePeriodDays ?? 7;
 
@@ -745,6 +765,8 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
   sub.renewalDate = newExpiry;
   sub.graceEndDate = newGraceEnd;
   sub.lastPaymentTransactionId = paymentTransaction._id;
+  sub.paymentEnvironment = txnEnv === 'production' ? 'production' : 'sandbox';
+  sub.isSandbox = isTxnSandbox;
   sub.notificationsSent = {
     preExpiry7d: false,
     preExpiry1d: false,
@@ -773,6 +795,8 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
         status: entitlementStatus,
         expiresAt: newExpiry,
         graceEndsAt: newGraceEnd,
+        paymentEnvironment: sub.paymentEnvironment,
+        isSandbox: Boolean(isTxnSandbox),
         updatedAt: now
       }
     },

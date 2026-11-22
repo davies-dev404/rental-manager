@@ -78,6 +78,20 @@ export default function SuperAdminDashboardPage() {
     queryKey: ["super-admin-txns", filterProvider, filterStatus, filterCategory, filterStartDate, filterEndDate],
     queryFn: () =>
       api.getSuperAdminTransactions({
+        environment: "production",
+        provider: filterProvider,
+        status: filterStatus,
+        category: filterCategory,
+        startDate: filterStartDate,
+        endDate: filterEndDate
+      })
+  });
+
+  const { data: sandboxTransactions = [] } = useQuery({
+    queryKey: ["super-admin-sandbox-txns", filterProvider, filterStatus, filterCategory, filterStartDate, filterEndDate],
+    queryFn: () =>
+      api.getSuperAdminTransactions({
+        environment: "sandbox",
         provider: filterProvider,
         status: filterStatus,
         category: filterCategory,
@@ -201,11 +215,22 @@ export default function SuperAdminDashboardPage() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Monitor SaaS subscription revenue, unit allocations, Pesaflow reconciliation, and KRA eTIMS submissions.
+            Monitor real production SaaS revenue, separate IntaSend sandbox test transactions, unit allocations, and KRA eTIMS submissions.
+            <Badge variant="outline" className="ml-2 text-[10px] uppercase">
+              Gateway Env: {m.activeGatewayEnvironment || "sandbox"}
+            </Badge>
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => api.downloadSuperAdminReport({ environment: "production" })}
+            className="text-xs cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Production Report CSV
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -227,7 +252,8 @@ export default function SuperAdminDashboardPage() {
           { id: "overview", label: "Overview & Revenue" },
           { id: "landlords", label: `Landlords (${landlords.length})` },
           { id: "plans", label: "Subscription Plans" },
-          { id: "transactions", label: `Transactions (${transactions.length})` },
+          { id: "transactions", label: `Production Payments (${transactions.length})` },
+          { id: "sandbox", label: `Sandbox Tests (${sandboxTransactions.length})` },
           { id: "unmatched", label: `Unmatched (${(unmatched?.unmatchedCallbacks?.length || 0) + (unmatched?.unmatchedTxns?.length || 0)})` },
           { id: "etims", label: `KRA eTIMS (${etimsSubmissions.length})` },
           { id: "audit", label: "Audit Logs" }
@@ -252,16 +278,16 @@ export default function SuperAdminDashboardPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
             {[
-              { label: "Total Landlords", value: m.totalLandlords || 0 },
+              { label: "Total Real Revenue", value: `KES ${Number(m.totalSubscriptionRevenue || 0).toLocaleString()}` },
+              { label: "Monthly Revenue", value: `KES ${Number(m.monthlyRevenue || 0).toLocaleString()}` },
+              { label: "Annual Revenue", value: `KES ${Number(m.annualRevenue || 0).toLocaleString()}` },
               { label: "Active Subscriptions", value: m.activeSubscriptions || 0 },
               { label: "Expired Subscriptions", value: m.expiredSubscriptions || 0 },
-              { label: "Subscription Revenue", value: `KES ${Number(m.totalSubscriptionRevenue || 0).toLocaleString()}` },
-              { label: "Tenant Rent Collected", value: `KES ${Number(m.tenantRentCollectedTotal || 0).toLocaleString()}` },
-              { label: "Allocated Unit Slots", value: m.totalAllocatedUnits || 0 },
-              { label: "Registered Units", value: m.totalRegisteredUnits || 0 },
-              { label: "Successful Payments", value: m.successfulPayments || 0 },
-              { label: "Pending Payments", value: m.pendingPayments || 0 },
-              { label: "Failed Payments", value: m.failedPayments || 0 }
+              { label: "Prod. Successful", value: m.successfulPayments || 0 },
+              { label: "Prod. Pending", value: m.pendingPayments || 0 },
+              { label: "Prod. Failed", value: m.failedPayments || 0 },
+              { label: "Total Landlords", value: m.totalLandlords || 0 },
+              { label: "Sandbox Test Volume (Excluded)", value: `KES ${Number(overview?.sandboxMetrics?.totalTestVolume || 0).toLocaleString()}` }
             ].map((kpi) => (
               <Card key={kpi.label} className="shadow-2xs">
                 <CardContent className="p-4">
@@ -420,6 +446,7 @@ export default function SuperAdminDashboardPage() {
           <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 bg-white dark:bg-slate-900 p-3 rounded-xl border">
             <select value={filterProvider} onChange={(e) => setFilterProvider(e.target.value)} className="h-8 rounded border px-2 text-xs">
               <option value="all">All Providers</option>
+              <option value="intasend">IntaSend</option>
               <option value="pesaflow">Pesaflow</option>
               <option value="equity_eazzybiz">Equity EazzyBiz</option>
               <option value="kcb_buni">KCB Buni</option>
@@ -496,6 +523,76 @@ export default function SuperAdminDashboardPage() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 4B. SANDBOX TEST TRANSACTIONS TAB (STRICTLY SEPARATED FROM REAL REVENUE) */}
+      {activeTab === "sandbox" && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900 dark:text-amber-100">
+            <div>
+              <strong>Sandbox Test Ledger</strong> — All sandbox transactions shown here are strictly isolated and{" "}
+              <strong>excluded from real production revenue</strong>.
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => api.downloadSuperAdminReport({ environment: "sandbox" })}
+              className="h-8 text-xs cursor-pointer bg-white text-slate-900"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" /> Export Sandbox CSV
+            </Button>
+          </div>
+          <Card className="shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-800 border-b font-semibold text-slate-600">
+                  <tr>
+                    <th className="py-2.5 px-4">Merchant / Tracking Ref</th>
+                    <th className="py-2.5 px-4">Landlord</th>
+                    <th className="py-2.5 px-4">Plan / Category</th>
+                    <th className="py-2.5 px-4">Method</th>
+                    <th className="py-2.5 px-4 text-right">Amount (KES)</th>
+                    <th className="py-2.5 px-4">Status</th>
+                    <th className="py-2.5 px-4 text-right">Created</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {sandboxTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500">
+                        No sandbox test transactions recorded yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    sandboxTransactions.map((t) => (
+                      <tr key={t._id}>
+                        <td className="py-2.5 px-4 font-mono">
+                          <p className="font-bold">{t.accountReference}</p>
+                          <p className="text-[10px] text-slate-500">{t.trackingId || t.providerReference || t.internalTransactionId}</p>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <p className="font-semibold">{t.landlordId?.name || t.customerName || "—"}</p>
+                          <p className="text-[10px] text-slate-500">{t.landlordId?.email || t.customerEmail}</p>
+                        </td>
+                        <td className="py-2.5 px-4 capitalize">
+                          {t.subscriptionId?.planName || t.planCode || t.paymentCategory} {t.billingCycle ? `(${t.billingCycle})` : ""}
+                        </td>
+                        <td className="py-2.5 px-4">{t.provider} · {t.paymentMethodDetail || t.paymentChannel}</td>
+                        <td className="py-2.5 px-4 text-right font-bold">{Number(t.amount).toLocaleString()}</td>
+                        <td className="py-2.5 px-4">
+                          <Badge variant="outline" className="text-[10px] uppercase">{t.status}</Badge>
+                        </td>
+                        <td className="py-2.5 px-4 text-right text-slate-500">
+                          {t.createdAt ? new Date(t.createdAt).toLocaleString("en-KE") : "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
