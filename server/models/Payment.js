@@ -5,6 +5,7 @@ const paymentSchema = new mongoose.Schema({
   propertyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Property' },
   unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' }, // Added unitId
   invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
+  invoiceNumber: { type: String, default: '' },
   paymentTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'PaymentTransaction' },
   amount: { type: Number, required: true },
   currency: { type: String, default: 'KES' },

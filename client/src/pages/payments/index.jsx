@@ -36,65 +36,62 @@ const getStatusIcon = (status) => {
 };
 
 const printReceipt = (payment, currency) => {
-    const printWindow = window.open('', '_blank', 'width=600,height=600');
+    const printWindow = window.open('', '_blank', 'width=760,height=720');
     if (printWindow) {
+        const refCode = payment.reference || String(payment._id || payment.id || '').slice(-8).toUpperCase();
+        const invoiceRef = payment.invoiceNumber || payment.invoiceId?.invoiceNumber || '';
+        const unitLabel = typeof payment.unitId === 'object' ? (payment.unitId.unitNumber || 'N/A') : (payment.unitId || 'N/A');
+        const formattedAmt = Number(payment.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const statusUpper = String(payment.status || 'PAID').toUpperCase();
+        const isPaid = ['PAID', 'COMPLETED', 'CONFIRMED'].includes(statusUpper);
         printWindow.document.write(`
             <html>
                 <head>
-                    <title>Receipt - ${payment.id}</title>
+                    <title>${invoiceRef ? `Invoice Receipt - ${invoiceRef}` : `Payment Receipt - ${refCode}`}</title>
                     <style>
-                        body { font-family: 'Inter', sans-serif; padding: 20px; line-height: 1.6; color: #333; }
-                        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
-                        .logo { font-size: 24px; font-weight: bold; color: #000; }
-                        .details { margin-bottom: 20px; }
-                        .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-                        .label { font-weight: bold; color: #666; }
-                        .status { font-weight: bold; text-transform: uppercase; color: ${payment.status === 'paid' ? 'green' : 'orange'}; }
-                        .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #999; }
+                        body { font-family: 'Inter', Arial, sans-serif; margin: 0; padding: 24px; color: #0f172a; }
+                        .bar { height: 10px; background: linear-gradient(90deg, #0a1e35, #0d2240, #00a99d); margin-bottom: 18px; }
+                        .title { text-align: center; font-size: 18px; font-weight: 800; letter-spacing: 1.5px; margin: 10px 0 4px; }
+                        .sub { text-align: center; font-size: 12px; font-weight: 700; color: #00a99d; letter-spacing: 0.8px; margin-bottom: 18px; }
+                        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; font-size: 12px; margin-bottom: 20px; }
+                        .col-hdr { border-left: 3px solid #00a99d; padding-left: 6px; color: #00a99d; font-weight: 700; margin-bottom: 8px; }
+                        .lbl { font-weight: 700; color: #0d2240; margin-top: 6px; }
+                        .banner { background: ${isPaid ? '#00a99d' : '#d97706'}; color: #fff; text-align: center; font-weight: 800; padding: 10px; letter-spacing: 1.5px; margin: 14px 0 18px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        th { background: #0d2240; color: #fff; text-align: left; padding: 8px 10px; }
+                        td { border-bottom: 1px solid #e2e8f0; padding: 8px 10px; }
+                        .footer { margin-top: 28px; text-align: center; font-size: 11px; color: #64748b; }
                     </style>
                 </head>
                 <body>
-                    <div class="header">
-                        <div class="logo">Rental Manager</div>
-                        <div>Official Payment Receipt</div>
-                    </div>
-                    <div class="details">
-                        <div class="row">
-                            <span class="label">Receipt ID:</span>
-                            <span>${payment.id}</span>
+                    <div class="bar"></div>
+                    <div class="title">${invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT'}</div>
+                    ${invoiceRef ? `<div class="sub">RECEIPT FOR INVOICE #${invoiceRef}</div>` : ''}
+                    <div class="grid">
+                        <div>
+                            <div class="col-hdr">TENANT DETAILS</div>
+                            <div class="lbl">NAME:</div><div>${payment.tenantId || 'Tenant'}</div>
+                            <div class="lbl">UNIT:</div><div>Unit ${unitLabel}</div>
                         </div>
-                        <div class="row">
-                            <span class="label">Date:</span>
-                            <span>${payment.date}</span>
+                        <div>
+                            <div class="col-hdr">RECEIPT DETAILS</div>
+                            <div class="lbl">Receipt Number:</div><div>${refCode}</div>
+                            ${invoiceRef ? `<div class="lbl">Receipt For:</div><div>Invoice #${invoiceRef}</div>` : ''}
+                            <div class="lbl">Total Amount:</div><div>${currency} ${formattedAmt}</div>
                         </div>
-                        <div class="row">
-                            <span class="label">Tenant:</span>
-                            <span>${payment.tenantId}</span> 
-                        </div>
-                        <div class="row">
-                            <span class="label">Unit:</span>
-                            <span>${typeof payment.unitId === 'object' ? (payment.unitId.unitNumber || 'N/A') : payment.unitId}</span>
-                        </div>
-                        <div class="row">
-                            <span class="label">Amount:</span>
-                            <span>${currency} ${payment.amount}</span>
-                        </div>
-                        <div class="row">
-                            <span class="label">Method:</span>
-                            <span style="text-transform: capitalize">${payment.method.replace('_', ' ')}</span>
-                        </div>
-                        <div class="row">
-                            <span class="label">Status:</span>
-                            <span class="status">${payment.status}</span>
+                        <div>
+                            <div class="col-hdr">PAYMENT DETAILS</div>
+                            <div class="lbl">Payment Mode:</div><div>${String(payment.method || 'CASH').replace(/_/g, ' ').toUpperCase()}</div>
+                            <div class="lbl">Date:</div><div>${payment.date || ''}</div>
                         </div>
                     </div>
-                    <div class="footer">
-                        <p>Thank you for your payment.</p>
-                        <p>Generated on ${new Date().toLocaleString()}</p>
-                    </div>
-                    <script>
-                        window.print();
-                    </script>
+                    <div class="banner">${isPaid ? 'PAID' : statusUpper}</div>
+                    <table>
+                        <thead><tr><th>Description</th><th style="text-align:right">Total Paid</th></tr></thead>
+                        <tbody><tr><td>${invoiceRef ? `${payment.type || 'Invoice Payment'} — Invoice #${invoiceRef}` : (payment.type || 'Rental Payment')} (Unit ${unitLabel})</td><td style="text-align:right">${currency} ${formattedAmt}</td></tr></tbody>
+                    </table>
+                    <div class="footer">Thank you for being a valued resident | Ref # ${refCode}</div>
+                    <script>window.print();</script>
                 </body>
             </html>
         `);

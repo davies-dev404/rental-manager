@@ -153,6 +153,8 @@ router.post('/', protect, async (req, res) => {
     const payment = await Payment.create({
         tenantId: tenant._id,
         unitId: finalUnitId,
+        invoiceId: req.body.invoiceId && isValidObjectId(String(req.body.invoiceId)) ? req.body.invoiceId : undefined,
+        invoiceNumber: req.body.invoiceNumber ? String(req.body.invoiceNumber).trim() : '',
         amount: totalAmount,
         rentAmount: rAmt > 0 ? rAmt : totalAmount,
         depositAmount: dAmt,
@@ -224,7 +226,7 @@ const updatePaymentHandler = async (req, res) => {
     }
 
     const prevStatus = String(payment.status || '').toLowerCase();
-    const { status, method, reference, transactionId, date, amount, notes, sendReceipt } = req.body || {};
+    const { status, method, reference, transactionId, date, amount, notes, sendReceipt, invoiceNumber, fromInvoice } = req.body || {};
 
     if (status !== undefined) {
       const normalized = String(status).trim().toLowerCase();
@@ -233,6 +235,11 @@ const updatePaymentHandler = async (req, res) => {
     if (method !== undefined && method !== '') payment.method = method;
     if (reference !== undefined) payment.reference = reference;
     else if (transactionId !== undefined) payment.reference = transactionId;
+    if (invoiceNumber !== undefined && String(invoiceNumber).trim()) {
+      payment.invoiceNumber = String(invoiceNumber).trim();
+    } else if (fromInvoice && !payment.invoiceNumber) {
+      payment.invoiceNumber = `INV-${payment._id.toString().slice(-6).toUpperCase()}`;
+    }
     if (date !== undefined && date) payment.date = new Date(date);
     if (notes !== undefined) payment.notes = notes;
     if (amount !== undefined) {
@@ -356,7 +363,8 @@ router.get('/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email phone')
-            .populate('unitId', 'unitNumber propertyId');
+            .populate('unitId', 'unitNumber propertyId')
+            .populate('invoiceId', 'invoiceNumber');
 
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
@@ -441,6 +449,8 @@ router.post('/invoice-pdf', protect, async (req, res) => {
         const invoiceObj = {
             invoiceCategory: 'rental',
             propertyName: propertyName || '',
+            unitNumber: uNum,
+            accountNumber: tenant?.accountNumber || '',
             invoiceNumber: invNum,
             issuedAt: issuedAt || new Date(),
             createdAt: issuedAt || new Date(),
@@ -505,6 +515,11 @@ router.post('/send-invoice', protect, async (req, res) => {
         // 1. Email Dispatch with Official PDF Attachment (SHA Style)
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
+                const mpesaShortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
+                const mpesaLabel = settings?.mpesaType === 'Till' ? 'M-Pesa Till Number' : 'M-Pesa Paybill Number';
+                const defaultAcct = String(settings?.paybillAccount || '').trim();
+                const payAcct = tenant?.accountNumber || (uNum && defaultAcct ? `${uNum} (Default: ${defaultAcct})` : uNum || defaultAcct || invRef);
+
                 const emailContent = `
                     <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
                         Dear ${recipientName},
@@ -526,11 +541,13 @@ router.post('/send-invoice', protect, async (req, res) => {
                     </div>
 
                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px;">
-                        INVOICE DETAILS
+                        INVOICE &amp; LANDLORD PAYMENT DETAILS
                     </div>
                     ${renderDetailRow('Invoice Reference', invRef)}
                     ${renderDetailRow('Property / Unit', resolvedPropName ? `${resolvedPropName} — Unit ${uNum}` : `Unit ${uNum}`)}
                     ${renderDetailRow('Organisation', businessName)}
+                    ${mpesaShortcode ? renderDetailRow(mpesaLabel, `${mpesaShortcode} • A/C: ${payAcct}`) : ''}
+                    ${settings?.orgPhone ? renderDetailRow('Landlord Phone', settings.orgPhone) : ''}
                     ${notes ? renderDetailRow('Notes', notes) : ''}
 
                     <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
@@ -542,6 +559,8 @@ router.post('/send-invoice', protect, async (req, res) => {
                 const pdfBuffer = await generateInvoicePDF({
                     invoiceCategory: 'rental',
                     propertyName: resolvedPropName,
+                    unitNumber: uNum,
+                    accountNumber: tenant?.accountNumber || '',
                     invoiceNumber: invRef,
                     issuedAt: new Date(),
                     createdAt: new Date(),

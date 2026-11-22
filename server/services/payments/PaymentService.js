@@ -645,6 +645,7 @@ class PaymentService {
         propertyId: propId || undefined,
         unitId: unitId || undefined,
         invoiceId: transaction.invoiceId || undefined,
+        invoiceNumber: invoiceRecord?.invoiceNumber || '',
         paymentTransactionId: transaction._id,
         user: transaction.landlordId,
         amount: transaction.amountPaid,

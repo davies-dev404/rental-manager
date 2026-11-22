@@ -214,6 +214,11 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
     const landlordName = (settings?.landlordName || "").trim();
     const businessName = companyName || propertyName || landlordName || 'Property Management';
     const reference = payment.reference || payment._id?.toString().substring(0, 8).toUpperCase();
+    const invoiceRef = (
+        payment.invoiceNumber ||
+        (typeof payment.invoiceId === 'object' ? payment.invoiceId?.invoiceNumber : '') ||
+        ''
+    ).trim();
     const currency = settings?.currency || 'KES';
     const resolvedUnit = unitNumber || (typeof payment.unitId === 'object' ? payment.unitId?.unitNumber : '') || '';
     const propertyUnitText = propertyName
@@ -225,13 +230,13 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
             Dear ${escapeHtml(tenantName)},
         </p>
         <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
-            Great news — we have successfully received and processed your payment. Thank you for keeping your rental account up to date.
+            Great news — we have successfully received and processed your payment${invoiceRef ? ` for <strong>Invoice #${escapeHtml(invoiceRef)}</strong>` : ''}. Thank you for keeping your rental account up to date.
         </p>
 
         <!-- Highlighted Hero Amount Card -->
         <div style="background-color: #1c2331; border: 1px solid #2d3748; border-radius: 12px; padding: 24px 20px; text-align: center; margin-bottom: 24px;">
             <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
-                AMOUNT PAID
+                ${invoiceRef ? `AMOUNT PAID (INVOICE #${escapeHtml(invoiceRef)})` : 'AMOUNT PAID'}
             </div>
             <div style="font-size: 34px; font-weight: 800; color: #00d4c8; letter-spacing: -0.5px; margin-bottom: 12px;">
                 ${escapeHtml(currency)} ${amount}
@@ -246,6 +251,7 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
             PAYMENT DETAILS
         </div>
         ${renderDetailRow('Receipt / Reference Number', reference)}
+        ${invoiceRef ? renderDetailRow('Receipt For', `Invoice #${invoiceRef}`) : ''}
         ${renderDetailRow('Property / Unit', propertyUnitText)}
         ${renderDetailRow('Organisation', businessName)}
         ${landlordName && landlordName.toLowerCase() !== businessName.toLowerCase() ? renderDetailRow('Landlord', landlordName) : ''}

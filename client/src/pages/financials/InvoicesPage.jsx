@@ -2409,10 +2409,13 @@ export default function InvoicesPage() {
       let receiptReason = "";
 
       if (isMongoId) {
+        const invNum = markPaidTarget.invoiceNumber || `INV-${String(id).slice(-6).toUpperCase()}`;
         const res = await api.updatePayment(id, {
           status: "paid",
           method: markPaidMethod,
           reference: markPaidRef.trim() || undefined,
+          invoiceNumber: invNum,
+          fromInvoice: true,
           sendReceipt: markPaidSendReceipt
         });
         receiptEmailed = Boolean(res?.receiptEmailSent);
@@ -2425,6 +2428,7 @@ export default function InvoicesPage() {
             (t.name && String(t.name).toLowerCase() === String(markPaidTarget.tenantId || "").toLowerCase())
         );
         if (tenantObj) {
+          const invNum = markPaidTarget.invoiceNumber || `INV-${String(id).slice(-6).toUpperCase()}`;
           await api.addPayment({
             tenantId: tenantObj._id || tenantObj.id,
             amount: Number(markPaidTarget.amount || 0),
@@ -2432,6 +2436,7 @@ export default function InvoicesPage() {
             method: markPaidMethod,
             status: "paid",
             reference: markPaidRef.trim() || undefined,
+            invoiceNumber: invNum,
             type: markPaidTarget.item || "Rent",
             notes: markPaidTarget.notes || undefined
           });
@@ -3150,6 +3155,31 @@ export default function InvoicesPage() {
                             >
                               <Download className="w-3 h-3" /> PDF
                             </button>
+                            {["paid", "confirmed", "completed", "partial"].includes(String(p.status || "").toLowerCase()) &&
+                              /^[a-f\d]{24}$/i.test(String(p._id || "")) && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const invRef = p.invoiceNumber || `INV-${String(p._id).slice(-6).toUpperCase()}`;
+                                    await api.downloadReceiptPdf(p._id, `Receipt-${invRef}.pdf`);
+                                    toast({
+                                      title: "Invoice Receipt Downloaded",
+                                      description: `Saved receipt for ${invRef} (${p.tenantId}).`
+                                    });
+                                  } catch (err) {
+                                    toast({
+                                      variant: "destructive",
+                                      title: "Download Failed",
+                                      description: err.message || "Could not generate invoice receipt PDF."
+                                    });
+                                  }
+                                }}
+                                className="text-[11px] font-medium text-emerald-700 hover:underline cursor-pointer inline-flex items-center gap-1"
+                                title="Download official receipt for this invoice"
+                              >
+                                <Download className="w-3 h-3" /> Receipt
+                              </button>
+                            )}
                             <button
                               onClick={() => setDeleteTargets([p])}
                               className="text-[11px] text-rose-600 hover:underline cursor-pointer inline-flex items-center gap-1"

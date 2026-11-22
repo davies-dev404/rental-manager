@@ -697,18 +697,27 @@ router.post('/invoices', protect, admin, async (req, res) => {
 // @access  Private
 router.get('/invoices/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findById(req.params.id)
+      .populate('propertyId', 'name')
+      .populate('unitId', 'unitNumber')
+      .populate('tenantId', 'accountNumber');
     if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
 
     const userId = String(req.user._id || req.user.id);
     const isLandlordOwner = String(invoice.landlordId) === userId;
-    const isTenantOwner = Boolean(invoice.tenantId && req.user.tenantId && String(invoice.tenantId) === String(req.user.tenantId));
+    const isTenantOwner = Boolean(invoice.tenantId && req.user.tenantId && String(invoice.tenantId?._id || invoice.tenantId) === String(req.user.tenantId));
     if (!isLandlordOwner && !isTenantOwner && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this invoice' });
     }
 
     const settings = await getUserBusinessProfile(invoice.landlordId || req.user);
-    const pdfBuffer = await generateInvoicePDF(invoice, settings);
+    const invoicePayload = {
+      ...invoice.toObject(),
+      propertyName: invoice.propertyId?.name || '',
+      unitNumber: invoice.unitId?.unitNumber || '',
+      accountNumber: invoice.tenantId?.accountNumber || ''
+    };
+    const pdfBuffer = await generateInvoicePDF(invoicePayload, settings);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -726,28 +735,55 @@ router.get('/invoices/:id/pdf', protect, validateObjectId('id'), async (req, res
 // @access  Private
 router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
   try {
-    const receipt = await PaymentReceipt.findById(req.params.id);
+    const receipt = await PaymentReceipt.findById(req.params.id)
+      .populate({
+        path: 'tenantId',
+        select: 'name email phone unitId',
+        populate: {
+          path: 'unitId',
+          select: 'unitNumber propertyId',
+          populate: { path: 'propertyId', select: 'name' }
+        }
+      })
+      .populate('invoiceId', 'invoiceNumber billingPeriod')
+      .populate('transactionId', 'chargeBreakdown paymentCategory accountReference');
     if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
 
     const userId = String(req.user._id || req.user.id);
     const isLandlordOwner = String(receipt.landlordId) === userId;
-    const isTenantOwner = Boolean(receipt.tenantId && req.user.tenantId && String(receipt.tenantId) === String(req.user.tenantId));
+    const tenantIdStr = receipt.tenantId?._id ? String(receipt.tenantId._id) : String(receipt.tenantId || '');
+    const isTenantOwner = Boolean(tenantIdStr && req.user.tenantId && tenantIdStr === String(req.user.tenantId));
     if (!isLandlordOwner && !isTenantOwner && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
       return res.status(403).json({ message: 'Not authorized to download this receipt' });
     }
 
     const settings = await getUserBusinessProfile(receipt.landlordId || req.user);
+    const propName = receipt.tenantId?.unitId?.propertyId?.name || settings?.orgName || 'Property Management';
+    const bd = receipt.transactionId?.chargeBreakdown || {};
     const pseudoPayment = {
       _id: receipt.receiptNumber,
       amount: receipt.amount,
       date: receipt.issuedAt,
+      monthCovered: receipt.invoiceId?.billingPeriod || '',
       method: receipt.paymentMethod,
       reference: receipt.providerReference || receipt.receiptNumber,
+      invoiceId: receipt.invoiceId || undefined,
+      invoiceNumber: receipt.invoiceId?.invoiceNumber || '',
+      rentAmount: Number(bd.rent || 0),
+      depositAmount: Number(bd.deposit || 0),
+      utilityAmount: Number(bd.water || 0) + Number(bd.electricity || 0),
+      serviceChargeAmount: Number(bd.serviceCharge || 0),
+      penaltyAmount: Number(bd.penalty || 0),
+      unitId: receipt.tenantId?.unitId || undefined,
       status: 'paid',
       type: receipt.description,
-      tenantId: { name: receipt.recipientName, email: receipt.recipientEmail }
+      tenantId: {
+        name: receipt.recipientName || receipt.tenantId?.name || 'Customer',
+        email: receipt.recipientEmail || receipt.tenantId?.email || '',
+        phone: receipt.tenantId?.phone || ''
+      }
     };
-    const pdfBuffer = await generateReceiptPDF(pseudoPayment, settings, settings?.orgName || 'Property Management');
+    const pdfBuffer = await generateReceiptPDF(pseudoPayment, settings, propName);
 
     res.set({
       'Content-Type': 'application/pdf',

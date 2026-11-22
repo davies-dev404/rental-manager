@@ -49,6 +49,11 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             const customLogoBuffer = decodeLogoDataUrl(settings?.orgLogo);
 
             const receiptRef = payment.reference || (payment._id ? payment._id.toString().substring(0, 8).toUpperCase() : 'REF-000000');
+            const invoiceRef = (
+                payment.invoiceNumber ||
+                (typeof payment.invoiceId === 'object' ? payment.invoiceId?.invoiceNumber : '') ||
+                ''
+            ).trim();
             const dt = new Date(payment.date || Date.now());
             const pad = (n) => String(n).padStart(2, '0');
             const formattedDateTime = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
@@ -120,8 +125,15 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             // =====================================================
             let yPos = Math.max(96, headerY + 12);
             doc.fontSize(14).font('Helvetica-Bold').fillColor(darkText)
-               .text('PAYMENT RECEIPT', 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
-            yPos += 34;
+               .text(invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT', 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
+            if (invoiceRef) {
+                yPos += 19;
+                doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
+                   .text(`RECEIPT FOR INVOICE #${invoiceRef}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
+                yPos += 22;
+            } else {
+                yPos += 34;
+            }
 
             // =====================================================
             // 4. THREE-COLUMN METADATA GRID (with Green Left Bars)
@@ -164,6 +176,9 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             drawColHeader(col2X, yPos, 'RECEIPT DETAILS');
             let c2Y = yPos + 18;
             c2Y = drawColField(col2X, c2Y, colW, 'Receipt Number:', receiptRef);
+            if (invoiceRef) {
+                c2Y = drawColField(col2X, c2Y, colW, 'Receipt For:', `Invoice #${invoiceRef}`);
+            }
             c2Y = drawColField(col2X, c2Y, colW, 'Period Covered:', billingPeriod);
             c2Y = drawColField(col2X, c2Y, colW, 'Total Amount:', `${currency}. ${formattedAmount}`);
             c2Y = drawColField(col2X, c2Y, colW, 'Date Generated:', formattedDateTime);
@@ -224,8 +239,22 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
             } else if (payment.utilityAmount > 0) {
                 rows.push({ desc: 'Utility Charges', amt: payment.utilityAmount });
             }
+            if (payment.serviceChargeAmount > 0) {
+                rows.push({ desc: 'Service Charge', amt: payment.serviceChargeAmount });
+            }
+            if (payment.penaltyAmount > 0) {
+                rows.push({ desc: 'Late Payment Penalty', amt: payment.penaltyAmount });
+            }
             if (rows.length === 0) {
-                rows.push({ desc: `${payment.type || 'Rental Payment'} (Unit ${unitInfo})`, amt: payment.amount });
+                const baseType = payment.type || 'Rental Payment';
+                rows.push({
+                    desc: invoiceRef && !String(baseType).includes(invoiceRef)
+                        ? `${baseType} — Invoice #${invoiceRef} (Unit ${unitInfo})`
+                        : `${baseType} (Unit ${unitInfo})`,
+                    amt: payment.amount
+                });
+            } else if (invoiceRef && !rows[0].desc.includes(invoiceRef)) {
+                rows[0].desc = `${rows[0].desc} · Invoice #${invoiceRef}`;
             }
 
             rows.forEach((r) => {

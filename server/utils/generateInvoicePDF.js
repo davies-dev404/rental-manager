@@ -129,7 +129,52 @@ const generateInvoicePDF = (invoice, settings = {}) => {
         .text('TOTAL:', 350, y, { width: 95, align: 'right' })
         .text(`KES ${Number(invoice.totalAmount || 0).toLocaleString()}`, 455, y, { width: 80, align: 'right' });
 
-      y += 38;
+      y += 28;
+      // Registered Landlord Payment Details Card (Rental Invoices)
+      if (!isSub) {
+        const shortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
+        const mpesaTypeLabel = settings?.mpesaType === 'Till' ? 'M-Pesa Till Number' : 'M-Pesa Paybill Number';
+        const defaultAcct = String(settings?.paybillAccount || '').trim();
+        const unitRef = String(invoice.unitNumber || invoice.unitId?.unitNumber || '').trim();
+        const acctRef = String(
+          invoice.accountNumber ||
+          (unitRef && defaultAcct ? `${unitRef} (Default A/C: ${defaultAcct})` : unitRef || defaultAcct || invoice.invoiceNumber)
+        ).trim();
+        const payLines = [];
+        if (shortcode) {
+          payLines.push(`${mpesaTypeLabel}: ${shortcode}   |   Account #: ${acctRef}`);
+        } else if (defaultAcct) {
+          payLines.push(`M-Pesa Account Reference: ${acctRef}`);
+        }
+        const contactParts = [
+          businessPhone ? `Phone: ${businessPhone}` : '',
+          businessEmail ? `Email: ${businessEmail}` : '',
+          settings?.taxId ? `KRA PIN: ${settings.taxId}` : ''
+        ].filter(Boolean);
+        if (contactParts.length > 0) {
+          payLines.push(contactParts.join('   |   '));
+        }
+        if (settings?.invoiceFootnote) {
+          payLines.push(String(settings.invoiceFootnote).trim());
+        }
+        if (payLines.length === 0) {
+          payLines.push(`Reference: ${invoice.invoiceNumber}   |   Pay via MakaziFlow Tenant Portal or Landlord Office`);
+        }
+
+        const boxH = 26 + payLines.length * 14;
+        doc.rect(50, y, 495, boxH).fill('#eff6ff');
+        doc.rect(50, y, 3, boxH).fill(accentColor);
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(accentColor)
+          .text('PAYMENT DETAILS (REGISTERED BY LANDLORD)', 62, y + 8);
+        let lineY = y + 22;
+        payLines.forEach((ln) => {
+          doc.fontSize(8.5).font('Helvetica').fillColor(primaryColor)
+            .text(ln, 62, lineY, { width: 472 });
+          lineY += 14;
+        });
+        y += boxH + 12;
+      }
+
       // Only show validated eTIMS metadata if actually confirmed by KRA eTIMS API
       if (invoice.etimsStatus === 'validated' && invoice.etimsReceiptNo) {
         doc.rect(50, y, 495, 58).fill('#f0fdf4');

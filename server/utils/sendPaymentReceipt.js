@@ -37,7 +37,8 @@ const sendPaymentReceipt = async (paymentId) => {
         console.log(`🧾 Dispatching payment receipts for: ${paymentId}`);
         const payment = await Payment.findOne({ _id: paymentId })
             .populate('tenantId', 'name email phone')
-            .populate('unitId', 'unitNumber propertyId');
+            .populate('unitId', 'unitNumber propertyId')
+            .populate('invoiceId', 'invoiceNumber');
 
         if (!payment) {
             console.error(`Receipt Dispatch: Payment not found for ID ${paymentId}`);
@@ -55,6 +56,7 @@ const sendPaymentReceipt = async (paymentId) => {
         const businessName = settings?.companyName || settings?.orgName || propertyName || settings?.landlordName || 'Property Management';
         const unitNumber = payment.unitId?.unitNumber ? `Unit ${payment.unitId.unitNumber}` : 'your unit';
         const reference = payment.reference || payment._id.toString().substring(0, 8).toUpperCase();
+        const invoiceRef = (payment.invoiceNumber || payment.invoiceId?.invoiceNumber || '').trim();
         const amountFormatted = Number(payment.amount || 0).toLocaleString();
 
         let emailSent = false;
@@ -77,7 +79,9 @@ const sendPaymentReceipt = async (paymentId) => {
                 toName: tenant.name,
                 fromName: businessName,
                 replyToEmail: settings?.orgEmail || undefined,
-                subject: `Official Payment Receipt - ${businessName} - #${reference}`,
+                subject: invoiceRef
+                    ? `Official Invoice Receipt - ${businessName} - #${reference} (Invoice #${invoiceRef})`
+                    : `Official Payment Receipt - ${businessName} - #${reference}`,
                 message: emailHtml,
                 commMeta: {
                     category: 'receipt',

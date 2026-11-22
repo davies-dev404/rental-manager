@@ -1,82 +1,158 @@
 import React from 'react';
-import { format } from 'date-fns';
 
-const Receipt = React.forwardRef(({ payment, currency, businessInfo }, ref) => {
-    if (!payment) return null;
+const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, ref) => {
+  if (!payment) return null;
 
-    const formattedDate = new Date(payment.date).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+  const dt = new Date(payment.date || Date.now());
+  const formattedDateTime = isNaN(dt.getTime())
+    ? '—'
+    : dt.toLocaleString('en-KE', { dateStyle: 'short', timeStyle: 'short' });
+  const period = payment.monthCovered || (!isNaN(dt.getTime()) ? `${String(dt.getMonth() + 1).padStart(2, '0')}/${dt.getFullYear()}` : '—');
 
-    return (
-        <div ref={ref} className="bg-white p-8 max-w-2xl mx-auto shadow-none print:shadow-none print:w-full print:max-w-none text-slate-800 font-sans" id="receipt-content">
-            {/* Header */}
-            <div className="flex justify-between items-start border-b-2 border-slate-100 pb-8 mb-8">
-                <div>
-                    <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">RECEIPT</h1>
-                    <p className="text-slate-500 mt-1 text-sm uppercase tracking-wider">Payment Confirmation</p>
-                </div>
-                <div className="text-right">
-                    <h3 className="text-xl font-bold text-slate-900">{businessInfo?.name || "Rental Manager"}</h3>
-                    <p className="text-sm text-slate-500 mt-1">{businessInfo?.email || "admin@rentalmanager.com"}</p>
-                    {businessInfo?.phone && <p className="text-sm text-slate-500">{businessInfo.phone}</p>}
-                </div>
-            </div>
+  const receiptRef = payment.reference || String(payment._id || payment.id || '').slice(-8).toUpperCase() || 'REF-000000';
+  const invoiceRef = String(
+    payment.invoiceNumber ||
+    (typeof payment.invoiceId === 'object' ? payment.invoiceId?.invoiceNumber : '') ||
+    ''
+  ).trim();
 
-            {/* Receipt Details & Amount */}
-            <div className="flex justify-between items-center mb-12 bg-slate-50 p-6 rounded-lg border border-slate-100 print:bg-slate-50 print:border-slate-200">
-                <div>
-                    <p className="text-sm font-medium text-slate-500 uppercase tracking-wide mb-1">Total Paid</p>
-                    <div className="text-4xl font-bold text-emerald-600 flex items-baseline">
-                        <span className="text-2xl mr-1">{currency}</span>
-                        {Number(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </div>
-                </div>
-                <div className="text-right">
-                     <p className="text-sm font-medium text-slate-500 uppercase tracking-wide mb-1">Receipt No</p>
-                     <p className="font-mono text-lg font-semibold text-slate-700">#{payment.id?.substring(0, 8).toUpperCase()}</p>
-                </div>
-            </div>
+  const tenantName = typeof payment.tenantId === 'object' ? (payment.tenantId?.name || 'Tenant') : (payment.tenantId || 'Tenant');
+  const unitInfo = typeof payment.unitId === 'object'
+    ? (payment.unitId?.unitNumber || payment.unitId?.number || 'N/A')
+    : (payment.unitId || 'N/A');
+  const businessName = businessInfo?.companyName || businessInfo?.orgName || businessInfo?.name || 'Property Management';
+  const amountFormatted = Number(payment.amount || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 
-            {/* Main Info Grid */}
-            <div className="grid grid-cols-2 gap-x-12 gap-y-8 mb-12">
-                <div>
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Billed To</p>
-                    <p className="text-lg font-semibold text-slate-900">{payment.tenantId}</p>
-                    <p className="text-slate-600 mt-1">
-                        Unit: {typeof payment.unitId === 'object' ? (payment.unitId.unitNumber || payment.unitId.number || 'N/A') : payment.unitId}
-                    </p>
-                </div>
-                <div className="text-right">
-                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Payment Details</p>
-                    <p className="text-slate-700"><span className="font-medium text-slate-900">Date:</span> {formattedDate}</p>
-                    <p className="text-slate-700 mt-1 capitalize"><span className="font-medium text-slate-900">Method:</span> {payment.method?.replace('_', ' ') || 'Cash'}</p>
-                    <p className="text-slate-700 mt-1 capitalize"><span className="font-medium text-slate-900">Status:</span> 
-                        <span className={`ml-2 px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                            payment.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 
-                            payment.status === 'partial' ? 'bg-amber-100 text-amber-700' : 
-                            'bg-slate-100 text-slate-700'
-                        }`}>
-                            {payment.status}
-                        </span>
-                    </p>
-                </div>
-            </div>
+  const rawStatus = String(payment.status || 'PAID').toUpperCase();
+  const isPaid = ['PAID', 'COMPLETED', 'CONFIRMED'].includes(rawStatus);
 
-            {/* Footer */}
-            <div className="border-t-2 border-slate-100 pt-8 text-center print:mt-16">
-                <p className="text-slate-900 font-medium mb-2">Thank you for your payment!</p>
-                <p className="text-slate-500 text-sm">If you have any questions about this receipt, please contact our property management office.</p>
-                <div className="w-full flex justify-center mt-6">
-                     <p className="text-xs text-slate-300 font-mono">{payment._id || payment.id} • Authorized Electronically</p>
-                </div>
-            </div>
+  return (
+    <div
+      ref={ref}
+      id="receipt-content"
+      className="bg-white max-w-3xl mx-auto shadow-none print:shadow-none print:w-full print:max-w-none text-slate-900 font-sans border border-slate-200"
+    >
+      {/* Top Navy -> Teal Bar */}
+      <div className="h-2.5 w-full bg-linear-to-r from-[#0a1e35] via-[#0d2240] to-[#00a99d]" />
+
+      <div className="p-8 space-y-6">
+        {/* Top-right Organization Header */}
+        <div className="text-right">
+          <h3 className="text-base font-bold text-[#0d2240]">{businessName}</h3>
+          {(businessInfo?.phone || businessInfo?.email) && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {[businessInfo?.phone, businessInfo?.email].filter(Boolean).join(' | ')}
+            </p>
+          )}
         </div>
-    );
+
+        {/* Centered Title */}
+        <div className="text-center space-y-1">
+          <h1 className="text-lg font-extrabold tracking-widest text-slate-900 uppercase">
+            {invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT'}
+          </h1>
+          {invoiceRef && (
+            <p className="text-xs font-bold tracking-wider text-[#00a99d] uppercase">
+              RECEIPT FOR INVOICE #{invoiceRef}
+            </p>
+          )}
+        </div>
+
+        {/* 3-Column Metadata Grid (matching Rent Receipt PDF) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs pt-2">
+          <div>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="w-0.5 h-3.5 bg-[#00a99d] inline-block" />
+              <span className="font-bold text-[#00a99d] uppercase tracking-wide">TENANT DETAILS</span>
+            </div>
+            <p className="font-bold text-[#0d2240]">NAME:</p>
+            <p className="mb-2 uppercase">{tenantName}</p>
+            <p className="font-bold text-[#0d2240]">PROPERTY / UNIT:</p>
+            <p>{payment.property ? `${payment.property} — Unit ${unitInfo}` : `Unit ${unitInfo}`}</p>
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="w-0.5 h-3.5 bg-[#00a99d] inline-block" />
+              <span className="font-bold text-[#00a99d] uppercase tracking-wide">RECEIPT DETAILS</span>
+            </div>
+            <p className="font-bold text-[#0d2240]">Receipt Number:</p>
+            <p className="mb-2 font-mono">{receiptRef}</p>
+            {invoiceRef && (
+              <>
+                <p className="font-bold text-[#0d2240]">Receipt For:</p>
+                <p className="mb-2 font-semibold text-[#00a99d]">Invoice #{invoiceRef}</p>
+              </>
+            )}
+            <p className="font-bold text-[#0d2240]">Period Covered:</p>
+            <p className="mb-2">{period}</p>
+            <p className="font-bold text-[#0d2240]">Date Generated:</p>
+            <p>{formattedDateTime}</p>
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="w-0.5 h-3.5 bg-[#00a99d] inline-block" />
+              <span className="font-bold text-[#00a99d] uppercase tracking-wide">PAYMENT DETAILS</span>
+            </div>
+            <p className="font-bold text-[#0d2240]">Organisation:</p>
+            <p className="mb-2">{businessName}</p>
+            <p className="font-bold text-[#0d2240]">Payment Mode:</p>
+            <p className="mb-2 uppercase">{String(payment.method || 'CASH').replace(/_/g, ' ')}</p>
+            <p className="font-bold text-[#0d2240]">Amount Paid:</p>
+            <p className="font-bold">{currency} {amountFormatted}</p>
+          </div>
+        </div>
+
+        {/* Full-Width Bold Status Banner */}
+        <div
+          className={`w-full py-2.5 text-center font-bold text-sm tracking-widest text-white uppercase ${
+            isPaid ? 'bg-[#00a99d]' : rawStatus === 'PARTIAL' ? 'bg-amber-600' : 'bg-rose-600'
+          }`}
+        >
+          {isPaid ? 'PAID' : rawStatus}
+        </div>
+
+        {/* Payment Summary Table */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-0.5 h-3.5 bg-[#00a99d] inline-block" />
+            <span className="text-xs font-bold text-[#00a99d] uppercase tracking-wide">PAYMENT SUMMARY</span>
+          </div>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-[#0d2240] text-white text-[11px] uppercase">
+                <th className="py-2 px-3 text-left">Billing Period</th>
+                <th className="py-2 px-3 text-left">Description</th>
+                <th className="py-2 px-3 text-right">Total Paid</th>
+                <th className="py-2 px-3 text-right">Date Generated</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-200">
+                <td className="py-2.5 px-3">{period}</td>
+                <td className="py-2.5 px-3">
+                  {invoiceRef
+                    ? `${payment.type || 'Invoice Payment'} — Invoice #${invoiceRef} (Unit ${unitInfo})`
+                    : `${payment.type || 'Rental Payment'} (Unit ${unitInfo})`}
+                </td>
+                <td className="py-2.5 px-3 text-right font-semibold">{currency} {amountFormatted}</td>
+                <td className="py-2.5 px-3 text-right">{formattedDateTime}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Centered Footer */}
+        <div className="pt-4 text-center text-xs text-slate-500">
+          Thank you for being a valued resident | {businessName} | Ref # {receiptRef}
+        </div>
+      </div>
+    </div>
+  );
 });
 
 export default Receipt;
