@@ -784,14 +784,24 @@ export default function BillingDashboardPage() {
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {transactions.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
-                    className="h-7 px-2.5 text-[11px] cursor-pointer"
-                  >
-                    <Download className="w-3 h-3 mr-1" /> Export CSV
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadAuthFile(`/subscriptions/transactions/export/pdf`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.pdf`)}
+                      className="h-7 px-2.5 text-[11px] cursor-pointer"
+                    >
+                      <Download className="w-3 h-3 mr-1" /> Export PDF
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
+                      className="h-7 px-2.5 text-[11px] cursor-pointer"
+                    >
+                      <Download className="w-3 h-3 mr-1" /> Export CSV
+                    </Button>
+                  </>
                 )}
                 {transactions.length > 5 && (
                   <Button
@@ -1174,14 +1184,24 @@ export default function BillingDashboardPage() {
                   Complete record of your MakaziFlow subscription payments, references, and downloadable receipts.
                 </DialogDescription>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
-                className="text-xs h-8 cursor-pointer shrink-0"
-              >
-                <Download className="w-3.5 h-3.5 mr-1.5" /> Download CSV
-              </Button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadAuthFile(`/subscriptions/transactions/export/pdf`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.pdf`)}
+                  className="text-xs h-8 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" /> Download PDF
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
+                  className="text-xs h-8 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1.5" /> Download CSV
+                </Button>
+              </div>
             </div>
           </DialogHeader>
           <div className="overflow-x-auto border rounded-lg">

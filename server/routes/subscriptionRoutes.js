@@ -16,6 +16,7 @@ const {
   logSubscriptionAudit
 } = require('../services/subscriptionService');
 const { createStructuredInvoice } = require('../services/invoiceService');
+const { generateSubscriptionStatementPDF } = require('../utils/generateSubscriptionStatementPDF');
 const PaymentService = require('../services/payments/PaymentService');
 const { paymentCheckoutLimiter } = require('../middleware/securityMiddleware');
 
@@ -164,21 +165,25 @@ function escapeCsvCell(val) {
   return `"${str.replace(/"/g, '""')}"`;
 }
 
+async function getLandlordSubscriptionTxns(landlordId) {
+  const txns = await PaymentTransaction.find({
+    landlordId,
+    paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] }
+  }).sort({ createdAt: -1 }).limit(1000).lean();
+
+  return txns.filter((t) => {
+    const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
+    return !(t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow'));
+  });
+}
+
 // @desc    Download complete subscription payment history CSV for the logged-in landlord
 // @route   GET /api/subscriptions/transactions/export
 // @access  Private (Landlord / Admin)
 router.get('/transactions/export', protect, admin, async (req, res) => {
   try {
     const landlordId = req.user._id || req.user.id;
-    const txns = await PaymentTransaction.find({
-      landlordId,
-      paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] }
-    }).sort({ createdAt: -1 }).limit(1000).lean();
-
-    const filtered = txns.filter((t) => {
-      const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
-      return !(t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow'));
-    });
+    const filtered = await getLandlordSubscriptionTxns(landlordId);
 
     const headers = [
       'Date',
@@ -222,6 +227,30 @@ router.get('/transactions/export', protect, admin, async (req, res) => {
       'Content-Disposition': `attachment; filename="makaziflow-payment-history-${dateTag}.csv"`
     });
     res.send(csv);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Download complete subscription payment history statement as PDF for the logged-in landlord
+// @route   GET /api/subscriptions/transactions/export/pdf
+// @access  Private (Landlord / Admin)
+router.get('/transactions/export/pdf', protect, admin, async (req, res) => {
+  try {
+    const landlordId = req.user._id || req.user.id;
+    const filtered = await getLandlordSubscriptionTxns(landlordId);
+    const pdfBuffer = await generateSubscriptionStatementPDF({
+      user: { name: req.user.name, email: req.user.email },
+      transactions: filtered
+    });
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="makaziflow-payment-history-${dateTag}.pdf"`,
+      'Content-Length': pdfBuffer.length
+    });
+    res.send(pdfBuffer);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

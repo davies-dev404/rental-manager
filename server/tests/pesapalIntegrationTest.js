@@ -489,7 +489,16 @@ async function runTests() {
     assert.ok(String(exportA.data).includes('PPMPESA001'));
     assert.ok(!String(exportA.data).includes('PPPRODVISA001'), 'Landlord CSV export MUST NOT leak other landlords');
     assert.strictEqual((await apiReq('/api/subscriptions/transactions/export')).status, 401);
-    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV export');
+
+    const exportPdfRes = await fetch(`${baseUrl}/api/subscriptions/transactions/export/pdf`, {
+      headers: { Authorization: `Bearer ${tokA}` }
+    });
+    assert.strictEqual(exportPdfRes.status, 200);
+    assert.ok(exportPdfRes.headers.get('content-type')?.includes('application/pdf'));
+    const pdfBuf = Buffer.from(await exportPdfRes.arrayBuffer());
+    assert.ok(pdfBuf.slice(0, 5).toString('utf8') === '%PDF-', 'Exported statement must be a valid PDF binary');
+    assert.strictEqual((await apiReq('/api/subscriptions/transactions/export/pdf')).status, 401);
+    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV/PDF export');
 
     console.log('\n🎉 ALL 6 PESAPAL API 3.0 INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');
   } finally {
