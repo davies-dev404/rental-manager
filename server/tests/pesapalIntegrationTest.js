@@ -498,7 +498,25 @@ async function runTests() {
     const pdfBuf = Buffer.from(await exportPdfRes.arrayBuffer());
     assert.ok(pdfBuf.slice(0, 5).toString('utf8') === '%PDF-', 'Exported statement must be a valid PDF binary');
     assert.strictEqual((await apiReq('/api/subscriptions/transactions/export/pdf')).status, 401);
-    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV/PDF export');
+
+    // Transaction lookup verification scoped to owning landlord
+    const lookupOk = await apiReq('/api/v2/payments/lookup', {
+      method: 'POST',
+      token: tokA,
+      body: { query: 'PPMPESA001' }
+    });
+    assert.strictEqual(lookupOk.status, 200);
+    assert.strictEqual(lookupOk.data.found, true);
+    assert.strictEqual(lookupOk.data.status, 'paid');
+
+    const lookupOtherLandlord = await apiReq('/api/v2/payments/lookup', {
+      method: 'POST',
+      token: tokB,
+      body: { query: 'PPMPESA001' }
+    });
+    assert.strictEqual(lookupOtherLandlord.status, 200);
+    assert.strictEqual(lookupOtherLandlord.data.found, false, 'Lookup MUST NOT leak another landlord transaction');
+    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV/PDF/lookup');
 
     console.log('\n🎉 ALL 6 PESAPAL API 3.0 INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');
   } finally {

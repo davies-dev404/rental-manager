@@ -886,6 +886,15 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to load transactions");
   },
+  lookupGatewayTransaction: async (query) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/lookup`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ query })
+    });
+    return await parseApiResponse(response, "Failed to verify transaction status");
+  },
   getStructuredInvoices: async (category = "") => {
     const response = await smartFetch(`${API_URL}/v2/payments/invoices${category ? `?category=${category}` : ""}`, {
       headers: getAuthHeaders(),

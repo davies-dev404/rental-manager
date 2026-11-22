@@ -314,7 +314,109 @@ router.post('/tenant/initiate', protect, paymentCheckoutLimiter, async (req, res
   }
 });
 
-// @desc    Pull-verify transaction status with Pesaflow
+// @desc    Lookup & Live-Verify Transaction by Reference, Confirmation Code, or Tracking ID
+// @route   POST /api/v2/payments/lookup
+// @access  Private
+router.post('/lookup', protect, async (req, res) => {
+  try {
+    const cleanQuery = String(req.body?.query || '').trim();
+    if (!cleanQuery) {
+      return res.status(400).json({ success: false, message: 'Transaction code or reference is required.' });
+    }
+
+    const userId = String(req.user._id || req.user.id);
+    const isSuper = Boolean(req.user.isSuperAdmin || req.user.role === 'superadmin');
+
+    const orClauses = [
+      { accountReference: cleanQuery },
+      { trackingId: cleanQuery },
+      { checkoutId: cleanQuery },
+      { providerReference: cleanQuery },
+      { gatewayInvoiceNumber: cleanQuery },
+      { internalTransactionId: cleanQuery }
+    ];
+    if (isValidObjectId(cleanQuery)) {
+      orClauses.push({ _id: cleanQuery });
+    }
+
+    const scopeFilter = isSuper
+      ? { $or: orClauses }
+      : (req.user.role === 'tenant' && req.user.tenantId
+        ? { tenantId: req.user.tenantId, $or: orClauses }
+        : { landlordId: req.user._id || req.user.id, $or: orClauses });
+
+    let txn = await PaymentTransaction.findOne(scopeFilter)
+      .populate('tenantId', 'name email phone')
+      .lean();
+
+    if (txn) {
+      if (['pending', 'processing'].includes(txn.status) && (txn.trackingId || txn.checkoutId)) {
+        try {
+          const verified = await PaymentService.verifyTransactionStatus(txn._id);
+          if (verified?.transaction) {
+            txn = {
+              ...txn,
+              status: verified.transaction.status,
+              providerReference: verified.transaction.providerReference || txn.providerReference,
+              paymentMethodDetail: verified.transaction.paymentMethodDetail || txn.paymentMethodDetail,
+              paidAt: verified.transaction.paidAt || txn.paidAt
+            };
+          }
+        } catch (verifyErr) {
+          console.warn(`Lookup live verify warning for ${txn.accountReference}:`, verifyErr.message);
+        }
+      }
+
+      return res.json({
+        success: true,
+        found: true,
+        receipt: txn.providerReference || txn.accountReference || txn.trackingId,
+        trackingId: txn.trackingId || '',
+        reference: txn.accountReference || '',
+        tenant: txn.tenantId?.name || txn.customerName || 'Customer',
+        amount: Number(txn.amountPaid || txn.amount || 0),
+        method: txn.paymentMethodDetail || txn.paymentChannel || txn.provider,
+        provider: txn.provider,
+        status: txn.status,
+        date: txn.paidAt || txn.createdAt
+      });
+    }
+
+    // Fallback: search tenant collection Payment records owned by this user
+    const paymentClauses = [{ reference: cleanQuery }];
+    if (isValidObjectId(cleanQuery)) paymentClauses.push({ _id: cleanQuery });
+    const paymentFilter = isSuper
+      ? { $or: paymentClauses }
+      : { user: req.user._id || req.user.id, $or: paymentClauses };
+
+    const pay = await Payment.findOne(paymentFilter).populate('tenantId', 'name').lean();
+    if (pay) {
+      return res.json({
+        success: true,
+        found: true,
+        receipt: pay.reference || String(pay._id),
+        reference: pay.reference || '',
+        tenant: pay.tenantId?.name || 'Tenant',
+        amount: Number(pay.amount || 0),
+        method: pay.method || 'M-Pesa',
+        provider: 'pesapal',
+        status: pay.status || 'paid',
+        date: pay.date || pay.createdAt
+      });
+    }
+
+    return res.json({
+      success: false,
+      found: false,
+      receipt: cleanQuery,
+      message: 'No matching transaction found yet in gateway logs.'
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
+// @desc    Pull-verify transaction status with gateway
 // @route   GET /api/v2/payments/verify/:transactionId
 // @access  Private
 router.get('/verify/:transactionId', protect, validateObjectId('transactionId'), async (req, res) => {

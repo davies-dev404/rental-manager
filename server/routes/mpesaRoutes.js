@@ -95,19 +95,20 @@ router.post('/stk-push', protect, async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 500).json({
       success: false,
-      code: error.code || 'PESAFLOW_INIT_ERROR',
-      message: error.message || 'Failed to initiate payment via Pesaflow'
+      code: error.code || 'GATEWAY_INIT_ERROR',
+      message: error.message || 'Failed to initiate payment via active gateway'
     });
   }
 });
 
-// @desc    Legacy M-Pesa callback forwarder -> delegates to Pesaflow Webhook Processor
+// @desc    Legacy M-Pesa callback forwarder -> delegates to active default Gateway Webhook Processor
 // @route   POST /api/mpesa/callback
 // @access  Public
 router.post('/callback', async (req, res) => {
   try {
+    const providerCode = PaymentService.resolveDefaultProvider();
     const result = await PaymentService.processWebhook({
-      providerCode: 'pesaflow',
+      providerCode,
       payload: req.body,
       headers: req.headers,
       sourceIp: req.ip || ''

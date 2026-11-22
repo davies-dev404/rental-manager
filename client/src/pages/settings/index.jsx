@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { api } from "@/lib/api";
+import { api, API_URL } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { usePreferences } from "@/lib/currency";
@@ -304,35 +304,75 @@ function MpesaTransactionsTab() {
     retry: 1
   });
 
+  const gatewayTxnsQuery = useQuery({
+    queryKey: ["gateway-transactions"],
+    queryFn: () => api.getGatewayTransactions(),
+    staleTime: 10_000,
+    retry: 1
+  });
+
   const payments = paymentsQuery.data || [];
+  const gatewayTxns = gatewayTxnsQuery.data || [];
 
-  // Filter transactions for M-Pesa or general payments with M-Pesa characteristics
-  const mpesaTransactions = React.useMemo(() => {
-    return payments.filter((p) => {
-      const method = (p.method || p.type || "").toLowerCase();
-      const hasMpesaRef = p.reference && /^[A-Z0-9]{8,12}$/i.test(p.reference);
-      const hasCheckoutId = Boolean(p.checkoutRequestId);
-      return method.includes("mpesa") || method.includes("daraja") || hasMpesaRef || hasCheckoutId;
+  // Merge Pesapal/gateway transactions and legacy/manual payment records cleanly without duplicates
+  const displayTransactions = React.useMemo(() => {
+    const normalizedGateway = gatewayTxns
+      .filter((t) => !(t.status === "failed" && !t.trackingId && !t.checkoutId && !t.providerReference))
+      .map((t) => ({
+        _id: t._id,
+        isGatewayTxn: true,
+        date: t.paidAt || t.createdAt,
+        reference: t.providerReference || t.accountReference || t.trackingId || "—",
+        subReference: t.providerReference && t.accountReference ? t.accountReference : (t.trackingId || ""),
+        tenantId: t.tenantId?.name || t.customerName || "Subscriber",
+        method: t.paymentMethodDetail || (t.provider === "pesapal" ? `Pesapal (${t.paymentChannel || "Checkout"})` : t.paymentChannel || t.provider || "Pesapal"),
+        amount: t.amountPaid || t.amount || 0,
+        status: t.status || "pending",
+        provider: t.provider || "pesapal",
+        trackingId: t.trackingId || "",
+        phoneNumber: t.customerPhone || ""
+      }));
+
+    const seenRefs = new Set(normalizedGateway.map((x) => String(x.reference || "").toLowerCase()));
+    const merged = [...normalizedGateway];
+
+    payments.forEach((p) => {
+      const refKey = String(p.reference || p._id || "").toLowerCase();
+      if (!seenRefs.has(refKey)) {
+        merged.push({
+          _id: p._id,
+          isGatewayTxn: false,
+          date: p.date || p.createdAt,
+          reference: p.reference || p.checkoutRequestId || "—",
+          subReference: "",
+          tenantId: p.tenantId || "Tenant",
+          method: p.method || "M-Pesa",
+          amount: p.amount || 0,
+          status: p.status || "Completed",
+          phoneNumber: p.phoneNumber || ""
+        });
+      }
     });
-  }, [payments]);
 
-  // If specific M-Pesa transactions aren't tagged, show recent payment collection records
-  const displayTransactions = mpesaTransactions.length > 0 ? mpesaTransactions : payments;
+    return merged.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }, [gatewayTxns, payments]);
 
   const filtered = displayTransactions.filter((p) => {
     const q = searchTerm.toLowerCase().trim();
     const matchesSearch =
       !q ||
       (p.reference && p.reference.toLowerCase().includes(q)) ||
+      (p.subReference && p.subReference.toLowerCase().includes(q)) ||
+      (p.trackingId && p.trackingId.toLowerCase().includes(q)) ||
       (p.tenantId && String(p.tenantId).toLowerCase().includes(q)) ||
-      (p.checkoutRequestId && p.checkoutRequestId.toLowerCase().includes(q)) ||
       (p.phoneNumber && String(p.phoneNumber).includes(q));
 
     const statusStr = (p.status || "Completed").toLowerCase();
     const matchesStatus =
       statusFilter === "all" ||
       (statusFilter === "completed" && (statusStr === "completed" || statusStr === "paid")) ||
-      statusStr === statusFilter.toLowerCase();
+      (statusFilter === "pending" && (statusStr === "pending" || statusStr === "processing")) ||
+      (statusFilter === "failed" && (statusStr === "failed" || statusStr === "cancelled" || statusStr === "reversed"));
 
     return matchesSearch && matchesStatus;
   });
@@ -341,55 +381,72 @@ function MpesaTransactionsTab() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     toast({
-      title: "Callback URL Copied",
+      title: "URL Copied",
       description: "The URL has been copied to your clipboard."
     });
     setTimeout(() => setCopiedField(""), 2000);
   };
 
-  const handleCheckStatus = (e) => {
+  const handleCheckStatus = async (e) => {
     e.preventDefault();
     if (!queryCode.trim()) {
       toast({
         title: "Code Required",
-        description: "Please enter an M-Pesa Receipt Code or Checkout Request ID to query.",
+        description: "Please enter a Pesapal Tracking ID, M-Pesa Confirmation Code, or Reference.",
         variant: "destructive"
       });
       return;
     }
 
     setIsQuerying(true);
-    setTimeout(() => {
-      setIsQuerying(false);
-      const code = queryCode.trim().toLowerCase();
-      const found = displayTransactions.find(
-        (p) =>
-          (p.reference && p.reference.toLowerCase() === code) ||
-          (p.checkoutRequestId && p.checkoutRequestId.toLowerCase() === code) ||
-          (p._id && p._id.toLowerCase() === code)
-      );
-
-      if (found) {
+    try {
+      const res = await api.lookupGatewayTransaction(queryCode.trim());
+      if (res?.found) {
         setQueryResult({
           success: true,
-          receipt: found.reference || found.checkoutRequestId || found._id,
-          tenant: found.tenantId || "Tenant",
-          amount: Number(found.amount || 0).toLocaleString(),
-          date: found.date ? new Date(found.date).toLocaleString() : "Recent",
-          status: found.status || "Completed"
+          receipt: res.receipt || queryCode.trim(),
+          tenant: res.tenant || "Customer",
+          amount: Number(res.amount || 0).toLocaleString(),
+          date: res.date ? new Date(res.date).toLocaleString() : "Recent",
+          status: res.status || "Completed"
         });
+        gatewayTxnsQuery.refetch();
+        paymentsQuery.refetch();
       } else {
         setQueryResult({
           success: false,
           receipt: queryCode.trim(),
-          message: "Transaction not yet registered in local logs. Awaiting Safaricom C2B/STK callback."
+          message: res?.message || "Transaction not found yet. Awaiting Pesapal IPN / payment confirmation."
         });
       }
-    }, 400);
+    } catch (err) {
+      setQueryResult({
+        success: false,
+        receipt: queryCode.trim(),
+        message: err.message || "Unable to verify transaction status right now."
+      });
+    } finally {
+      setIsQuerying(false);
+    }
   };
 
-  const validationUrl = `${typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-validation`;
-  const confirmationUrl = `${typeof window !== "undefined" ? window.location.origin : "https://api.yourdomain.com"}/api/mpesa/c2b-confirmation`;
+  const handleVerifyRow = async (txnId) => {
+    try {
+      const res = await api.verifyGatewayTransaction(txnId);
+      toast({
+        title: "Status Checked",
+        description: `Transaction status: ${res?.transaction?.status || "processing"}`
+      });
+      gatewayTxnsQuery.refetch();
+      paymentsQuery.refetch();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Verification Error", description: err.message });
+    }
+  };
+
+  const cleanApiBase = String(API_URL || "").replace(/\/+$/, "");
+  const ipnWebhookUrl = `${cleanApiBase.startsWith("http") ? cleanApiBase : `${typeof window !== "undefined" ? window.location.origin : ""}${cleanApiBase}`}/v2/payments/webhooks/pesapal`;
+  const returnCallbackUrl = `${typeof window !== "undefined" ? window.location.origin : "https://makaziflow.afrinextech.co.ke"}/billing?payment_return=1&provider=pesapal`;
 
   const counts = {
     all: displayTransactions.length,
@@ -397,8 +454,8 @@ function MpesaTransactionsTab() {
       const s = (p.status || "").toLowerCase();
       return s === "completed" || s === "paid" || !p.status;
     }).length,
-    pending: displayTransactions.filter((p) => (p.status || "").toLowerCase() === "pending").length,
-    failed: displayTransactions.filter((p) => (p.status || "").toLowerCase() === "failed").length,
+    pending: displayTransactions.filter((p) => ["pending", "processing"].includes((p.status || "").toLowerCase())).length,
+    failed: displayTransactions.filter((p) => ["failed", "cancelled", "reversed"].includes((p.status || "").toLowerCase())).length,
   };
 
   return (
@@ -408,14 +465,14 @@ function MpesaTransactionsTab() {
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-              MPESA Transactions Status
+              MPESA &amp; Pesapal Transactions
             </h2>
             <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
-              Pesaflow Ready
+              Pesapal API 3.0 Active
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Live M-Pesa payment callbacks, instant transaction lookup, and Pesaflow STK/C2B logs.
+            Live M-Pesa, Visa, and Mastercard payment callbacks, instant transaction verification, and Pesapal IPN logs.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -424,12 +481,13 @@ function MpesaTransactionsTab() {
             variant="outline"
             onClick={() => {
               paymentsQuery.refetch();
-              toast({ title: "Refreshed", description: "M-Pesa transaction records reloaded." });
+              gatewayTxnsQuery.refetch();
+              toast({ title: "Refreshed", description: "Pesapal & M-Pesa transaction records reloaded." });
             }}
-            disabled={paymentsQuery.isFetching}
+            disabled={paymentsQuery.isFetching || gatewayTxnsQuery.isFetching}
             className="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${paymentsQuery.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${(paymentsQuery.isFetching || gatewayTxnsQuery.isFetching) ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
@@ -440,50 +498,50 @@ function MpesaTransactionsTab() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white">Pesaflow Live Callbacks</span>
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Pesapal Live IPN &amp; Callback URLs</span>
           </div>
-          <span className="text-[11px] text-muted-foreground">Configured automatically via Pesaflow merchant gateway</span>
+          <span className="text-[11px] text-muted-foreground">Configured via Pesapal API 3.0 gateway</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Validation URL */}
+          {/* IPN Webhook URL */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Validation URL</span>
-              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Validates Bill/Account</span>
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Pesapal IPN URL (POST / GET)</span>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Real-Time Status Alerts</span>
             </div>
             <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
               <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
-                {validationUrl}
+                {ipnWebhookUrl}
               </span>
               <button
                 type="button"
-                onClick={() => handleCopy(validationUrl, "validation")}
+                onClick={() => handleCopy(ipnWebhookUrl, "ipn")}
                 className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                 title="Copy URL"
               >
-                {copiedField === "validation" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedField === "ipn" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
 
-          {/* Confirmation URL */}
+          {/* Checkout Return Callback URL */}
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Confirmation URL</span>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Confirms & Logs Payment</span>
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Checkout Return Callback URL</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Verifies Payment Return</span>
             </div>
             <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
               <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
-                {confirmationUrl}
+                {returnCallbackUrl}
               </span>
               <button
                 type="button"
-                onClick={() => handleCopy(confirmationUrl, "confirmation")}
+                onClick={() => handleCopy(returnCallbackUrl, "callback")}
                 className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                 title="Copy URL"
               >
-                {copiedField === "confirmation" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedField === "callback" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
@@ -494,9 +552,9 @@ function MpesaTransactionsTab() {
       <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-3.5">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xs font-bold text-slate-900 dark:text-white">Query Transaction Status</h3>
+            <h3 className="text-xs font-bold text-slate-900 dark:text-white">Query Transaction Status (Pesapal Live)</h3>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Verify any M-Pesa receipt code, checkout request ID, or transaction reference.
+              Verify any M-Pesa confirmation code, Pesapal Tracking ID, or MakaziFlow reference.
             </p>
           </div>
         </div>
@@ -508,7 +566,7 @@ function MpesaTransactionsTab() {
               type="text"
               value={queryCode}
               onChange={(e) => setQueryCode(e.target.value)}
-              placeholder="e.g. QJH29A8K9L or ws_CO_24102026..."
+              placeholder="e.g. MFSUB-... or Pesapal OrderTrackingId..."
               className="w-full h-9 pl-9 pr-3 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 font-mono transition-colors"
             />
           </div>
@@ -611,9 +669,9 @@ function MpesaTransactionsTab() {
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400">
                     <Smartphone className="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-slate-600 dark:text-slate-300">No M-Pesa transactions found</p>
+                    <p className="font-medium text-slate-600 dark:text-slate-300">No Pesapal / M-Pesa transactions found</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Incoming C2B payments or STK push collections will be logged automatically.
+                      Incoming Pesapal IPN callbacks and M-Pesa / card collections will be logged automatically.
                     </p>
                   </td>
                 </tr>
@@ -633,7 +691,10 @@ function MpesaTransactionsTab() {
                         {item.date ? new Date(item.date).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "Recent"}
                       </td>
                       <td className="py-3 px-4 font-mono font-medium text-slate-800 dark:text-slate-200 whitespace-nowrap">
-                        {item.reference || item.checkoutRequestId || "—"}
+                        <div>{item.reference || item.checkoutRequestId || "—"}</div>
+                        {item.subReference && (
+                          <div className="text-[10px] text-slate-400">{item.subReference}</div>
+                        )}
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-900 dark:text-slate-100">
                         {item.tenantId || "Tenant"}
@@ -652,13 +713,22 @@ function MpesaTransactionsTab() {
                           className={`text-[10px] font-semibold ${
                             isSuccess
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                              : isPending
+                              : isPending || statusStr === "processing"
                               ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                               : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
                           }`}
                         >
                           {item.status || "Completed"}
                         </Badge>
+                        {item.isGatewayTxn && (isPending || statusStr === "processing") && (
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyRow(item._id)}
+                            className="ml-2 text-[10px] font-semibold text-[#0b1065] dark:text-blue-400 hover:underline cursor-pointer"
+                          >
+                            Verify
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
