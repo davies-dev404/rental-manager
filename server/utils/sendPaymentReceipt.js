@@ -5,6 +5,7 @@ const sendEmail = require('./sendEmail');
 const sendSMS = require('./sendSMS');
 const { generateReceiptPDF } = require('./generateReceiptPDF');
 const { getReceiptEmailBody } = require('./emailTemplates');
+const { resolvePaymentPurpose } = require('./shaPdfHelpers');
 const { getUserBusinessProfile } = require('./getUserBusinessProfile');
 
 /**
@@ -38,7 +39,7 @@ const sendPaymentReceipt = async (paymentId) => {
         const payment = await Payment.findOne({ _id: paymentId })
             .populate('tenantId', 'name email phone accountNumber')
             .populate('unitId', 'unitNumber propertyId')
-            .populate('invoiceId', 'invoiceNumber');
+            .populate('invoiceId', 'invoiceNumber billingPeriod items notes');
 
         if (!payment) {
             console.error(`Receipt Dispatch: Payment not found for ID ${paymentId}`);
@@ -71,6 +72,7 @@ const sendPaymentReceipt = async (paymentId) => {
 
         try {
             console.log(`Generating PDF receipt for ${tenant.email}...`);
+            const purpose = resolvePaymentPurpose(payment);
             const pdfBuffer = await generateReceiptPDF(payment, settings, propertyName);
             const emailHtml = getReceiptEmailBody(payment, tenant.name, settings, propertyName, payment.unitId?.unitNumber || '');
 
@@ -80,8 +82,8 @@ const sendPaymentReceipt = async (paymentId) => {
                 fromName: businessName,
                 replyToEmail: settings?.orgEmail || undefined,
                 subject: invoiceRef
-                    ? `Official Invoice Receipt - ${businessName} - #${reference} (Invoice #${invoiceRef})`
-                    : `Official Payment Receipt - ${businessName} - #${reference}`,
+                    ? `Official Invoice Receipt (${purpose.purposeText}) - ${businessName} - #${reference} (Invoice #${invoiceRef})`
+                    : `Official Payment Receipt (${purpose.purposeText}) - ${businessName} - #${reference}`,
                 message: emailHtml,
                 commMeta: {
                     category: 'receipt',
@@ -92,7 +94,9 @@ const sendPaymentReceipt = async (paymentId) => {
                     unitNumber: payment.unitId?.unitNumber || '',
                     recipientName: tenant.name,
                     recipientType: 'tenant',
-                    previewText: `Official payment receipt #${reference} for KES ${amountFormatted} (${unitNumber}).`
+                    previewText: invoiceRef
+                        ? `Invoice #${invoiceRef} (${purpose.purposeText}) receipt #${reference} for KES ${amountFormatted} (${unitNumber}).`
+                        : `Official ${purpose.purposeText} payment receipt #${reference} for KES ${amountFormatted} (${unitNumber}).`
                 },
                 attachments: [
                     {

@@ -6,7 +6,8 @@ const {
   drawRightOrgHeader,
   drawColHeader,
   drawColField,
-  resolveMpesaPaymentDetails
+  resolveMpesaPaymentDetails,
+  resolveInvoicePurposeLabel
 } = require('./shaPdfHelpers');
 
 /**
@@ -52,6 +53,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       const billingPeriod = invoice.billingPeriod || `${String(issuedDt.getMonth() + 1).padStart(2, '0')}/${issuedDt.getFullYear()}`;
       const formattedTotal = Number(invoice.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const unitInfo = String(invoice.unitNumber || invoice.unitId?.unitNumber || '').trim();
+      const invoicePurpose = resolveInvoicePurposeLabel(invoice);
 
       // 1. TOP GRADIENT BAR
       drawTopGradientBar(doc);
@@ -73,7 +75,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
         .text(docTitle, 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
       yPos += 19;
       doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
-        .text(`INVOICE #${invRef}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
+        .text(`INVOICE #${invRef} — ${invoicePurpose.toUpperCase()}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
       yPos += 22;
 
       // 4. THREE-COLUMN SHA METADATA GRID
@@ -110,6 +112,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       drawColHeader(doc, col2X, yPos, 'INVOICE DETAILS');
       let c2Y = yPos + 18;
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice Number:', invRef);
+      c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', invoicePurpose);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Billing Period:', billingPeriod);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Issued Date:', fmtDate(issuedDt));
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Due Date:', fmtDate(dueDt));

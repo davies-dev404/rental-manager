@@ -29,6 +29,38 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
   const rawStatus = String(payment.status || 'PAID').toUpperCase();
   const isPaid = ['PAID', 'COMPLETED', 'CONFIRMED'].includes(rawStatus);
 
+  const resolveUiPurpose = () => {
+    const tags = [];
+    const add = (t) => { if (t && !tags.includes(t)) tags.push(t); };
+    if (Number(payment.rentAmount || 0) > 0) add('Rent');
+    if (Number(payment.utilityAmount || 0) > 0 || (Array.isArray(payment.utilities) && payment.utilities.length > 0)) add('Utilities');
+    if (Number(payment.depositAmount || 0) > 0) add('Security Deposit');
+    if (Number(payment.serviceChargeAmount || 0) > 0) add('Service Charge');
+    if (Number(payment.penaltyAmount || 0) > 0) add('Late Payment Penalty');
+    const items = typeof payment.invoiceId === 'object' && Array.isArray(payment.invoiceId?.items) ? payment.invoiceId.items : [];
+    items.forEach((it) => {
+      const s = `${it.category || ''} ${it.description || ''}`.toLowerCase();
+      if (/maint|repair|plumb|paint|clean/.test(s)) add('Maintenance');
+      else if (/util|water|elect|power|garbage|sewer|gas/.test(s)) add('Utilities');
+      else if (/rent/.test(s)) add('Rent');
+      else if (/service/.test(s)) add('Service Charge');
+      else if (/penalt/.test(s)) add('Late Payment Penalty');
+      else if (/deposit/.test(s)) add('Security Deposit');
+    });
+    if (tags.length === 0) {
+      const hint = `${payment.category || ''} ${payment.type || ''} ${payment.notes || ''}`.toLowerCase();
+      if (/maint|repair|plumb|paint|clean/.test(hint)) add('Maintenance');
+      else if (/util|water|elect|power|garbage|sewer|gas/.test(hint)) add('Utilities');
+      else if (/deposit/.test(hint)) add('Security Deposit');
+      else if (/service/.test(hint)) add('Service Charge');
+      else if (/penalt|late/.test(hint)) add('Late Payment Penalty');
+      else if (payment.type && !/^(combined|rental payment|invoice payment)$/i.test(String(payment.type).trim())) add(String(payment.type).trim());
+      else add('Rent');
+    }
+    return tags.join(' & ');
+  };
+  const purposeText = resolveUiPurpose();
+
   return (
     <div
       ref={ref}
@@ -54,11 +86,11 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
           <h1 className="text-lg font-extrabold tracking-widest text-slate-900 uppercase">
             {invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT'}
           </h1>
-          {invoiceRef && (
-            <p className="text-xs font-bold tracking-wider text-[#00a99d] uppercase">
-              RECEIPT FOR INVOICE #{invoiceRef}
-            </p>
-          )}
+          <p className="text-xs font-bold tracking-wider text-[#00a99d] uppercase">
+            {invoiceRef
+              ? `RECEIPT FOR INVOICE #${invoiceRef} — ${purposeText.toUpperCase()}`
+              : `PAYMENT FOR: ${purposeText.toUpperCase()}`}
+          </p>
         </div>
 
         {/* 3-Column Metadata Grid (matching Rent Receipt PDF) */}
@@ -81,10 +113,17 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
             </div>
             <p className="font-bold text-[#0d2240]">Receipt Number:</p>
             <p className="mb-2 font-mono">{receiptRef}</p>
-            {invoiceRef && (
+            {invoiceRef ? (
               <>
                 <p className="font-bold text-[#0d2240]">Receipt For:</p>
                 <p className="mb-2 font-semibold text-[#00a99d]">Invoice #{invoiceRef}</p>
+                <p className="font-bold text-[#0d2240]">Invoice For:</p>
+                <p className="mb-2 font-semibold">{purposeText}</p>
+              </>
+            ) : (
+              <>
+                <p className="font-bold text-[#0d2240]">Payment For:</p>
+                <p className="mb-2 font-semibold">{purposeText}</p>
               </>
             )}
             <p className="font-bold text-[#0d2240]">Period Covered:</p>
@@ -157,8 +196,8 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
                 <td className="py-2.5 px-3">{period}</td>
                 <td className="py-2.5 px-3">
                   {invoiceRef
-                    ? `${payment.type || 'Invoice Payment'} — Invoice #${invoiceRef} (Unit ${unitInfo})`
-                    : `${payment.type || 'Rental Payment'} (Unit ${unitInfo})`}
+                    ? `${purposeText} — Invoice #${invoiceRef} (Unit ${unitInfo})`
+                    : `${purposeText} (Unit ${unitInfo})`}
                 </td>
                 <td className="py-2.5 px-3 text-right font-semibold">{currency} {amountFormatted}</td>
                 <td className="py-2.5 px-3 text-right">{formattedDateTime}</td>

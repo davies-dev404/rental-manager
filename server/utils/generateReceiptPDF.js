@@ -5,7 +5,8 @@ const {
   drawRightOrgHeader,
   drawColHeader,
   drawColField,
-  resolveMpesaPaymentDetails
+  resolveMpesaPaymentDetails,
+  resolvePaymentPurpose
 } = require('./shaPdfHelpers');
 
 /**
@@ -62,6 +63,7 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
       const unitInfo = typeof payment.unitId === 'object'
         ? (payment.unitId?.unitNumber || 'N/A')
         : (payment.unitId || 'N/A');
+      const purpose = resolvePaymentPurpose(payment);
 
       // 1. TOP GRADIENT BAR
       drawTopGradientBar(doc);
@@ -80,14 +82,17 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
       let yPos = Math.max(96, headerY + 12);
       doc.fontSize(14).font('Helvetica-Bold').fillColor(darkText)
         .text(invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT', 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
-      if (invoiceRef) {
-        yPos += 19;
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
-          .text(`RECEIPT FOR INVOICE #${invoiceRef}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
-        yPos += 22;
-      } else {
-        yPos += 34;
-      }
+      yPos += 19;
+      doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
+        .text(
+          invoiceRef
+            ? `RECEIPT FOR INVOICE #${invoiceRef} — ${purpose.purposeText.toUpperCase()}`
+            : `PAYMENT FOR: ${purpose.purposeText.toUpperCase()}`,
+          36,
+          yPos,
+          { align: 'center', width: 523, characterSpacing: 0.8 }
+        );
+      yPos += 22;
 
       // 4. THREE-COLUMN METADATA GRID
       const col1X = 36;
@@ -113,6 +118,9 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Receipt Number:', receiptRef);
       if (invoiceRef) {
         c2Y = drawColField(doc, col2X, c2Y, colW, 'Receipt For:', `Invoice #${invoiceRef}`);
+        c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', purpose.purposeText);
+      } else {
+        c2Y = drawColField(doc, col2X, c2Y, colW, 'Payment For:', purpose.purposeText);
       }
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Period Covered:', billingPeriod);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Total Amount:', `${currency}. ${formattedAmount}`);
@@ -169,39 +177,9 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
         .text('DATE GENERATED', 440, yPos + 8, { width: 110, align: 'right' });
       yPos += 24;
 
-      const rows = [];
-      if (payment.rentAmount > 0) {
-        rows.push({ desc: `Rent Payment (Unit ${unitInfo})`, amt: payment.rentAmount });
-      }
-      if (payment.depositAmount > 0) {
-        rows.push({ desc: 'Security Deposit', amt: payment.depositAmount });
-      }
-      if (payment.utilities && Array.isArray(payment.utilities) && payment.utilities.length > 0) {
-        payment.utilities.forEach((u) => {
-          if (Number(u.amount) > 0) {
-            rows.push({ desc: `Utility - ${u.name || 'Other'}`, amt: u.amount });
-          }
-        });
-      } else if (payment.utilityAmount > 0) {
-        rows.push({ desc: 'Utility Charges', amt: payment.utilityAmount });
-      }
-      if (payment.serviceChargeAmount > 0) {
-        rows.push({ desc: 'Service Charge', amt: payment.serviceChargeAmount });
-      }
-      if (payment.penaltyAmount > 0) {
-        rows.push({ desc: 'Late Payment Penalty', amt: payment.penaltyAmount });
-      }
-      if (rows.length === 0) {
-        const baseType = payment.type || 'Rental Payment';
-        rows.push({
-          desc: invoiceRef && !String(baseType).includes(invoiceRef)
-            ? `${baseType} — Invoice #${invoiceRef} (Unit ${unitInfo})`
-            : `${baseType} (Unit ${unitInfo})`,
-          amt: payment.amount
-        });
-      } else if (invoiceRef && !rows[0].desc.includes(invoiceRef)) {
-        rows[0].desc = `${rows[0].desc} · Invoice #${invoiceRef}`;
-      }
+      const rows = purpose.lineItems.length > 0
+        ? purpose.lineItems
+        : [{ desc: `${purpose.purposeText} (Unit ${unitInfo})`, amt: payment.amount }];
 
       rows.forEach((r) => {
         const rowAmt = Number(r.amt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

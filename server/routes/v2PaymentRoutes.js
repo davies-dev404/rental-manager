@@ -745,7 +745,7 @@ router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res
           populate: { path: 'propertyId', select: 'name' }
         }
       })
-      .populate('invoiceId', 'invoiceNumber billingPeriod')
+      .populate('invoiceId', 'invoiceNumber billingPeriod items notes')
       .populate('transactionId', 'chargeBreakdown paymentCategory accountReference');
     if (!receipt) return res.status(404).json({ message: 'Receipt not found' });
 

@@ -130,11 +130,180 @@ function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
   };
 }
 
+function classifyTextPurpose(raw = '') {
+  const s = String(raw || '').toLowerCase();
+  if (!s) return '';
+  if (/maint|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest/.test(s)) return 'Maintenance';
+  if (/util|water|elect|power|garbage|sewer|gas|trash|borehole/.test(s)) return 'Utilities';
+  if (/service\s*charge/.test(s)) return 'Service Charge';
+  if (/penalt|late\s*fee|late\s*payment/.test(s)) return 'Late Payment Penalty';
+  if (/deposit/.test(s)) return 'Security Deposit';
+  if (/rent/.test(s)) return 'Rent';
+  return '';
+}
+
+function normalizeCategoryTag(cat = '', desc = '') {
+  const c = String(cat || '').toLowerCase().trim();
+  if (c === 'rent') return 'Rent';
+  if (c === 'water' || c === 'electricity' || c === 'utilities') return 'Utilities';
+  if (c === 'maintenance') return 'Maintenance';
+  if (c === 'service_charge') return 'Service Charge';
+  if (c === 'penalty') return 'Late Payment Penalty';
+  if (c === 'deposit') return 'Security Deposit';
+  if (c === 'subscription') return 'Subscription';
+  return classifyTextPurpose(desc) || '';
+}
+
+/**
+ * Resolves specifically what a payment / invoice receipt is for (e.g. Rent, Utilities, Maintenance)
+ * and produces consistent summary line items for both PDF and email receipts.
+ */
+function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
+  const invObj = invoiceOverride || (typeof payment.invoiceId === 'object' ? payment.invoiceId : null);
+  const invItems = Array.isArray(invObj?.items) ? invObj.items : [];
+  const unitInfo = typeof payment.unitId === 'object'
+    ? (payment.unitId?.unitNumber || '')
+    : (payment.unitNumber || '');
+  const unitSuffix = unitInfo ? ` (Unit ${unitInfo})` : '';
+  const invoiceRef = String(payment.invoiceNumber || invObj?.invoiceNumber || '').trim();
+
+  const tags = [];
+  const pushTag = (t) => {
+    if (t && !tags.includes(t)) tags.push(t);
+  };
+  const lineItems = [];
+
+  if (Number(payment.rentAmount || 0) > 0) {
+    pushTag('Rent');
+    lineItems.push({ desc: `Rent Payment${unitSuffix}`, amt: Number(payment.rentAmount), categoryLabel: 'Rent' });
+  }
+  if (Number(payment.depositAmount || 0) > 0) {
+    pushTag('Security Deposit');
+    lineItems.push({ desc: `Security Deposit${unitSuffix}`, amt: Number(payment.depositAmount), categoryLabel: 'Security Deposit' });
+  }
+  if (Array.isArray(payment.utilities) && payment.utilities.length > 0) {
+    const validUtils = payment.utilities.filter((u) => Number(u?.amount) > 0);
+    if (validUtils.length > 0) {
+      pushTag('Utilities');
+      validUtils.forEach((u) => {
+        lineItems.push({
+          desc: `Utilities - ${u.name || 'Utility'}${unitSuffix}`,
+          amt: Number(u.amount),
+          categoryLabel: 'Utilities'
+        });
+      });
+    }
+  } else if (Number(payment.utilityAmount || 0) > 0) {
+    pushTag('Utilities');
+    const utilHint = classifyTextPurpose(`${payment.notes || ''} ${payment.type || ''}`) === 'Utilities' && payment.type && !/^(utilities|utility|combined)$/i.test(String(payment.type).trim())
+      ? `${payment.type}`
+      : 'Utility Charges';
+    lineItems.push({ desc: `Utilities - ${utilHint}${unitSuffix}`, amt: Number(payment.utilityAmount), categoryLabel: 'Utilities' });
+  }
+  if (Number(payment.serviceChargeAmount || 0) > 0) {
+    pushTag('Service Charge');
+    lineItems.push({ desc: `Service Charge${unitSuffix}`, amt: Number(payment.serviceChargeAmount), categoryLabel: 'Service Charge' });
+  }
+  if (Number(payment.penaltyAmount || 0) > 0) {
+    pushTag('Late Payment Penalty');
+    lineItems.push({ desc: `Late Payment Penalty${unitSuffix}`, amt: Number(payment.penaltyAmount), categoryLabel: 'Late Payment Penalty' });
+  }
+
+  // If explicit payment buckets were empty (e.g., Maintenance or structured Invoice items)
+  if (lineItems.length === 0 && invItems.length > 0) {
+    invItems.forEach((it) => {
+      const amt = Number(it.totalAmount ?? it.unitPrice ?? payment.amount ?? 0);
+      const tag = normalizeCategoryTag(it.category, it.description) || classifyTextPurpose(`${payment.type || ''} ${payment.notes || ''}`) || 'Rent';
+      pushTag(tag);
+      const descText = String(it.description || tag).trim();
+      lineItems.push({
+        desc: descText.toLowerCase().includes(tag.toLowerCase()) ? descText : `${tag} — ${descText}`,
+        amt,
+        categoryLabel: tag
+      });
+    });
+  } else if (invItems.length > 0) {
+    invItems.forEach((it) => {
+      const tag = normalizeCategoryTag(it.category, it.description);
+      if (tag) pushTag(tag);
+    });
+  }
+
+  if (lineItems.length === 0) {
+    const rawType = String(payment.type || '').trim();
+    const rawNotes = String(payment.notes || invObj?.notes || '').trim();
+    const detected =
+      normalizeCategoryTag(payment.category, `${rawType} ${rawNotes}`) ||
+      classifyTextPurpose(`${rawType} ${rawNotes}`);
+    const fallbackLabel =
+      detected ||
+      (rawType && !/^(combined|rental payment|invoice payment|rent)$/i.test(rawType) ? rawType : 'Rent');
+    pushTag(fallbackLabel);
+
+    const detail = rawNotes && !rawNotes.toLowerCase().includes(fallbackLabel.toLowerCase())
+      ? `${fallbackLabel} — ${rawNotes}`
+      : (rawType && rawType.toLowerCase() !== fallbackLabel.toLowerCase() && !/^(combined|rental payment)$/i.test(rawType)
+          ? `${fallbackLabel} (${rawType})`
+          : fallbackLabel);
+    lineItems.push({
+      desc: `${detail}${unitSuffix}`,
+      amt: Number(payment.amount || 0),
+      categoryLabel: fallbackLabel
+    });
+  }
+
+  if (invoiceRef && lineItems.length > 0 && !lineItems[0].desc.includes(invoiceRef)) {
+    lineItems[0].desc = `${lineItems[0].desc} · Invoice #${invoiceRef}`;
+  }
+
+  let purposeText = 'Rent';
+  if (tags.length === 1) {
+    purposeText = tags[0];
+  } else if (tags.length === 2) {
+    purposeText = `${tags[0]} & ${tags[1]}`;
+  } else if (tags.length > 2) {
+    purposeText = `${tags.slice(0, -1).join(', ')} & ${tags[tags.length - 1]}`;
+  }
+
+  return {
+    purposeText,
+    tags,
+    lineItems
+  };
+}
+
+/**
+ * Resolves what an Invoice document itself is specifically for (Rent, Utilities, Maintenance, etc.).
+ */
+function resolveInvoicePurposeLabel(invoice = {}) {
+  if (invoice.invoiceCategory === 'subscription') return 'MakaziFlow Subscription';
+  const items = Array.isArray(invoice.items) ? invoice.items : [];
+  const tags = [];
+  const pushTag = (t) => {
+    if (t && !tags.includes(t)) tags.push(t);
+  };
+  items.forEach((it) => {
+    const t = normalizeCategoryTag(it.category, it.description);
+    if (t) pushTag(t);
+  });
+  if (tags.length === 0) {
+    const hint = classifyTextPurpose(`${invoice.invoiceType || ''} ${invoice.notes || ''}`);
+    if (hint) pushTag(hint);
+    else if (invoice.invoiceType) pushTag(String(invoice.invoiceType).trim());
+  }
+  if (tags.length === 0) return 'Rent';
+  if (tags.length === 1) return tags[0];
+  if (tags.length === 2) return `${tags[0]} & ${tags[1]}`;
+  return `${tags.slice(0, -1).join(', ')} & ${tags[tags.length - 1]}`;
+}
+
 module.exports = {
   SHA_PALETTE,
   drawTopGradientBar,
   drawRightOrgHeader,
   drawColHeader,
   drawColField,
-  resolveMpesaPaymentDetails
+  resolveMpesaPaymentDetails,
+  resolvePaymentPurpose,
+  resolveInvoicePurposeLabel
 };

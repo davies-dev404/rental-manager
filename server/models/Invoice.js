@@ -4,7 +4,7 @@ const invoiceItemSchema = new mongoose.Schema({
   description: { type: String, required: true },
   category: {
     type: String,
-    enum: ['subscription', 'rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'other'],
+    enum: ['subscription', 'rent', 'water', 'electricity', 'utilities', 'maintenance', 'service_charge', 'penalty', 'deposit', 'other'],
     default: 'rent'
   },
   itemCode: { type: String, default: 'SRV-RENT-001' },

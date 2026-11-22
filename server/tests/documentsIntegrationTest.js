@@ -30,7 +30,7 @@ const Tenant = require('../models/Tenant');
 const Payment = require('../models/Payment');
 const Invoice = require('../models/Invoice');
 const PaymentReceipt = require('../models/PaymentReceipt');
-const { getReceiptEmailBody } = require('../utils/emailTemplates');
+const { getReceiptEmailBody, getInvoiceEmailBody } = require('../utils/emailTemplates');
 
 let server;
 let baseUrl = '';
@@ -181,11 +181,71 @@ async function runTests() {
 
     const tok = jwt.sign({ id: landlord._id, tv: 0 }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-    // TEST 1: Invoice Receipt Email HTML includes "Invoice #RNT-2026-0099"
-    const html = getReceiptEmailBody(payment, tenant.name, { orgName: 'Hacienda Properties Ltd' }, 'Hacienda', '2A');
+    // TEST 1: Invoice Receipt Email HTML uses SHA MakaziFlow layout + explicitly states what the invoice is for (Rent, Utilities, Maintenance)
+    const paybillSettings = { orgName: 'Hacienda Properties Ltd', mpesaType: 'Paybill', paybillAccount: '385410', integrations: { mpesa: { shortcode: '516600' } } };
+    const html = getReceiptEmailBody(payment, tenant.name, paybillSettings, 'Hacienda', '2A');
     assert.ok(html.includes('RNT-2026-0099'), 'Receipt email must reference the Invoice number');
     assert.ok(html.includes('Receipt For'), 'Receipt email must explicitly state Receipt For Invoice');
-    console.log('✅ PASS 1: Receipt email body explicitly displays Invoice reference');
+    assert.ok(html.includes('Invoice For:') && html.includes('Rent'), 'Rent receipt email must specify Invoice For: Rent');
+    assert.ok(html.includes('TENANT DETAILS') && html.includes('RECEIPT DETAILS') && html.includes('PAYMENT DETAILS') && html.includes('PAYMENT SUMMARY'), 'Email receipt must use SHA 3-column + summary layout');
+    assert.ok(html.includes('#0d2240') && html.includes('#00a99d'), 'Email receipt must use MakaziFlow Navy + Teal colors');
+    assert.ok(html.includes('516600') && html.includes('385410'), 'Paybill receipt email must show Paybill and Account Number');
+
+    const utilHtml = getReceiptEmailBody({
+      _id: payment._id,
+      invoiceNumber: 'INV-UTL-002',
+      amount: 1500,
+      utilityAmount: 1500,
+      utilities: [{ name: 'Water', amount: 1500 }],
+      type: 'Utilities',
+      method: 'M-Pesa',
+      status: 'paid'
+    }, tenant.name, paybillSettings, 'Hacienda', '2A');
+    assert.ok(utilHtml.includes('INV-UTL-002') && utilHtml.includes('Utilities'), 'Utilities receipt email must explicitly state Utilities');
+
+    // Create a Maintenance invoice via POST /api/payments and verify it is NOT mislabeled as Rent
+    const maintCreateRes = await fetch(`${baseUrl}/api/payments`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tenantId: String(tenant._id),
+        unitId: String(unit._id),
+        amount: 4500,
+        rentAmount: 0,
+        method: 'invoice',
+        status: 'paid',
+        invoiceNumber: 'INV-MNT-003',
+        type: 'Maintenance',
+        notes: 'Plumbing sink pipe repair'
+      })
+    });
+    assert.strictEqual(maintCreateRes.status, 201);
+    const maintPayment = await maintCreateRes.json();
+    assert.strictEqual(Number(maintPayment.rentAmount || 0), 0, 'Maintenance invoice must keep rentAmount = 0');
+    assert.strictEqual(maintPayment.type, 'Maintenance', 'Maintenance invoice must preserve type = Maintenance');
+
+    const maintEmailHtml = getReceiptEmailBody(maintPayment, tenant.name, { orgName: 'Hacienda Properties Ltd', mpesaType: 'Till', integrations: { mpesa: { shortcode: '778899' } } }, 'Hacienda', '2A');
+    assert.ok(maintEmailHtml.includes('INV-MNT-003') && maintEmailHtml.includes('Maintenance'), 'Maintenance receipt email must explicitly state Maintenance');
+    assert.ok(maintEmailHtml.includes('Till Number:') && !maintEmailHtml.includes('Account Number:'), 'Till receipt email must omit Account Number');
+
+    const maintPdfRes = await fetch(`${baseUrl}/api/payments/${maintPayment._id}/pdf`, {
+      headers: { Authorization: `Bearer ${tok}` }
+    });
+    assert.strictEqual(maintPdfRes.status, 200);
+    const maintPdfText = extractPdfText(Buffer.from(await maintPdfRes.arrayBuffer()));
+    assert.ok(maintPdfText.includes('Maintenance') && maintPdfText.includes('INV-MNT-003'), 'Maintenance receipt PDF must explicitly say Maintenance');
+
+    const invEmailHtml = getInvoiceEmailBody({
+      invoiceCategory: 'rental',
+      invoiceNumber: 'INV-MNT-003',
+      customerName: tenant.name,
+      propertyName: 'Hacienda',
+      unitNumber: '2A',
+      totalAmount: 4500,
+      items: [{ description: 'Plumbing Repair', category: 'maintenance', totalAmount: 4500 }]
+    }, paybillSettings);
+    assert.ok(invEmailHtml.includes('RENTAL INVOICE') && invEmailHtml.includes('Maintenance') && invEmailHtml.includes('#0d2240') && invEmailHtml.includes('#00a99d'), 'Invoice email must use SHA MakaziFlow layout and state Maintenance');
+    console.log('✅ PASS 1: Email receipt & PDF explicitly identify Rent, Utilities, and Maintenance using SHA MakaziFlow layout');
 
     // TEST 2: /api/payments/:id/pdf & /api/v2/payments/receipts/:id/pdf use the unified Rent Receipt layout with Invoice info
     for (const url of [

@@ -12,7 +12,8 @@ const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
-const { getReceiptEmailBody, getEmailTemplate, renderDetailRow } = require('../utils/emailTemplates');
+const { getReceiptEmailBody, getInvoiceEmailBody } = require('../utils/emailTemplates');
+const { resolveInvoicePurposeLabel } = require('../utils/shaPdfHelpers');
 
 const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
 const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
@@ -88,7 +89,10 @@ router.post('/', protect, async (req, res) => {
     
     let rAmt = Number(rentAmount || 0);
     const dAmt = Number(depositAmount || 0);
-    
+    let sAmt = Number(req.body.serviceChargeAmount || 0);
+    let pAmt = Number(req.body.penaltyAmount || 0);
+    let dAutoAmt = dAmt;
+
     // Calculate total utility amount from utilities breakdown if provided
     let uList = Array.isArray(utilities) ? utilities : [];
     let uAmt = Number(utilityAmount || 0);
@@ -96,12 +100,30 @@ router.post('/', protect, async (req, res) => {
         uAmt = uList.reduce((acc, u) => acc + Number(u.amount || 0), 0);
     }
 
-    // If generic amount is provided and rentAmount wasn't specified, allocate remainder to rentAmount
-    if (amount !== undefined && amount !== null && Number(amount) > 0 && rAmt === 0 && dAmt === 0 && uAmt === 0) {
-        rAmt = Number(amount);
+    const rawTypeStr = String(req.body.type || '').trim();
+    const rawCatStr = String(req.body.category || '').trim().toLowerCase();
+    const typeLower = `${rawTypeStr} ${rawCatStr} ${req.body.notes || ''}`.toLowerCase();
+    const explicitNonRentType = rawTypeStr && !/^(rent|rental payment|combined)$/i.test(rawTypeStr);
+
+    // Allocate generic amount cleanly without mislabeling Maintenance/Utilities/Penalty invoices as Rent
+    if (amount !== undefined && amount !== null && Number(amount) > 0 && rAmt === 0 && dAutoAmt === 0 && uAmt === 0 && sAmt === 0 && pAmt === 0) {
+        const amtNum = Number(amount);
+        if (rawCatStr === 'maintenance' || /maint|repair|plumb|paint|clean|renovat|roof|pest/.test(typeLower)) {
+            // Maintenance / repair stays out of rentAmount so receipts/invoices say Maintenance
+        } else if (['water', 'electricity', 'utilities'].includes(rawCatStr) || /util|water|elect|power|garbage|sewer|gas/.test(typeLower)) {
+            uAmt = amtNum;
+        } else if (rawCatStr === 'deposit' || /deposit/.test(typeLower)) {
+            dAutoAmt = amtNum;
+        } else if (rawCatStr === 'service_charge' || /service\s*charge/.test(typeLower)) {
+            sAmt = amtNum;
+        } else if (rawCatStr === 'penalty' || /penalt|late/.test(typeLower)) {
+            pAmt = amtNum;
+        } else if (!explicitNonRentType && rentAmount === undefined) {
+            rAmt = amtNum;
+        }
     }
 
-    const totalAmount = (amount && Number(amount) > 0) ? Number(amount) : (rAmt + dAmt + uAmt);
+    const totalAmount = (amount && Number(amount) > 0) ? Number(amount) : (rAmt + dAutoAmt + uAmt + sAmt + pAmt);
 
     const normalizedStatus = (status || 'paid').toLowerCase();
     const isUnpaid = ['pending', 'unpaid', 'overdue', 'open', 'draft'].includes(normalizedStatus);
@@ -110,13 +132,27 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ message: "No payment amount provided" });
     }
 
-    let paymentType = req.body.type || 'Rent';
+    let paymentType = rawTypeStr || 'Rent';
     const components = [];
     if (rAmt > 0) components.push('Rent');
-    if (dAmt > 0) components.push('Deposit');
+    if (dAutoAmt > 0) components.push('Deposit');
     if (uAmt > 0) components.push('Utilities');
+    if (sAmt > 0) components.push('Service Charge');
+    if (pAmt > 0) components.push('Late Payment Penalty');
     if (components.length > 1) paymentType = 'Combined';
-    else if (components.length === 1) paymentType = components[0];
+    else if (components.length === 1 && !explicitNonRentType) paymentType = components[0];
+
+    let paymentCategory = rawCatStr || 'rent';
+    if (!rawCatStr) {
+        if (components.length > 1) paymentCategory = 'combined';
+        else if (/maint|repair|plumb|paint|clean|renovat|roof|pest/.test(typeLower)) paymentCategory = 'maintenance';
+        else if (uAmt > 0 || /util|water|elect|power|garbage|sewer|gas/.test(typeLower)) paymentCategory = 'utilities';
+        else if (sAmt > 0) paymentCategory = 'service_charge';
+        else if (pAmt > 0) paymentCategory = 'penalty';
+        else if (dAutoAmt > 0) paymentCategory = 'deposit';
+        else if (explicitNonRentType) paymentCategory = 'other';
+        else paymentCategory = 'rent';
+    }
 
     let tenant = null;
 
@@ -156,15 +192,18 @@ router.post('/', protect, async (req, res) => {
         invoiceId: req.body.invoiceId && isValidObjectId(String(req.body.invoiceId)) ? req.body.invoiceId : undefined,
         invoiceNumber: req.body.invoiceNumber ? String(req.body.invoiceNumber).trim() : '',
         amount: totalAmount,
-        rentAmount: rAmt > 0 ? rAmt : totalAmount,
-        depositAmount: dAmt,
+        rentAmount: rAmt,
+        depositAmount: dAutoAmt,
         utilityAmount: uAmt,
+        serviceChargeAmount: sAmt,
+        penaltyAmount: pAmt,
         utilities: uList,
         date: paymentDate,
         method: method || 'cash',
         status: status || 'paid',
         monthCovered: monthCovered || defaultMonth,
         type: paymentType,
+        category: paymentCategory,
         reference: reference || req.body.transactionId || undefined,
         notes: req.body.notes || req.body.description || undefined,
         paidAt: isUnpaid ? undefined : new Date(),
@@ -174,7 +213,9 @@ router.post('/', protect, async (req, res) => {
     const breakdownText = [
         rAmt > 0 ? `Rent: ${rAmt}` : null,
         uAmt > 0 ? `Utilities: ${uAmt}` : null,
-        dAmt > 0 ? `Deposit: ${dAmt}` : null
+        dAutoAmt > 0 ? `Deposit: ${dAutoAmt}` : null,
+        sAmt > 0 ? `Service Charge: ${sAmt}` : null,
+        pAmt > 0 ? `Penalty: ${pAmt}` : null
     ].filter(Boolean).join(', ');
 
     await logActivity(
@@ -226,13 +267,14 @@ const updatePaymentHandler = async (req, res) => {
     }
 
     const prevStatus = String(payment.status || '').toLowerCase();
-    const { status, method, reference, transactionId, date, amount, notes, sendReceipt, invoiceNumber, fromInvoice } = req.body || {};
+    const { status, method, reference, transactionId, date, amount, notes, sendReceipt, invoiceNumber, fromInvoice, type } = req.body || {};
 
     if (status !== undefined) {
       const normalized = String(status).trim().toLowerCase();
       payment.status = normalized === 'confirmed' ? 'paid' : normalized;
     }
     if (method !== undefined && method !== '') payment.method = method;
+    if (type !== undefined && String(type).trim()) payment.type = String(type).trim();
     if (reference !== undefined) payment.reference = reference;
     else if (transactionId !== undefined) payment.reference = transactionId;
     if (invoiceNumber !== undefined && String(invoiceNumber).trim()) {
@@ -364,7 +406,7 @@ router.get('/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
             .populate('tenantId', 'name email phone accountNumber')
             .populate('unitId', 'unitNumber propertyId')
-            .populate('invoiceId', 'invoiceNumber');
+            .populate('invoiceId', 'invoiceNumber billingPeriod items notes');
 
         if (!payment) return res.status(404).json({ message: 'Payment not found' });
 
@@ -408,7 +450,9 @@ router.post('/invoice-pdf', protect, async (req, res) => {
             amount,
             items,
             vatRate = 0,
-            notes
+            notes,
+            type,
+            invoiceType
         } = req.body || {};
 
         let tenant = null;
@@ -431,16 +475,18 @@ router.post('/invoice-pdf', protect, async (req, res) => {
         const rate = Number(vatRate || 0);
         const taxAmt = rate > 0 ? Math.round((numericAmt * rate) / (100 + rate)) : 0;
         const subtotalAmt = numericAmt - taxAmt;
+        const rawPurposeHint = String(type || invoiceType || notes || 'Rent & Utilities').trim();
 
         const normalizedItems = Array.isArray(items) && items.length > 0
             ? items.map(it => ({
-                description: it.description || it.itemName || 'Monthly Rent & Utilities',
+                description: it.description || it.itemName || rawPurposeHint,
+                category: it.category || undefined,
                 taxRate: Number(it.taxRate ?? rate),
                 taxAmount: Number(it.taxAmount ?? 0),
                 totalAmount: Number(it.totalAmount ?? it.amount ?? 0)
             }))
             : [{
-                description: `${pName}${uNum ? ` - Unit ${uNum}` : ''} (${notes || 'Rent & Utility Invoice'})`,
+                description: `${rawPurposeHint}${uNum ? ` - Unit ${uNum}` : ''}`,
                 taxRate: rate,
                 taxAmount: taxAmt,
                 totalAmount: numericAmt
@@ -448,6 +494,8 @@ router.post('/invoice-pdf', protect, async (req, res) => {
 
         const invoiceObj = {
             invoiceCategory: 'rental',
+            invoiceType: type || invoiceType || '',
+            notes: notes || '',
             propertyName: propertyName || '',
             unitNumber: uNum,
             accountNumber: tenant?.accountNumber || '',
@@ -485,7 +533,7 @@ router.post('/invoice-pdf', protect, async (req, res) => {
 // @access  Private
 router.post('/send-invoice', protect, async (req, res) => {
     try {
-        const { tenantId, invoiceId, amount, dueDate, notes, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
+        const { tenantId, invoiceId, amount, dueDate, notes, invoiceType, invoiceItems, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
         
         let tenant = null;
         if (tenantId && isValidObjectId(String(tenantId))) {
@@ -512,54 +560,28 @@ router.post('/send-invoice', protect, async (req, res) => {
         let emailError = null;
         let smsError = null;
 
-        // 1. Email Dispatch with Official PDF Attachment (SHA Style)
+        // 1. Email Dispatch with Official PDF Attachment (SHA Layout in MakaziFlow Colors)
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
-                const mpesaShortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
-                const isTill = settings?.mpesaType === 'Till';
-                const mpesaLabel = isTill ? 'M-Pesa Till Number' : 'M-Pesa Paybill Number';
-                const defaultAcct = String(settings?.paybillAccount || '').trim();
-                const payAcct = tenant?.accountNumber || defaultAcct || uNum || invRef;
-                const mpesaLine = isTill ? mpesaShortcode : `${mpesaShortcode} • A/C: ${payAcct}`;
-
-                const emailContent = `
-                    <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
-                        Dear ${recipientName},
-                    </p>
-                    <p style="color: #cbd5e1; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px 0;">
-                        An official rental invoice has been issued for <strong>${resolvedPropName ? `${resolvedPropName} — ` : ''}Unit ${uNum}</strong>. Please review the summary below.
-                    </p>
-
-                    <div style="background-color: #1c2331; border: 1px solid #2d3748; border-radius: 12px; padding: 24px 20px; text-align: center; margin-bottom: 24px;">
-                        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: #94a3b8; font-weight: 700; margin-bottom: 6px;">
-                            AMOUNT DUE
-                        </div>
-                        <div style="font-size: 32px; font-weight: 800; color: #00d4c8; letter-spacing: -0.5px; margin-bottom: 12px;">
-                            KES ${totalAmt}
-                        </div>
-                        <span style="display: inline-block; background-color: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); font-size: 11.5px; font-weight: 700; padding: 5px 14px; border-radius: 999px;">
-                            Due: ${cleanDueDate}
-                        </span>
-                    </div>
-
-                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 10px;">
-                        INVOICE &amp; LANDLORD PAYMENT DETAILS
-                    </div>
-                    ${renderDetailRow('Invoice Reference', invRef)}
-                    ${renderDetailRow('Property / Unit', resolvedPropName ? `${resolvedPropName} — Unit ${uNum}` : `Unit ${uNum}`)}
-                    ${renderDetailRow('Organisation', businessName)}
-                    ${mpesaShortcode ? renderDetailRow(mpesaLabel, mpesaLine) : ''}
-                    ${settings?.orgPhone ? renderDetailRow('Landlord Phone', settings.orgPhone) : ''}
-                    ${notes ? renderDetailRow('Notes', notes) : ''}
-
-                    <div style="background-color: #0f2419; border: 1px solid #1e4d30; border-radius: 10px; padding: 14px 16px; margin-top: 18px; color: #6ee7b7; font-size: 12.5px; line-height: 1.5; text-align: center;">
-                        A copy of your official PDF invoice is attached to this email. Please retain it for your records and remit payment by the due date.
-                    </div>
-                `;
-
                 const numericAmount = Number(amount || 0);
-                const pdfBuffer = await generateInvoicePDF({
+                const resolvedItemList = Array.isArray(invoiceItems) && invoiceItems.length > 0
+                    ? invoiceItems.map((it) => ({
+                        description: it.description || it.name || invoiceType || notes || 'Rental Charge',
+                        taxRate: Number(it.taxRate || 0),
+                        taxAmount: Number(it.taxAmount || 0),
+                        totalAmount: Number(it.totalAmount ?? it.amount ?? 0)
+                      }))
+                    : [{
+                        description: `${invoiceType || notes || 'Rent & Utilities'} — Unit ${uNum}${notes && invoiceType && !notes.toLowerCase().includes(String(invoiceType).toLowerCase()) ? ` (${notes})` : ''}`,
+                        taxRate: 0,
+                        taxAmount: 0,
+                        totalAmount: numericAmount
+                      }];
+
+                const invoiceObj = {
                     invoiceCategory: 'rental',
+                    invoiceType: invoiceType || notes || '',
+                    notes: notes || '',
                     propertyName: resolvedPropName,
                     unitNumber: uNum,
                     accountNumber: tenant?.accountNumber || '',
@@ -570,30 +592,24 @@ router.post('/send-invoice', protect, async (req, res) => {
                     customerName: recipientName,
                     customerEmail: recipientEmail,
                     customerPhone: recipientPhone || '',
-                    items: [{
-                        description: `${businessName} - Unit ${uNum}${notes ? ` (${notes})` : ' (Rent & Utilities)'}`,
-                        taxRate: 0,
-                        taxAmount: 0,
-                        totalAmount: numericAmount
-                    }],
+                    items: resolvedItemList,
                     subtotal: numericAmount,
                     vatRate: 0,
                     taxAmount: 0,
                     totalAmount: numericAmount
-                }, settings);
+                };
+
+                const purposeText = resolveInvoicePurposeLabel(invoiceObj);
+                const pdfBuffer = await generateInvoicePDF(invoiceObj, settings);
+                const shaInvoiceHtml = getInvoiceEmailBody(invoiceObj, settings);
 
                 await sendEmail({
                     email: recipientEmail,
                     toName: recipientName,
                     fromName: businessName,
                     replyToEmail: settings?.orgEmail || undefined,
-                    subject: `Invoice #${invRef} - KES ${totalAmt} Due - ${businessName}`,
-                    message: getEmailTemplate(`Invoice #${invRef}`, emailContent, settings, {
-                        propertyName: resolvedPropName,
-                        heroTitle: 'Invoice Issued!',
-                        heroSubtitle: `Official invoice #${invRef} for Unit ${uNum}`,
-                        heroIcon: '!'
-                    }),
+                    subject: `Invoice #${invRef} (${purposeText}) - KES ${totalAmt} Due - ${businessName}`,
+                    message: shaInvoiceHtml,
                     commMeta: {
                         category: 'invoice',
                         userId: req.user.id,
@@ -603,7 +619,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                         unitNumber: uNum || '',
                         recipientName,
                         recipientType: 'tenant',
-                        previewText: `Invoice #${invRef} for KES ${totalAmt} due ${cleanDueDate} (${resolvedPropName || 'Property'} Unit ${uNum}).`
+                        previewText: `Invoice #${invRef} (${purposeText}) for KES ${totalAmt} due ${cleanDueDate} (${resolvedPropName || 'Property'} Unit ${uNum}).`
                     },
                     attachments: [
                         {

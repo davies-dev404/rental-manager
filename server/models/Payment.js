@@ -23,8 +23,8 @@ const paymentSchema = new mongoose.Schema({
   method: { type: String, default: 'cash' }, // cash, bank, mobile_money, M-Pesa, pesaflow, etc.
   status: { type: String, enum: ['paid', 'confirmed', 'partial', 'open', 'draft', 'overdue', 'Completed', 'Pending', 'Failed', 'pending', 'unpaid', 'Unpaid', 'void', 'reversed'], default: 'paid' },
   monthCovered: { type: String }, // YYYY-MM
-  type: { type: String, default: 'Rent' }, // Rent, Deposit, Utility, Combined
-  category: { type: String, enum: ['rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'other', 'combined'], default: 'rent' },
+  type: { type: String, default: 'Rent' }, // Rent, Deposit, Utility, Maintenance, Combined
+  category: { type: String, enum: ['rent', 'water', 'electricity', 'utilities', 'maintenance', 'service_charge', 'penalty', 'deposit', 'other', 'combined'], default: 'rent' },
   reference: { type: String }, // Pesaflow / M-Pesa / Bank ref
   notes: { type: String },
   paidAt: { type: Date },

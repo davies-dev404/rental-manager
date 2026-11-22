@@ -315,17 +315,39 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         0
       );
 
+      const primaryLabel = validItems.map((it) => it.name.trim()).filter(Boolean).join(", ") || "Rent";
+      const sumBucket = (regex) => validItems
+        .filter((it) => regex.test(`${it.name} ${it.description}`.toLowerCase()))
+        .reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const utilSum = sumBucket(/util|water|elect|power|garbage|sewer|gas/);
+      const maintSum = sumBucket(/maint|repair|plumb|paint|clean|renovat|roof|pest/);
+      const depSum = sumBucket(/deposit/);
+      const svcSum = sumBucket(/service/);
+      const penSum = sumBucket(/penalt|late/);
+      const explicitlyRentSum = sumBucket(/\brent\b/);
+      const derivedCategory =
+        validItems.length === 1
+          ? (maintSum > 0 ? "maintenance" : utilSum > 0 ? "utilities" : depSum > 0 ? "deposit" : svcSum > 0 ? "service_charge" : penSum > 0 ? "penalty" : "rent")
+          : "combined";
+      const rentSum = explicitlyRentSum > 0
+        ? explicitlyRentSum
+        : (utilSum === 0 && maintSum === 0 && depSum === 0 && svcSum === 0 && penSum === 0 ? totalAmount : 0);
+
       const savedRes = await api.addPayment({
         tenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
         unitId: typeof selectedTenant?.unitId === "object" ? (selectedTenant.unitId?._id || selectedTenant.unitId?.id) : selectedTenant?.unitId,
         amount: totalAmount,
-        rentAmount: validItems[0]?.name?.toLowerCase().includes("util") ? 0 : totalAmount,
-        utilityAmount: validItems[0]?.name?.toLowerCase().includes("util") ? totalAmount : 0,
+        rentAmount: rentSum,
+        utilityAmount: utilSum,
+        depositAmount: depSum,
+        serviceChargeAmount: svcSum,
+        penaltyAmount: penSum,
         date: invoiceDate,
         method: "invoice",
         status: status === "open" ? "pending" : status,
-        type: validItems[0]?.name || "Rent",
-        notes
+        type: primaryLabel,
+        category: derivedCategory,
+        notes: notes || validItems.map((it) => it.description || it.name).filter(Boolean).join(" • ")
       });
 
       const newInvoice = {
@@ -2366,6 +2388,7 @@ export default function InvoicesPage() {
           dueDate: inv.date,
           propertyName: inv.property,
           unitNumber: typeof inv.unitId === "object" ? inv.unitId?.unitNumber : inv.unitId,
+          invoiceType: inv.item || "Rent",
           notes: inv.notes || inv.item
         });
         if (res?.emailSent || res?.smsSent) {
@@ -2415,6 +2438,7 @@ export default function InvoicesPage() {
           method: markPaidMethod,
           reference: markPaidRef.trim() || undefined,
           invoiceNumber: invNum,
+          type: markPaidTarget.item || undefined,
           fromInvoice: true,
           sendReceipt: markPaidSendReceipt
         });
@@ -3135,6 +3159,7 @@ export default function InvoicesPage() {
                                       unitNumber: typeof p.unitId === "object" ? (p.unitId?.unitNumber || "") : (p.unitId || ""),
                                       dueDate: p.date || new Date().toISOString().split("T")[0],
                                       amount: Number(p.amount || 0),
+                                      invoiceType: p.item || "Rent",
                                       notes: p.notes || p.item || "Rent & Utility Invoice"
                                     },
                                     `Invoice-${invRef}.pdf`
