@@ -20,10 +20,11 @@ const paymentSchema = z.object({
     depositAmount: z.coerce.number().min(0).default(0),
     utilityAmount: z.coerce.number().min(0).default(0),
     date: z.string(),
-    method: z.enum(["cash", "bank", "mobile_money", "lipa_na_mpesa"]),
+    method: z.enum(["cash", "bank", "mobile_money", "lipa_na_mpesa", "mpesa_paybill"]),
     status: z.enum(["paid", "partial", "pending", "Pending", "unpaid", "Unpaid", "overdue"]),
     monthCovered: z.string(),
     nextPaymentDate: z.string().optional(),
+    reference: z.string().optional(),
 }).refine(data => data.rentAmount > 0 || data.depositAmount > 0 || data.utilityAmount > 0 || ['pending', 'Pending', 'unpaid', 'Unpaid', 'overdue'].includes(data.status), {
     message: "At least one amount must be entered, or status set to Pending/Unpaid",
     path: ["rentAmount"]
@@ -43,10 +44,11 @@ export function RecordPaymentDialog() {
             rentAmount: 0,
             depositAmount: 0,
             date: new Date().toISOString().split('T')[0],
-            method: "mobile_money",
+            method: "mpesa_paybill",
             status: "paid",
             monthCovered: new Date().toISOString().slice(0, 7),
-            nextPaymentDate: ""
+            nextPaymentDate: "",
+            reference: ""
         }
     });
 
@@ -117,6 +119,8 @@ export function RecordPaymentDialog() {
 
         const paymentData = {
             ...values,
+            method: values.method === 'mpesa_paybill' ? 'M-Pesa Paybill' : values.method,
+            reference: values.reference ? values.reference.trim().toUpperCase() : undefined,
             unitId: typeof tenant.unitId === 'object' ? (tenant.unitId._id || tenant.unitId.id) : tenant.unitId
         };
 
@@ -257,7 +261,8 @@ export function RecordPaymentDialog() {
                                             </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                            <SelectItem value="lipa_na_mpesa">{t('mpesa_integration') || "Lipa na M-Pesa"}</SelectItem>
+                                            <SelectItem value="mpesa_paybill">M-Pesa Paybill</SelectItem>
+                                            <SelectItem value="lipa_na_mpesa">{t('mpesa_integration') || "Lipa na M-Pesa STK"}</SelectItem>
                                             <SelectItem value="mobile_money">{t('mobile_money')}</SelectItem>
                                             <SelectItem value="bank">{t('bank')}</SelectItem>
                                             <SelectItem value="cash">{t('cash')}</SelectItem>
@@ -288,7 +293,7 @@ export function RecordPaymentDialog() {
                             )}/>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4">
+                        <div className="grid grid-cols-2 gap-4">
                              <FormField control={form.control} name="monthCovered" render={({ field }) => (
                                 <FormItem>
                                     <FormLabel>{t('month_covered') || "Month/Period"}</FormLabel>
@@ -297,6 +302,18 @@ export function RecordPaymentDialog() {
                                             type="month" 
                                             {...field} 
                                             value={field.value && field.value.length >= 7 ? field.value.slice(0, 7) : field.value}
+                                        />
+                                    </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            )}/>
+                            <FormField control={form.control} name="reference" render={({ field }) => (
+                                <FormItem>
+                                    <FormLabel>M-Pesa / Ref Code</FormLabel>
+                                    <FormControl>
+                                        <Input
+                                            placeholder="e.g. SJK48A9XYZ"
+                                            {...field}
                                         />
                                     </FormControl>
                                     <FormMessage />

@@ -311,22 +311,43 @@ function MpesaTransactionsTab() {
     retry: 1
   });
 
+  const mpesaSettingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  const mpesaTenantsQuery = useQuery({
+    queryKey: ["tenants"],
+    queryFn: api.getTenants,
+    staleTime: 30_000,
+    retry: 1
+  });
+
+  const [assignTenantMap, setAssignTenantMap] = useState({});
+
   const payments = paymentsQuery.data || [];
   const gatewayTxns = gatewayTxnsQuery.data || [];
+  const mpesaTenants = Array.isArray(mpesaTenantsQuery.data) ? mpesaTenantsQuery.data : [];
+  const configuredPaybill = String(mpesaSettingsQuery.data?.integrations?.mpesa?.shortcode || "").trim();
+  const configuredMpesaType = mpesaSettingsQuery.data?.mpesaType === "Till" ? "Till" : "Paybill";
+  const configuredDefaultAcct = String(mpesaSettingsQuery.data?.paybillAccount || "").trim();
 
-  // Only capture rent payments paid via M-Pesa by tenants (exclude subscriptions, cash, card, bank, other)
+  // Only capture rent payments paid via M-Pesa / Paybill from tenants (exclude SaaS subscriptions, cash, card, bank)
   const displayTransactions = React.useMemo(() => {
-    const isMpesaText = (val = "") => /m-?pesa|daraja|stk|paybill/i.test(String(val));
+    const isMpesaText = (val = "") => /m-?pesa|daraja|stk|paybill|till/i.test(String(val));
 
     const normalizedGateway = gatewayTxns
       .filter((t) => {
-        if (!t.tenantId) return false;
+        if (!t.tenantId && t.provider !== "mpesa_c2b") return false;
         const isRent =
           t.paymentCategory === "rent" ||
           (t.paymentCategory === "combined" && Number(t.chargeBreakdown?.rent || 0) > 0);
         if (!isRent) return false;
         const isMpesa =
           ["mpesa_stk", "mpesa_paybill"].includes(t.paymentChannel) ||
+          t.provider === "mpesa_c2b" ||
           isMpesaText(t.paymentMethodDetail);
         if (!isMpesa) return false;
         return !(t.status === "failed" && !t.trackingId && !t.checkoutId && !t.providerReference);
@@ -338,10 +359,17 @@ function MpesaTransactionsTab() {
         reference: t.providerReference || t.accountReference || t.trackingId || "—",
         subReference: t.providerReference && t.accountReference ? t.accountReference : (t.trackingId || ""),
         tenantId: t.tenantId?.name || t.customerName || "Tenant",
-        method: t.paymentMethodDetail || "M-Pesa (Pesapal)",
+        method:
+          t.paymentMethodDetail ||
+          (t.paymentChannel === "mpesa_paybill" || t.provider === "mpesa_c2b"
+            ? (t.paybillBusinessNumber ? `M-Pesa Paybill (${t.paybillBusinessNumber})` : "M-Pesa Paybill")
+            : "M-Pesa (Pesapal)"),
         amount: t.amountPaid || t.amount || 0,
         status: t.status || "pending",
         provider: t.provider || "pesapal",
+        paymentChannel: t.paymentChannel || "mpesa_stk",
+        providerReference: t.providerReference || "",
+        hasTenant: Boolean(t.tenantId),
         trackingId: t.trackingId || "",
         phoneNumber: t.customerPhone || ""
       }));
@@ -393,7 +421,7 @@ function MpesaTransactionsTab() {
     const matchesStatus =
       statusFilter === "all" ||
       (statusFilter === "completed" && (statusStr === "completed" || statusStr === "paid")) ||
-      (statusFilter === "pending" && (statusStr === "pending" || statusStr === "processing")) ||
+      (statusFilter === "pending" && (statusStr === "pending" || statusStr === "processing" || statusStr === "unmatched")) ||
       (statusFilter === "failed" && (statusStr === "failed" || statusStr === "cancelled" || statusStr === "reversed"));
 
     return matchesSearch && matchesStatus;
@@ -466,9 +494,46 @@ function MpesaTransactionsTab() {
     }
   };
 
+  const handleConfirmPaybill = async (item) => {
+    const selectedTenantId = !item.hasTenant ? assignTenantMap[item._id] || "" : "";
+    if (!item.hasTenant && !selectedTenantId) {
+      toast({
+        variant: "destructive",
+        title: "Select Tenant",
+        description: "Please select the tenant who made this Paybill payment before confirming."
+      });
+      return;
+    }
+    let code = item.providerReference || "";
+    if (!code) {
+      const entered = window.prompt(`Enter M-Pesa Confirmation Code received on Paybill${configuredPaybill ? ` ${configuredPaybill}` : ""} for ${item.tenantId}:`);
+      if (!entered || !entered.trim()) return;
+      code = entered.trim().toUpperCase();
+    }
+    try {
+      const res = await api.confirmPaybillTransaction(item._id, {
+        receiptCode: code,
+        ...(selectedTenantId ? { tenantId: selectedTenantId } : {})
+      });
+      toast({
+        title: "Paybill Confirmed",
+        description: res.message || `Payment ${code} reconciled and receipt emailed.`
+      });
+      gatewayTxnsQuery.refetch();
+      paymentsQuery.refetch();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Confirmation Failed", description: err.message });
+    }
+  };
+
   const cleanApiBase = String(API_URL || "").replace(/\/+$/, "");
-  const ipnWebhookUrl = `${cleanApiBase.startsWith("http") ? cleanApiBase : `${typeof window !== "undefined" ? window.location.origin : ""}${cleanApiBase}`}/v2/payments/webhooks/pesapal`;
+  const resolvedApiOrigin = cleanApiBase.startsWith("http")
+    ? cleanApiBase
+    : `${typeof window !== "undefined" ? window.location.origin : ""}${cleanApiBase}`;
+  const ipnWebhookUrl = `${resolvedApiOrigin}/v2/payments/webhooks/pesapal`;
   const returnCallbackUrl = `${typeof window !== "undefined" ? window.location.origin : "https://makaziflow.afrinextech.co.ke"}/billing?payment_return=1&provider=pesapal`;
+  const c2bValidationUrl = `${resolvedApiOrigin}/mpesa/c2b-validation`;
+  const c2bConfirmationUrl = `${resolvedApiOrigin}/mpesa/c2b-confirmation`;
 
   const counts = {
     all: displayTransactions.length,
@@ -476,7 +541,7 @@ function MpesaTransactionsTab() {
       const s = (p.status || "").toLowerCase();
       return s === "completed" || s === "paid" || !p.status;
     }).length,
-    pending: displayTransactions.filter((p) => ["pending", "processing"].includes((p.status || "").toLowerCase())).length,
+    pending: displayTransactions.filter((p) => ["pending", "processing", "unmatched"].includes((p.status || "").toLowerCase())).length,
     failed: displayTransactions.filter((p) => ["failed", "cancelled", "reversed"].includes((p.status || "").toLowerCase())).length,
   };
 
@@ -485,16 +550,21 @@ function MpesaTransactionsTab() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
               MPESA &amp; Pesapal Transactions
             </h2>
             <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
               Pesapal API 3.0 Active
             </Badge>
+            {configuredPaybill && (
+              <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 text-[10px] font-semibold">
+                {configuredMpesaType} #{configuredPaybill}{configuredDefaultAcct ? ` · A/C ${configuredDefaultAcct}` : ""}
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Tenant rent payments paid via M-Pesa through Pesapal, live IPN callbacks, and instant verification.
+            Tenant rent payments paid via M-Pesa Paybill, Safaricom C2B, and Pesapal IPN callbacks.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -517,12 +587,12 @@ function MpesaTransactionsTab() {
 
       {/* Live Callbacks URLs Card */}
       <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 bg-white dark:bg-slate-900 shadow-2xs space-y-3.5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white">Pesapal Live IPN &amp; Callback URLs</span>
+            <span className="text-xs font-bold text-slate-900 dark:text-white">Live Gateway IPN &amp; M-Pesa C2B Paybill URLs</span>
           </div>
-          <span className="text-[11px] text-muted-foreground">Configured via Pesapal API 3.0 gateway</span>
+          <span className="text-[11px] text-muted-foreground">Pesapal API 3.0 &amp; Safaricom C2B Paybill</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -564,6 +634,48 @@ function MpesaTransactionsTab() {
                 title="Copy URL"
               >
                 {copiedField === "callback" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* C2B Validation URL */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Paybill Validation URL</span>
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">Validates Bill / Account</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
+                {c2bValidationUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopy(c2bValidationUrl, "c2bval")}
+                className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Copy URL"
+              >
+                {copiedField === "c2bval" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* C2B Confirmation URL */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1.5 hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">C2B Paybill Confirmation URL</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Confirms &amp; Logs Paybill</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700">
+              <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate flex-1 select-all">
+                {c2bConfirmationUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopy(c2bConfirmationUrl, "c2bconf")}
+                className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Copy URL"
+              >
+                {copiedField === "c2bconf" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
@@ -735,21 +847,55 @@ function MpesaTransactionsTab() {
                           className={`text-[10px] font-semibold ${
                             isSuccess
                               ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                              : isPending || statusStr === "processing"
+                              : isPending || statusStr === "processing" || statusStr === "unmatched"
                               ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                               : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
                           }`}
                         >
                           {item.status || "Completed"}
                         </Badge>
-                        {item.isGatewayTxn && (isPending || statusStr === "processing") && (
-                          <button
-                            type="button"
-                            onClick={() => handleVerifyRow(item._id)}
-                            className="ml-2 text-[10px] font-semibold text-[#0b1065] dark:text-blue-400 hover:underline cursor-pointer"
-                          >
-                            Verify
-                          </button>
+                        {item.isGatewayTxn && (isPending || statusStr === "processing" || statusStr === "unmatched") && (
+                          (item.provider === "mpesa_c2b" || item.paymentChannel === "mpesa_paybill") ? (
+                            item.hasTenant ? (
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmPaybill(item)}
+                                className="ml-2 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                              >
+                                Confirm Paybill
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 ml-2">
+                                <select
+                                  value={assignTenantMap[item._id] || ""}
+                                  onChange={(e) => setAssignTenantMap((prev) => ({ ...prev, [item._id]: e.target.value }))}
+                                  className="h-6 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1 text-[10px]"
+                                >
+                                  <option value="">Assign Tenant...</option>
+                                  {mpesaTenants.map((t) => (
+                                    <option key={t._id || t.id} value={t._id || t.id}>
+                                      {t.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmPaybill(item)}
+                                  className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                                >
+                                  Confirm
+                                </button>
+                              </span>
+                            )
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyRow(item._id)}
+                              className="ml-2 text-[10px] font-semibold text-[#0b1065] dark:text-blue-400 hover:underline cursor-pointer"
+                            >
+                              Verify
+                            </button>
+                          )
                         )}
                       </td>
                     </tr>

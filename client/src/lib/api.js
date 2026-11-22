@@ -935,6 +935,32 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to load tenant portal summary");
   },
+  getPaybillConfig: async (tenantId = "") => {
+    const qs = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+    const response = await smartFetch(`${API_URL}/v2/payments/paybill-config${qs}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load Paybill configuration");
+  },
+  submitPaybillReceipt: async (payload) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/tenant/paybill-submit`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to submit Paybill confirmation code");
+  },
+  confirmPaybillTransaction: async (transactionId, payload = {}) => {
+    const response = await smartFetch(`${API_URL}/v2/payments/paybill/${transactionId}/confirm`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to confirm Paybill payment");
+  },
 
   // ─── KRA eTIMS Compliance ─────────────────────────────────────────────────
   submitInvoiceToEtims: async (invoiceId, overrideConfig = {}) => {

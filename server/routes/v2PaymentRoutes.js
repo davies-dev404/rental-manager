@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const PaymentTransaction = require('../models/PaymentTransaction');
 const PaymentReceipt = require('../models/PaymentReceipt');
@@ -279,6 +280,79 @@ router.post('/tenant/initiate', protect, paymentCheckoutLimiter, async (req, res
       });
     }
 
+    const landlordSettings = await Settings.findOne({ user: landlordId }).lean();
+    const configuredShortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || '').trim();
+    const configuredMpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
+    const configuredDefaultAccount = String(landlordSettings?.paybillAccount || '').trim();
+    const recommendedAccount = String(
+      tenant.accountNumber ||
+      tenant.unitId?.unitNumber ||
+      configuredDefaultAccount ||
+      `UNIT-${tenant._id.toString().slice(-4).toUpperCase()}`
+    ).trim();
+
+    if (paymentChannel === 'mpesa_paybill' && configuredShortcode) {
+      const shortRand = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const accountRef = `MFRNT-${Date.now().toString(36).toUpperCase()}-${shortRand}`;
+      const internalTransactionId = PaymentService.generateInternalId('TXN-PB');
+      const channelLabel = configuredMpesaType === 'Till'
+        ? `M-Pesa Till (${configuredShortcode})`
+        : `M-Pesa Paybill (${configuredShortcode})`;
+
+      const txn = await PaymentTransaction.create({
+        internalTransactionId,
+        idempotencyKey: idempotencyKey || undefined,
+        landlordId,
+        tenantId: tenant._id,
+        propertyId,
+        unitId,
+        invoiceId: invoice._id,
+        provider: 'mpesa_c2b',
+        gatewayEnvironment: process.env.PESAPAL_ENV === 'production' ? 'production' : 'sandbox',
+        isSandbox: process.env.PESAPAL_ENV !== 'production',
+        paymentChannel: 'mpesa_paybill',
+        paymentMethodDetail: channelLabel,
+        paybillBusinessNumber: configuredShortcode,
+        paymentCategory,
+        amount: totalExpected,
+        currency: 'KES',
+        accountReference: accountRef,
+        merchantReference: accountRef,
+        customerName: tenant.name,
+        customerEmail: email || tenant.email || '',
+        customerPhone: phone || tenant.phone || '',
+        status: 'pending',
+        reconciliationStatus: 'pending',
+        chargeBreakdown,
+        metadata: {
+          mode: 'direct_paybill',
+          mpesaType: configuredMpesaType,
+          paybillNumber: configuredShortcode,
+          defaultAccount: configuredDefaultAccount,
+          recommendedAccount
+        }
+      });
+
+      return res.status(201).json({
+        success: true,
+        invoice,
+        transaction: txn,
+        gateway: {
+          provider: 'mpesa_c2b',
+          mode: 'direct_paybill',
+          paybillInstructions: {
+            mode: 'direct_paybill',
+            mpesaType: configuredMpesaType,
+            businessNumber: configuredShortcode,
+            accountReference: recommendedAccount,
+            defaultAccount: configuredDefaultAccount,
+            systemReference: accountRef,
+            amount: totalExpected
+          }
+        }
+      });
+    }
+
     const chosenProvider = (provider || '').trim().toLowerCase() || PaymentService.resolveDefaultProvider();
     const result = await PaymentService.initiateTransaction({
       idempotencyKey: idempotencyKey || undefined,
@@ -303,7 +377,21 @@ router.post('/tenant/initiate', protect, paymentCheckoutLimiter, async (req, res
       success: true,
       invoice,
       transaction: result.transaction,
-      gateway: result.gateway
+      gateway: {
+        ...result.gateway,
+        ...(configuredShortcode
+          ? {
+              paybillInstructions: result.gateway?.paybillInstructions || {
+                mode: 'landlord_paybill',
+                mpesaType: configuredMpesaType,
+                businessNumber: configuredShortcode,
+                accountReference: recommendedAccount,
+                defaultAccount: configuredDefaultAccount,
+                systemReference: result.transaction?.accountReference || ''
+              }
+            }
+          : {})
+      }
     });
   } catch (err) {
     res.status(err.statusCode || 400).json({
@@ -350,12 +438,12 @@ router.post('/lookup', protect, async (req, res) => {
       ? {
           $and: [
             baseScope,
-            { tenantId: { $ne: null } },
+            { $or: [{ tenantId: { $ne: null } }, { provider: 'mpesa_c2b' }] },
             { paymentCategory: { $in: ['rent', 'combined'] } },
             {
               $or: [
                 { paymentChannel: { $in: ['mpesa_stk', 'mpesa_paybill'] } },
-                { paymentMethodDetail: /m-?pesa/i }
+                { paymentMethodDetail: /m-?pesa|paybill|till/i }
               ]
             }
           ]
@@ -768,11 +856,29 @@ router.get('/tenant-portal/summary', protect, async (req, res) => {
     const currentObligation = expectedRent + expectedUtilities;
     const balanceDue = Math.max(0, currentObligation - paidThisMonth);
 
+    const landlordSettings = await Settings.findOne({ user: tenant.user }).lean();
+    const shortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || '').trim();
+    const mpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
+    const defaultAccount = String(landlordSettings?.paybillAccount || '').trim();
+    const recommendedAccount = String(
+      tenant.accountNumber ||
+      tenant.unitId?.unitNumber ||
+      defaultAccount ||
+      ''
+    ).trim();
+
     res.json({
       linked: true,
       tenant,
       unit: tenant.unitId,
       property: tenant.unitId?.propertyId,
+      paybillConfig: {
+        enabled: Boolean(shortcode),
+        type: mpesaType,
+        businessNumber: shortcode,
+        defaultAccount,
+        recommendedAccount
+      },
       obligations: {
         expectedRent,
         utilities,
@@ -788,6 +894,295 @@ router.get('/tenant-portal/summary', protect, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Get landlord Paybill/Till config for a selected tenant (used in Tenant Portal & Landlord Collection mode)
+// @route   GET /api/v2/payments/paybill-config
+// @access  Private
+router.get('/paybill-config', protect, async (req, res) => {
+  try {
+    let landlordId = req.user._id || req.user.id;
+    let tenant = null;
+    if (req.query.tenantId) {
+      if (!isValidObjectId(String(req.query.tenantId))) {
+        return res.status(400).json({ message: 'Invalid tenant identifier' });
+      }
+      tenant = await Tenant.findById(req.query.tenantId).populate('unitId', 'unitNumber propertyId');
+      if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
+      const userId = String(req.user._id || req.user.id);
+      const isOwner = String(tenant.user) === userId;
+      const isTenantSelf = req.user.role === 'tenant' && (
+        String(req.user.tenantId) === String(tenant._id) ||
+        (tenant.email && tenant.email.toLowerCase() === (req.user.email || '').toLowerCase())
+      );
+      if (!isOwner && !isTenantSelf && !req.user.isSuperAdmin && req.user.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+      landlordId = tenant.user;
+    }
+
+    const landlordSettings = await Settings.findOne({ user: landlordId }).lean();
+    const shortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || '').trim();
+    const mpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
+    const defaultAccount = String(landlordSettings?.paybillAccount || '').trim();
+    const recommendedAccount = String(
+      tenant?.accountNumber ||
+      tenant?.unitId?.unitNumber ||
+      defaultAccount ||
+      ''
+    ).trim();
+
+    res.json({
+      enabled: Boolean(shortcode),
+      type: mpesaType,
+      businessNumber: shortcode,
+      defaultAccount,
+      recommendedAccount
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// @desc    Submit M-Pesa Paybill confirmation/receipt code from Tenant Portal or Landlord Collection
+// @route   POST /api/v2/payments/tenant/paybill-submit
+// @access  Private
+router.post('/tenant/paybill-submit', protect, paymentCheckoutLimiter, async (req, res) => {
+  try {
+    const {
+      transactionId,
+      tenantId,
+      receiptCode,
+      phone = '',
+      amount,
+      chargeBreakdown = {},
+      confirmNow = false
+    } = req.body || {};
+
+    const cleanCode = String(receiptCode || '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (cleanCode.length < 6 || cleanCode.length > 24) {
+      return res.status(400).json({ message: 'Please enter a valid M-Pesa confirmation code (6-24 alphanumeric characters).' });
+    }
+
+    const userId = String(req.user._id || req.user.id);
+    const isSuper = Boolean(req.user.isSuperAdmin || req.user.role === 'superadmin');
+
+    let txn = null;
+    if (transactionId) {
+      if (!isValidObjectId(String(transactionId))) {
+        return res.status(400).json({ message: 'Invalid transaction identifier' });
+      }
+      txn = await PaymentTransaction.findById(transactionId);
+      if (!txn) return res.status(404).json({ message: 'Paybill transaction not found' });
+    }
+
+    let tenant = null;
+    const lookupTenantId = tenantId || txn?.tenantId;
+    if (lookupTenantId && isValidObjectId(String(lookupTenantId))) {
+      tenant = await Tenant.findById(lookupTenantId).populate('unitId');
+    } else if (req.user.tenantId) {
+      tenant = await Tenant.findById(req.user.tenantId).populate('unitId');
+    } else if (req.user.role === 'tenant') {
+      tenant = await Tenant.findOne({ email: new RegExp(`^${escapeRegExp(req.user.email)}$`, 'i') }).populate('unitId');
+    }
+
+    if (!tenant && !txn) {
+      return res.status(404).json({ message: 'Tenant record not found for Paybill submission' });
+    }
+
+    const landlordId = txn?.landlordId || tenant.user;
+    const isOwner = String(landlordId) === userId;
+    const isTenantSelf = req.user.role === 'tenant' && tenant && (
+      String(req.user.tenantId) === String(tenant._id) ||
+      (tenant.email && tenant.email.toLowerCase() === (req.user.email || '').toLowerCase())
+    );
+    if (!isOwner && !isTenantSelf && !isSuper) {
+      return res.status(403).json({ message: 'Unauthorized to submit Paybill confirmation for this tenant' });
+    }
+
+    const landlordSettings = await Settings.findOne({ user: landlordId }).lean();
+    const shortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || txn?.paybillBusinessNumber || '').trim();
+    const mpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
+    const channelLabel = shortcode
+      ? `M-Pesa ${mpesaType} (${shortcode})`
+      : `M-Pesa ${mpesaType}`;
+
+    // Check if C2B webhook already recorded this receipt code (either already paid or unmatched)
+    const existingByCode = await PaymentTransaction.findOne({
+      landlordId,
+      providerReference: cleanCode,
+      ...(txn ? { _id: { $ne: txn._id } } : {})
+    });
+    if (existingByCode && existingByCode.status === 'paid') {
+      return res.status(409).json({ message: `M-Pesa code ${cleanCode} has already been reconciled.` });
+    }
+
+    // If an unmatched C2B webhook arrived earlier with this TransID, attach tenant & settle immediately!
+    if (existingByCode && existingByCode.status === 'unmatched' && tenant) {
+      existingByCode.tenantId = tenant._id;
+      existingByCode.unitId = tenant.unitId?._id || tenant.unitId || existingByCode.unitId;
+      existingByCode.propertyId = tenant.unitId?.propertyId || existingByCode.propertyId;
+      existingByCode.customerName = tenant.name;
+      existingByCode.customerEmail = tenant.email || existingByCode.customerEmail;
+      if (phone) existingByCode.customerPhone = phone;
+      await existingByCode.save();
+
+      const settled = await PaymentService.finalizeVerifiedSettlement({
+        transaction: existingByCode,
+        providerReference: cleanCode,
+        amountPaid: existingByCode.amountPaid || existingByCode.amount,
+        paymentChannel: 'mpesa_paybill',
+        paymentMethodDetail: existingByCode.paymentMethodDetail || channelLabel,
+        paidAt: existingByCode.paidAt || new Date(),
+        actorId: req.user._id || req.user.id
+      });
+      return res.json({
+        success: true,
+        reconciled: true,
+        message: `M-Pesa Paybill code ${cleanCode} matched with C2B confirmation and settled!`,
+        ...settled
+      });
+    }
+
+    if (!txn) {
+      const numericAmount = Number(amount || 0);
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: 'Valid payment amount in KES is required.' });
+      }
+      const shortRand = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const accountRef = `MFRNT-${Date.now().toString(36).toUpperCase()}-${shortRand}`;
+      txn = await PaymentTransaction.create({
+        internalTransactionId: PaymentService.generateInternalId('TXN-PB'),
+        landlordId,
+        tenantId: tenant._id,
+        propertyId: tenant.unitId?.propertyId,
+        unitId: tenant.unitId?._id || tenant.unitId,
+        provider: 'mpesa_c2b',
+        gatewayEnvironment: process.env.PESAPAL_ENV === 'production' ? 'production' : 'sandbox',
+        isSandbox: process.env.PESAPAL_ENV !== 'production',
+        paymentChannel: 'mpesa_paybill',
+        paymentMethodDetail: channelLabel,
+        paybillBusinessNumber: shortcode,
+        paymentCategory: (Number(chargeBreakdown.water || 0) + Number(chargeBreakdown.electricity || 0) + Number(chargeBreakdown.serviceCharge || 0) + Number(chargeBreakdown.penalty || 0)) > 0 ? 'combined' : 'rent',
+        amount: numericAmount,
+        currency: 'KES',
+        accountReference: accountRef,
+        merchantReference: accountRef,
+        providerReference: cleanCode,
+        customerName: tenant.name,
+        customerEmail: tenant.email || '',
+        customerPhone: phone || tenant.phone || '',
+        status: 'processing',
+        reconciliationStatus: 'pending',
+        chargeBreakdown
+      });
+    } else {
+      if (txn.status === 'paid') {
+        return res.json({ success: true, alreadySettled: true, transaction: txn });
+      }
+      txn.providerReference = cleanCode;
+      if (phone) txn.customerPhone = phone;
+      txn.paymentChannel = 'mpesa_paybill';
+      if (!txn.paymentMethodDetail) txn.paymentMethodDetail = channelLabel;
+      if (shortcode && !txn.paybillBusinessNumber) txn.paybillBusinessNumber = shortcode;
+      txn.status = 'processing';
+      txn.updatedAt = new Date();
+      await txn.save();
+    }
+
+    // If owning landlord or superadmin explicitly confirms Paybill payment right away, settle & issue receipt
+    if ((isOwner || isSuper) && confirmNow === true) {
+      const settled = await PaymentService.finalizeVerifiedSettlement({
+        transaction: txn,
+        providerReference: cleanCode,
+        amountPaid: Number(amount || txn.amount),
+        paymentChannel: 'mpesa_paybill',
+        paymentMethodDetail: txn.paymentMethodDetail || channelLabel,
+        paidAt: new Date(),
+        actorId: req.user._id || req.user.id
+      });
+      return res.status(201).json({
+        success: true,
+        reconciled: true,
+        message: `M-Pesa Paybill code ${cleanCode} confirmed and receipt issued.`,
+        ...settled
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      reconciled: false,
+      message: `M-Pesa code ${cleanCode} recorded and submitted for Paybill verification.`,
+      transaction: txn
+    });
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ message: err.message });
+  }
+});
+
+// @desc    Landlord confirms/reconciles a submitted M-Pesa Paybill transaction (appears in MPESA Transactions + Issues Receipt)
+// @route   POST /api/v2/payments/paybill/:transactionId/confirm
+// @access  Private (Landlord Admin / Super Admin)
+router.post('/paybill/:transactionId/confirm', protect, admin, validateObjectId('transactionId'), async (req, res) => {
+  try {
+    const txn = await PaymentTransaction.findById(req.params.transactionId);
+    if (!txn) return res.status(404).json({ message: 'Transaction not found' });
+
+    const userId = String(req.user._id || req.user.id);
+    const isSuper = Boolean(req.user.isSuperAdmin || req.user.role === 'superadmin');
+    if (!isSuper && String(txn.landlordId) !== userId) {
+      return res.status(403).json({ message: 'Not authorized to confirm this Paybill transaction' });
+    }
+
+    if (txn.status === 'paid') {
+      return res.json({ success: true, alreadySettled: true, transaction: txn });
+    }
+
+    if (req.body?.tenantId) {
+      if (!isValidObjectId(String(req.body.tenantId))) {
+        return res.status(400).json({ message: 'Invalid tenant identifier' });
+      }
+      const tenant = await Tenant.findOne({ _id: req.body.tenantId, user: txn.landlordId }).populate('unitId');
+      if (!tenant) return res.status(404).json({ message: 'Tenant not found in your portfolio' });
+      txn.tenantId = tenant._id;
+      txn.unitId = tenant.unitId?._id || tenant.unitId;
+      txn.propertyId = tenant.unitId?.propertyId;
+      txn.customerName = tenant.name;
+      txn.customerEmail = tenant.email || txn.customerEmail;
+      txn.customerPhone = tenant.phone || txn.customerPhone;
+      await txn.save();
+    }
+
+    if (!txn.tenantId) {
+      return res.status(400).json({ message: 'Please assign a tenant before confirming this unmatched Paybill transaction.' });
+    }
+
+    const cleanCode = String(req.body?.receiptCode || txn.providerReference || txn.accountReference || '')
+      .trim()
+      .toUpperCase();
+    if (!cleanCode) {
+      return res.status(400).json({ message: 'M-Pesa confirmation code is required to confirm Paybill payment.' });
+    }
+
+    const settled = await PaymentService.finalizeVerifiedSettlement({
+      transaction: txn,
+      providerReference: cleanCode,
+      amountPaid: Number(req.body?.amountPaid || txn.amountPaid || txn.amount),
+      paymentChannel: 'mpesa_paybill',
+      paymentMethodDetail: txn.paymentMethodDetail || (txn.paybillBusinessNumber ? `M-Pesa Paybill (${txn.paybillBusinessNumber})` : 'M-Pesa Paybill'),
+      paidAt: txn.paidAt || new Date(),
+      actorId: req.user._id || req.user.id
+    });
+
+    res.json({
+      success: true,
+      reconciled: true,
+      message: `Paybill payment ${cleanCode} confirmed and receipt dispatched.`,
+      ...settled
+    });
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ message: err.message });
   }
 });
 

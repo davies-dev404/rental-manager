@@ -636,6 +636,8 @@ class PaymentService {
       const dAmt = Number(bd.deposit || 0);
       const providerLabel = transaction.provider === 'pesapal'
         ? 'Pesapal'
+        : transaction.provider === 'mpesa_c2b'
+        ? 'M-Pesa Paybill'
         : (transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow');
 
       rentPaymentRecord = await Payment.create({
@@ -739,6 +741,13 @@ class PaymentService {
     const txn = await PaymentTransaction.findById(transactionId);
     if (!txn) throw new Error('Transaction not found');
     if (txn.status === 'paid') return { transaction: txn, alreadySettled: true };
+    if (txn.provider === 'mpesa_c2b' || txn.provider === 'manual') {
+      return {
+        transaction: txn,
+        alreadySettled: false,
+        message: 'Direct M-Pesa Paybill transaction awaits C2B webhook or landlord confirmation.'
+      };
+    }
 
     const adapter = this.getAdapter(txn.provider);
     const trackingId = String(gatewayHints.trackingId || gatewayHints.invoiceId || txn.trackingId || txn.gatewayInvoiceNumber || '').trim();

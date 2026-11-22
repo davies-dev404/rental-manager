@@ -281,11 +281,11 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
           <div
             onClick={() => {
               toast({
-                title: "Tutorials & Guides",
-                description: "Opening MakaziFlow video tutorials and documentation."
+                title: "Tutorials Coming Soon",
+                description: "MakaziFlow video tutorials and step-by-step guides are coming soon."
               });
             }}
-            title="Tutorials"
+            title="Tutorials — Coming Soon"
             className="p-1.5 text-[#7fa8c0] hover:text-white rounded-md transition cursor-pointer"
           >
             <Video className="w-4 h-4" />
@@ -455,14 +455,17 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
         <div
           onClick={() => {
             toast({
-              title: "Tutorials & Guides",
-              description: "Opening MakaziFlow video tutorials and documentation."
+              title: "Tutorials Coming Soon",
+              description: "MakaziFlow video tutorials and step-by-step guides are coming soon."
             });
           }}
           className="flex items-center gap-3 px-3 py-2 text-xs text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/50 rounded-md transition cursor-pointer"
         >
           <Video className="w-3.5 h-3.5 text-[#7fa8c0]" />
           <span>Tutorials</span>
+          <span className="ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#132d4a] text-[#7fa8c0]">
+            Soon
+          </span>
         </div>
 
         {/* Demo mode with Flask icon and toggle switch matching the screenshot */}

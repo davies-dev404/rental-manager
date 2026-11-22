@@ -22,12 +22,11 @@ import {
 } from "lucide-react";
 
 const CHANNELS = [
-  { id: "hosted_checkout", label: "Pesaflow Hosted Checkout (All Channels)" },
-  { id: "mpesa_stk", label: "M-Pesa STK Push (via Pesaflow)" },
-  { id: "mpesa_paybill", label: "M-Pesa Paybill (via Pesaflow)" },
-  { id: "card", label: "Visa / Mastercard (via Pesaflow)" },
-  { id: "bank_transfer", label: "Bank Transfer (via Pesaflow)" },
-  { id: "ussd", label: "USSD Payment (via Pesaflow)" }
+  { id: "mpesa_paybill", label: "M-Pesa Paybill (Direct Lipa na M-Pesa)" },
+  { id: "hosted_checkout", label: "Pesapal Online Checkout (M-Pesa / Card / Bank)" },
+  { id: "mpesa_stk", label: "M-Pesa STK Push (via Pesapal)" },
+  { id: "card", label: "Visa / Mastercard (via Pesapal)" },
+  { id: "bank_transfer", label: "Bank Transfer (via Pesapal)" }
 ];
 
 export default function TenantPortalPage() {
@@ -51,22 +50,58 @@ export default function TenantPortalPage() {
   const [elecAmount, setElecAmount] = useState("0");
   const [serviceAmount, setServiceAmount] = useState("0");
   const [penaltyAmount, setPenaltyAmount] = useState("0");
-  const [paymentChannel, setPaymentChannel] = useState("hosted_checkout");
+  const [paymentChannel, setPaymentChannel] = useState("mpesa_paybill");
   const [phone, setPhone] = useState("");
   const [gatewaySession, setGatewaySession] = useState(null);
+  const [paybillReceiptCode, setPaybillReceiptCode] = useState("");
+
+  const { data: fetchedPaybillConfig } = useQuery({
+    queryKey: ["paybill-config", selectedTenantId || "self"],
+    queryFn: () => api.getPaybillConfig(selectedTenantId || ""),
+    enabled: Boolean(portal && (!portal.linked || !portal.paybillConfig))
+  });
+
+  const activePaybillConfig = portal?.paybillConfig || fetchedPaybillConfig || null;
 
   const initiateMutation = useMutation({
     mutationFn: api.initiateTenantPayment,
     onSuccess: (res) => {
       setGatewaySession(res);
+      setPaybillReceiptCode("");
+      const isDirectPaybill = res.gateway?.mode === "direct_paybill" || res.transaction?.paymentChannel === "mpesa_paybill";
       toast({
-        title: "Pesaflow Payment Initiated",
-        description: `Reference ${res.transaction?.accountReference} created. Complete payment on Pesaflow.`
+        title: isDirectPaybill ? "Paybill Payment Ready" : "Pesapal Payment Initiated",
+        description: isDirectPaybill
+          ? `Pay KES ${Number(res.transaction?.amount || 0).toLocaleString()} via Paybill ${res.gateway?.paybillInstructions?.businessNumber || activePaybillConfig?.businessNumber || ""}, then enter your M-Pesa confirmation code below.`
+          : `Reference ${res.transaction?.accountReference} created. Complete payment on Pesapal.`
       });
       queryClient.invalidateQueries({ queryKey: ["tenant-portal-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["gateway-transactions"] });
     },
     onError: (err) => {
       toast({ variant: "destructive", title: "Payment Notice", description: err.message });
+    }
+  });
+
+  const submitPaybillMutation = useMutation({
+    mutationFn: api.submitPaybillReceipt,
+    onSuccess: (res) => {
+      toast({
+        title: res.reconciled ? "Paybill Payment Confirmed" : "M-Pesa Code Submitted",
+        description: res.message || "Your Paybill payment now appears in MPESA Transactions Status."
+      });
+      setPaybillReceiptCode("");
+      if (res.reconciled) setGatewaySession(null);
+      else if (res.transaction) {
+        setGatewaySession((prev) => (prev ? { ...prev, transaction: res.transaction } : prev));
+      }
+      queryClient.invalidateQueries({ queryKey: ["tenant-portal-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["gateway-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    },
+    onError: (err) => {
+      toast({ variant: "destructive", title: "Paybill Error", description: err.message });
     }
   });
 
@@ -156,7 +191,7 @@ export default function TenantPortalPage() {
             Online Rent &amp; Utility Payment Portal
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Pay monthly rent, water, electricity, service charges, and penalties securely via Pesaflow.
+            Pay monthly rent, water, electricity, service charges, and penalties via M-Pesa Paybill or Pesapal.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs cursor-pointer">
@@ -175,29 +210,102 @@ export default function TenantPortalPage() {
             <CardHeader>
               <CardTitle className="text-base font-bold flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#00a99d]" />
-                Pesaflow Rental Collection
+                Rental Collection &amp; M-Pesa Paybill
               </CardTitle>
               <CardDescription className="text-xs">
-                Tenant rent payments are reconciled separately from landlord SaaS subscriptions.
+                All tenant M-Pesa Paybill &amp; Pesapal payments appear automatically in MPESA Transactions Status.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {gatewaySession ? (
                 <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 space-y-3 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-blue-900">Pending Payment Confirmation</span>
-                    <Badge className="bg-amber-100 text-amber-800">Awaiting Pesaflow IPN</Badge>
+                    <span className="font-bold text-blue-900">
+                      {gatewaySession.gateway?.mode === "direct_paybill"
+                        ? "Lipa na M-Pesa Paybill Instructions"
+                        : "Pending Payment Confirmation"}
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-800">
+                      {gatewaySession.transaction?.status === "processing"
+                        ? "M-Pesa Code Submitted"
+                        : gatewaySession.gateway?.mode === "direct_paybill"
+                        ? "Awaiting M-Pesa Code"
+                        : "Awaiting Pesapal IPN"}
+                    </Badge>
                   </div>
                   <p>
-                    Account Ref: <strong className="font-mono">{gatewaySession.transaction?.accountReference}</strong> · Invoice:{" "}
-                    <strong>{gatewaySession.invoice?.invoiceNumber}</strong> · Amount:{" "}
-                    <strong>KES {Number(gatewaySession.transaction?.amount || 0).toLocaleString()}</strong>
+                    System Ref: <strong className="font-mono">{gatewaySession.transaction?.accountReference}</strong>
+                    {gatewaySession.invoice?.invoiceNumber && (
+                      <> · Invoice: <strong>{gatewaySession.invoice.invoiceNumber}</strong></>
+                    )}{" "}
+                    · Amount: <strong>KES {Number(gatewaySession.transaction?.amount || 0).toLocaleString()}</strong>
                   </p>
-                  {gatewaySession.gateway?.paybillInstructions && (
-                    <div className="rounded-lg bg-white border p-3 space-y-1">
-                      <p className="font-bold">Paybill Details:</p>
-                      <p>Business No: <strong className="font-mono">{gatewaySession.gateway.paybillInstructions.businessNumber}</strong></p>
-                      <p>Account Ref: <strong className="font-mono">{gatewaySession.gateway.paybillInstructions.accountReference}</strong></p>
+                  {(gatewaySession.gateway?.paybillInstructions || activePaybillConfig?.enabled) && (
+                    <div className="rounded-lg bg-white border border-emerald-200 p-3.5 space-y-2">
+                      <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                        <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+                        {(gatewaySession.gateway?.paybillInstructions?.mpesaType || activePaybillConfig?.type) === "Till"
+                          ? "M-Pesa Till Payment Details"
+                          : "Lipa na M-Pesa Paybill Details"}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                        <div className="p-2 rounded bg-slate-50 border">
+                          <span className="text-[10px] text-slate-500 block">
+                            {(gatewaySession.gateway?.paybillInstructions?.mpesaType || activePaybillConfig?.type) === "Till"
+                              ? "Till Number"
+                              : "Paybill Number"}
+                          </span>
+                          <strong className="font-mono text-sm text-[#0b1065]">
+                            {gatewaySession.gateway?.paybillInstructions?.businessNumber || activePaybillConfig?.businessNumber}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded bg-slate-50 border">
+                          <span className="text-[10px] text-slate-500 block">Account Number</span>
+                          <strong className="font-mono text-sm text-[#0b1065]">
+                            {gatewaySession.gateway?.paybillInstructions?.accountReference || activePaybillConfig?.recommendedAccount || activePaybillConfig?.defaultAccount || "Unit #"}
+                          </strong>
+                        </div>
+                        <div className="p-2 rounded bg-slate-50 border">
+                          <span className="text-[10px] text-slate-500 block">Amount (KES)</span>
+                          <strong className="font-mono text-sm text-emerald-700">
+                            KES {Number(gatewaySession.transaction?.amount || 0).toLocaleString()}
+                          </strong>
+                        </div>
+                      </div>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!paybillReceiptCode.trim()) return;
+                          submitPaybillMutation.mutate({
+                            transactionId: gatewaySession.transaction?._id,
+                            tenantId: gatewaySession.transaction?.tenantId,
+                            receiptCode: paybillReceiptCode.trim(),
+                            phone: phone || activeTenant?.phone || "",
+                            amount: gatewaySession.transaction?.amount
+                          });
+                        }}
+                        className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-100"
+                      >
+                        <Input
+                          placeholder="Enter M-Pesa Confirmation Code (e.g. SJK48A9XYZ)"
+                          value={paybillReceiptCode}
+                          onChange={(e) => setPaybillReceiptCode(e.target.value.toUpperCase())}
+                          className="h-8 text-xs font-mono uppercase flex-1"
+                        />
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={submitPaybillMutation.isPending || !paybillReceiptCode.trim()}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs cursor-pointer"
+                        >
+                          {submitPaybillMutation.isPending ? "Submitting..." : "Submit M-Pesa Code"}
+                        </Button>
+                      </form>
+                      {gatewaySession.transaction?.providerReference && (
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          Submitted M-Pesa Code: <strong className="font-mono">{gatewaySession.transaction.providerReference}</strong> (Visible in MPESA Transactions Status)
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2">
@@ -208,18 +316,20 @@ export default function TenantPortalPage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#0b1065] text-white font-semibold"
                       >
-                        Pay on Pesaflow <ExternalLink className="w-3.5 h-3.5" />
+                        Pay on Pesapal <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={verifyMutation.isPending}
-                      onClick={() => verifyMutation.mutate(gatewaySession.transaction._id)}
-                      className="cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Check Payment Status
-                    </Button>
+                    {gatewaySession.gateway?.mode !== "direct_paybill" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={verifyMutation.isPending}
+                        onClick={() => verifyMutation.mutate(gatewaySession.transaction._id)}
+                        className="cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Check Payment Status
+                      </Button>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => setGatewaySession(null)}>
                       New Payment
                     </Button>
@@ -286,8 +396,22 @@ export default function TenantPortalPage() {
                     </div>
                   </div>
 
+                  {activePaybillConfig?.enabled && (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-emerald-900 dark:text-emerald-200">
+                          Configured M-Pesa {activePaybillConfig.type}: <span className="font-mono">{activePaybillConfig.businessNumber}</span>
+                        </p>
+                        <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                          Default Account #: <strong className="font-mono">{activePaybillConfig.recommendedAccount || activePaybillConfig.defaultAccount || "Unit Number"}</strong>
+                        </p>
+                      </div>
+                      <Badge className="bg-emerald-600 text-white text-[10px]">Direct Paybill Active</Badge>
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Payment Channel (Pesaflow)</Label>
+                    <Label className="text-xs font-semibold">Payment Channel</Label>
                     <select
                       value={paymentChannel}
                       onChange={(e) => setPaymentChannel(e.target.value)}
@@ -312,7 +436,7 @@ export default function TenantPortalPage() {
                       className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-10 px-6 cursor-pointer"
                     >
                       {initiateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
-                      Pay Now via Pesaflow
+                      {paymentChannel === "mpesa_paybill" ? "Get Paybill Instructions" : "Pay Now via Pesapal"}
                     </Button>
                   </div>
                 </form>
@@ -349,7 +473,7 @@ export default function TenantPortalPage() {
                 </>
               ) : (
                 <p className="text-slate-500 leading-relaxed">
-                  Select any active tenant from the collection form to generate an official Pesaflow rent checkout link, M-Pesa STK push, or Paybill reference.
+                  Select any active tenant from the collection form to pay via M-Pesa Paybill{activePaybillConfig?.businessNumber ? ` (${activePaybillConfig.businessNumber})` : ""}, M-Pesa STK push, or Pesapal checkout.
                 </p>
               )}
               <div className="pt-3 border-t text-[11px] text-slate-500">

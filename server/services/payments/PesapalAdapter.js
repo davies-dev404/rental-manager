@@ -33,7 +33,7 @@ class PesapalAdapter extends PaymentAdapter {
   }
 
   getSupportedChannels() {
-    return ['hosted_checkout', 'mpesa_stk', 'card', 'bank_transfer'];
+    return ['hosted_checkout', 'mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer'];
   }
 
   normalizeKenyanPhone(phone = '') {
@@ -373,7 +373,7 @@ class PesapalAdapter extends PaymentAdapter {
         throw err;
       }
 
-      const channelNormalized = ['mpesa_stk', 'card', 'bank_transfer'].includes(paymentChannel)
+      const channelNormalized = ['mpesa_stk', 'mpesa_paybill', 'card', 'bank_transfer'].includes(paymentChannel)
         ? paymentChannel
         : 'hosted_checkout';
 

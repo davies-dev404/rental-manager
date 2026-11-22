@@ -319,7 +319,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/payments', requireActiveSubscription, paymentRoutes);
 app.use('/api/reminders', requireActiveSubscription, require('./routes/reminderRoutes'));
 app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
-app.use('/api/mpesa', requireActiveSubscription, require('./routes/mpesaRoutes'));
+app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
 app.use('/api/super-admin', require('./routes/superAdminRoutes'));

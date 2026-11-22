@@ -11,7 +11,7 @@ const paymentTransactionSchema = new mongoose.Schema({
   invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
   provider: {
     type: String,
-    enum: ['pesapal', 'intasend', 'pesaflow', 'equity_eazzybiz', 'kcb_buni', 'coop_bank', 'manual'],
+    enum: ['pesapal', 'intasend', 'pesaflow', 'mpesa_c2b', 'equity_eazzybiz', 'kcb_buni', 'coop_bank', 'manual'],
     default: 'pesapal',
     index: true
   },
