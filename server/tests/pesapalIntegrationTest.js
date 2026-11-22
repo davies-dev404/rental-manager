@@ -478,7 +478,18 @@ async function runTests() {
     assert.strictEqual(prodCsv.status, 200);
     assert.ok(String(prodCsv.data).includes('PPPRODVISA001'));
     assert.ok(!String(prodCsv.data).includes('PPMPESA001'));
-    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and clean CSV reporting');
+
+    // Landlord A payment history view + CSV export strictly isolated to Landlord A
+    const myA = await apiReq('/api/subscriptions/my', { token: tokA });
+    assert.strictEqual(myA.status, 200);
+    assert.ok(myA.data.transactions.some((t) => t.receiptId && t.receiptNumber), 'Paid transactions must include receipt link fields');
+
+    const exportA = await apiReq('/api/subscriptions/transactions/export', { token: tokA });
+    assert.strictEqual(exportA.status, 200);
+    assert.ok(String(exportA.data).includes('PPMPESA001'));
+    assert.ok(!String(exportA.data).includes('PPPRODVISA001'), 'Landlord CSV export MUST NOT leak other landlords');
+    assert.strictEqual((await apiReq('/api/subscriptions/transactions/export')).status, 401);
+    console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV export');
 
     console.log('\n🎉 ALL 6 PESAPAL API 3.0 INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');
   } finally {

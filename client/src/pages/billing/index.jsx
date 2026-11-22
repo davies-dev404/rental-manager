@@ -87,6 +87,8 @@ export default function BillingDashboardPage() {
   const [enableRecurring, setEnableRecurring] = useState(false);
   const [downgradeNote, setDowngradeNote] = useState(null);
   const [activeGatewaySession, setActiveGatewaySession] = useState(null);
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   useEffect(() => {
     if (user?.phone && !phoneInput) {
@@ -770,67 +772,179 @@ export default function BillingDashboardPage() {
         {/* Subscription Payment History & Official Receipts */}
         <Card className="shadow-xs">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-bold flex items-center gap-2">
-              <Receipt className="w-4 h-4 text-emerald-600" />
-              Payment History &amp; Receipts
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Verify pending payments or download verified PDF receipts.
-            </CardDescription>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-emerald-600" />
+                  Payment History &amp; Receipts
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  View all transactions, verify pending payments, or download receipts &amp; CSV statements.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {transactions.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
+                    className="h-7 px-2.5 text-[11px] cursor-pointer"
+                  >
+                    <Download className="w-3 h-3 mr-1" /> Export CSV
+                  </Button>
+                )}
+                {transactions.length > 5 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setHistoryModalOpen(true)}
+                    className="h-7 px-2.5 text-[11px] cursor-pointer"
+                  >
+                    View All ({transactions.length})
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {receipts.length > 0 && (
               <div className="space-y-2">
                 <p className="text-[11px] font-bold uppercase text-slate-500">Official Receipts</p>
-                {receipts.map((rct) => (
-                  <div key={rct._id} className="border rounded-lg p-2.5 flex items-center justify-between text-xs bg-emerald-50/40 dark:bg-emerald-950/10">
-                    <div>
-                      <span className="font-mono font-bold">{rct.receiptNumber}</span>
-                      <span className="text-slate-500 ml-2">KES {Number(rct.amount).toLocaleString()}</span>
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {receipts.map((rct) => (
+                    <div key={rct._id} className="border rounded-lg p-2.5 flex items-center justify-between text-xs bg-emerald-50/40 dark:bg-emerald-950/10">
+                      <div>
+                        <span className="font-mono font-bold">{rct.receiptNumber}</span>
+                        <span className="text-slate-500 ml-2">KES {Number(rct.amount).toLocaleString()}</span>
+                        {rct.issuedAt && (
+                          <span className="text-[10px] text-slate-400 ml-2">
+                            {new Date(rct.issuedAt).toLocaleDateString("en-KE")}
+                          </span>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadAuthFile(`/v2/payments/receipts/${rct._id}/pdf`, `${rct.receiptNumber}.pdf`)}
+                        className="h-7 px-2.5 text-[11px] cursor-pointer"
+                      >
+                        <Download className="w-3 h-3 mr-1" /> Receipt PDF
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => downloadAuthFile(`/v2/payments/receipts/${rct._id}/pdf`, `${rct.receiptNumber}.pdf`)}
-                      className="h-7 px-2.5 text-[11px] cursor-pointer"
-                    >
-                      <Download className="w-3 h-3 mr-1" /> Receipt PDF
-                    </Button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
             <div className="space-y-2">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Payment Transactions</p>
-              {transactions.length === 0 ? (
-                <p className="text-xs text-slate-500 py-4 text-center">No subscription transactions recorded yet.</p>
-              ) : (
-                transactions.map((txn) => (
-                  <div key={txn._id} className="border rounded-lg p-2.5 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold">{txn.accountReference}</span>
-                        <Badge className="text-[10px] uppercase">{txn.status}</Badge>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[11px] font-bold uppercase text-slate-500">
+                  Payment Transactions ({transactions.length})
+                </p>
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "paid", label: "Paid" },
+                    { id: "pending", label: "Pending" },
+                    { id: "failed", label: "Failed" }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setHistoryFilter(tab.id)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
+                        historyFilter === tab.id
+                          ? "bg-[#0b1065] text-white"
+                          : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {(() => {
+                const filteredTxns = transactions.filter((txn) => {
+                  if (historyFilter === "all") return true;
+                  if (historyFilter === "pending") return ["pending", "processing"].includes(txn.status);
+                  if (historyFilter === "failed") return ["failed", "cancelled", "reversed"].includes(txn.status);
+                  return txn.status === historyFilter;
+                });
+                if (filteredTxns.length === 0) {
+                  return <p className="text-xs text-slate-500 py-4 text-center">No matching subscription transactions found.</p>;
+                }
+                return (
+                  <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
+                    {filteredTxns.map((txn) => (
+                      <div key={txn._id} className="border rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-semibold">{txn.accountReference}</span>
+                            <Badge className={`text-[10px] uppercase ${txn.status === "paid" ? "bg-emerald-100 text-emerald-700" : txn.status === "failed" || txn.status === "cancelled" ? "bg-rose-100 text-rose-700" : ""}`}>
+                              {txn.status}
+                            </Badge>
+                            {txn.createdAt && (
+                              <span className="text-[10px] text-slate-400">
+                                {new Date(txn.createdAt).toLocaleString("en-KE")}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            KES {Number(txn.amount).toLocaleString()} · {formatChannelLabel(txn.paymentChannel, txn.paymentMethodDetail)}
+                            {txn.providerReference ? ` · Ref: ${txn.providerReference}` : ""}
+                          </p>
+                          {txn.failureReason && txn.status !== "paid" && (
+                            <p className="text-[10px] text-rose-600">{txn.failureReason}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                          {["pending", "processing"].includes(txn.status) && txn.checkoutUrl && /^https:\/\//i.test(txn.checkoutUrl) && (
+                            <a
+                              href={txn.checkoutUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center h-7 px-2.5 rounded-md bg-[#0b1065] text-white text-[11px] font-semibold hover:bg-[#161c8a]"
+                            >
+                              Pay Now <ExternalLink className="w-3 h-3 ml-1" />
+                            </a>
+                          )}
+                          {["pending", "processing"].includes(txn.status) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={verifyMutation.isPending}
+                              onClick={() => verifyMutation.mutate(txn._id)}
+                              className="h-7 px-2.5 text-[11px] cursor-pointer"
+                            >
+                              <RefreshCw className={`w-3 h-3 mr-1 ${verifyMutation.isPending ? "animate-spin" : ""}`} /> Verify
+                            </Button>
+                          )}
+                          {txn.receiptId && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => downloadAuthFile(`/v2/payments/receipts/${txn.receiptId}/pdf`, `${txn.receiptNumber || txn.accountReference}-receipt.pdf`)}
+                              className="h-7 px-2.5 text-[11px] cursor-pointer"
+                            >
+                              <Download className="w-3 h-3 mr-1" /> Receipt PDF
+                            </Button>
+                          )}
+                          {txn.invoiceId && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => downloadAuthFile(`/v2/payments/invoices/${txn.invoiceId}/pdf`, `${txn.accountReference}-invoice.pdf`)}
+                              className="h-7 px-2.5 text-[11px] cursor-pointer"
+                            >
+                              <Download className="w-3 h-3 mr-1" /> Invoice PDF
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        KES {Number(txn.amount).toLocaleString()} · {formatChannelLabel(txn.paymentChannel, txn.paymentMethodDetail)}
-                      </p>
-                    </div>
-                    {["pending", "processing"].includes(txn.status) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={verifyMutation.isPending}
-                        onClick={() => verifyMutation.mutate(txn._id)}
-                        className="h-7 px-2.5 text-[11px] cursor-pointer"
-                      >
-                        <RefreshCw className={`w-3 h-3 mr-1 ${verifyMutation.isPending ? "animate-spin" : ""}`} /> Verify
-                      </Button>
-                    )}
+                    ))}
                   </div>
-                ))
-              )}
+                );
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -1043,6 +1157,106 @@ export default function BillingDashboardPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setUpgradeOpen(false)} className="text-xs">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Full Payment History Modal */}
+      <Dialog open={historyModalOpen} onOpenChange={setHistoryModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2 pr-6">
+              <div>
+                <DialogTitle>All Subscription Payment History</DialogTitle>
+                <DialogDescription>
+                  Complete record of your MakaziFlow subscription payments, references, and downloadable receipts.
+                </DialogDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => downloadAuthFile(`/subscriptions/transactions/export`, `makaziflow-payment-history-${new Date().toISOString().slice(0, 10)}.csv`)}
+                className="text-xs h-8 cursor-pointer shrink-0"
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5" /> Download CSV
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="overflow-x-auto border rounded-lg">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/70 text-[11px] uppercase text-slate-500">
+                <tr>
+                  <th className="p-2.5">Date</th>
+                  <th className="p-2.5">Reference</th>
+                  <th className="p-2.5">Plan / Cycle</th>
+                  <th className="p-2.5">Method</th>
+                  <th className="p-2.5">Amount</th>
+                  <th className="p-2.5">Status</th>
+                  <th className="p-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {transactions.map((txn) => (
+                  <tr key={txn._id}>
+                    <td className="p-2.5 whitespace-nowrap text-[11px] text-slate-500">
+                      {txn.createdAt ? new Date(txn.createdAt).toLocaleString("en-KE") : "—"}
+                    </td>
+                    <td className="p-2.5 font-mono text-[11px]">
+                      <div>{txn.accountReference}</div>
+                      {txn.providerReference && <div className="text-[10px] text-slate-400">Ref: {txn.providerReference}</div>}
+                    </td>
+                    <td className="p-2.5 capitalize text-[11px]">
+                      {txn.planCode || "Subscription"} ({txn.billingCycle || "monthly"})
+                    </td>
+                    <td className="p-2.5 text-[11px]">{formatChannelLabel(txn.paymentChannel, txn.paymentMethodDetail)}</td>
+                    <td className="p-2.5 font-semibold whitespace-nowrap">KES {Number(txn.amount).toLocaleString()}</td>
+                    <td className="p-2.5">
+                      <Badge className={`text-[10px] uppercase ${txn.status === "paid" ? "bg-emerald-100 text-emerald-700" : txn.status === "failed" || txn.status === "cancelled" ? "bg-rose-100 text-rose-700" : ""}`}>
+                        {txn.status}
+                      </Badge>
+                    </td>
+                    <td className="p-2.5 text-right whitespace-nowrap space-x-1">
+                      {txn.receiptId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadAuthFile(`/v2/payments/receipts/${txn.receiptId}/pdf`, `${txn.receiptNumber || txn.accountReference}-receipt.pdf`)}
+                          className="h-7 px-2 text-[10px] cursor-pointer"
+                        >
+                          <Download className="w-3 h-3 mr-1" /> Receipt
+                        </Button>
+                      )}
+                      {txn.invoiceId && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadAuthFile(`/v2/payments/invoices/${txn.invoiceId}/pdf`, `${txn.accountReference}-invoice.pdf`)}
+                          className="h-7 px-2 text-[10px] cursor-pointer"
+                        >
+                          <Download className="w-3 h-3 mr-1" /> Invoice
+                        </Button>
+                      )}
+                      {["pending", "processing"].includes(txn.status) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={verifyMutation.isPending}
+                          onClick={() => verifyMutation.mutate(txn._id)}
+                          className="h-7 px-2 text-[10px] cursor-pointer"
+                        >
+                          Verify
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryModalOpen(false)} className="text-xs">
               Close
             </Button>
           </DialogFooter>

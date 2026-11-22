@@ -80,22 +80,38 @@ router.get('/my', protect, async (req, res) => {
         : await LandlordSubscription.findOne({ landlordId }).sort({ createdAt: -1 }).populate('planId')
     );
 
-    const history = await LandlordSubscription.find({ landlordId }).sort({ createdAt: -1 }).limit(20);
-    const allInvoices = await Invoice.find({ landlordId, invoiceCategory: 'subscription' }).sort({ createdAt: -1 }).limit(30);
-    const receipts = await PaymentReceipt.find({ landlordId, receiptCategory: 'subscription' }).sort({ issuedAt: -1 }).limit(30);
+    const history = await LandlordSubscription.find({ landlordId }).sort({ createdAt: -1 }).limit(100);
+    const allInvoices = await Invoice.find({ landlordId, invoiceCategory: 'subscription' }).sort({ createdAt: -1 }).limit(500);
+    const receipts = await PaymentReceipt.find({ landlordId, receiptCategory: 'subscription' }).sort({ issuedAt: -1 }).limit(500);
     const allTransactions = await PaymentTransaction.find({
       landlordId,
       paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] }
-    }).sort({ createdAt: -1 }).limit(30);
+    }).sort({ createdAt: -1 }).limit(500);
+
+    const receiptByTxnId = new Map(
+      receipts
+        .filter((r) => r.transactionId)
+        .map((r) => [String(r.transactionId), r])
+    );
 
     // Exclude legacy/aborted pre-gateway initiation failures so billing history stays clean
-    const transactions = allTransactions.filter((t) => {
-      const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
-      if (t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow')) {
-        return false;
-      }
-      return true;
-    });
+    const transactions = allTransactions
+      .filter((t) => {
+        const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
+        if (t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow')) {
+          return false;
+        }
+        return true;
+      })
+      .map((t) => {
+        const obj = t.toObject();
+        const rct = receiptByTxnId.get(String(t._id));
+        if (rct) {
+          obj.receiptId = rct._id;
+          obj.receiptNumber = rct.receiptNumber;
+        }
+        return obj;
+      });
 
     const activeOrSettledInvoiceIds = new Set(
       transactions
@@ -134,6 +150,78 @@ router.get('/my', protect, async (req, res) => {
       receipts,
       transactions
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+function escapeCsvCell(val) {
+  let str = String(val ?? '');
+  // Guard CSV formula injection cleanly
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+// @desc    Download complete subscription payment history CSV for the logged-in landlord
+// @route   GET /api/subscriptions/transactions/export
+// @access  Private (Landlord / Admin)
+router.get('/transactions/export', protect, admin, async (req, res) => {
+  try {
+    const landlordId = req.user._id || req.user.id;
+    const txns = await PaymentTransaction.find({
+      landlordId,
+      paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] }
+    }).sort({ createdAt: -1 }).limit(1000).lean();
+
+    const filtered = txns.filter((t) => {
+      const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
+      return !(t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow'));
+    });
+
+    const headers = [
+      'Date',
+      'Reference',
+      'Confirmation Code',
+      'Tracking ID',
+      'Plan',
+      'Billing Cycle',
+      'Category',
+      'Payment Method',
+      'Amount',
+      'Currency',
+      'Status',
+      'Paid At',
+      'Failure Reason'
+    ];
+
+    const rows = filtered.map((t) => [
+      t.createdAt ? new Date(t.createdAt).toISOString() : '',
+      t.accountReference || t.internalTransactionId || '',
+      t.providerReference || '',
+      t.trackingId || '',
+      t.planCode || '',
+      t.billingCycle || '',
+      t.paymentCategory || '',
+      t.paymentMethodDetail || t.paymentChannel || '',
+      Number(t.amountPaid || t.amount || 0).toFixed(2),
+      t.currency || 'KES',
+      t.status || '',
+      t.paidAt ? new Date(t.paidAt).toISOString() : '',
+      t.failureReason || ''
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsvCell).join(','))
+      .join('\n');
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="makaziflow-payment-history-${dateTag}.csv"`
+    });
+    res.send(csv);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
