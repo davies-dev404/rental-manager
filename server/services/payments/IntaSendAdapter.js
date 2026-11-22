@@ -63,6 +63,74 @@ class IntaSendAdapter extends PaymentAdapter {
     return String(cfg.callbackUrl || `${cfg.frontendUrl}/billing`).split('?')[0];
   }
 
+  buildGatewayHeaders(authMode, cfg) {
+    const baseHeaders = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'MakaziFlow-Server/2.0 (+https://makaziflow.afrinextech.co.ke)'
+    };
+    if (authMode === 'checkout') {
+      return {
+        ...baseHeaders,
+        'X-IntaSend-Public-API-Key': cfg.publishableKey,
+        Origin: cfg.frontendUrl,
+        Referer: `${cfg.frontendUrl}/`
+      };
+    }
+    return {
+      ...baseHeaders,
+      Authorization: `Bearer ${cfg.secretKey}`
+    };
+  }
+
+  extractGatewayError(apiErr) {
+    const status = apiErr?.response?.status;
+    const data = apiErr?.response?.data;
+    if (data && typeof data === 'object') {
+      return (
+        data?.errors?.[0]?.detail ||
+        data?.detail ||
+        data?.message ||
+        apiErr.message
+      );
+    }
+    if (status === 403 || (typeof data === 'string' && /cloudflare|attention required|<html|just a moment|forbidden/i.test(data))) {
+      return 'Gateway request blocked (403). Check IP Whitelist settings or allow server requests in your payment portal.';
+    }
+    return apiErr?.message || 'Gateway request failed';
+  }
+
+  async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 20000 }) {
+    const headers = this.buildGatewayHeaders(authMode, cfg);
+    const primaryUrl = `${cfg.baseUrl}${path}`;
+    try {
+      return await axios.post(primaryUrl, payload, { headers, timeout });
+    } catch (primaryErr) {
+      const status = primaryErr?.response?.status;
+      const cfRay = primaryErr?.response?.headers?.['cf-ray'] || '';
+      const serverHdr = primaryErr?.response?.headers?.server || '';
+      console.warn(
+        `[IntaSend Gateway Warning] path=${path} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay}`
+      );
+
+      // If primary host returns 403 WAF/edge block, retry once via unified api.intasend.com with same env keys
+      if (status === 403 && !cfg.baseUrl.includes('api.intasend.com')) {
+        const secondaryUrl = `https://api.intasend.com/api/v1${path}`;
+        try {
+          return await axios.post(secondaryUrl, payload, { headers, timeout });
+        } catch (secondaryErr) {
+          const sStatus = secondaryErr?.response?.status;
+          const sRay = secondaryErr?.response?.headers?.['cf-ray'] || '';
+          console.warn(
+            `[IntaSend Unified Retry Warning] path=${path} status=${sStatus || 'ERR'} cfRay=${sRay}`
+          );
+          throw secondaryErr;
+        }
+      }
+      throw primaryErr;
+    }
+  }
+
   /**
    * Initiate payment via IntaSend Hosted Checkout or Direct M-Pesa STK Push.
    * Amount and currency MUST already be computed strictly by the backend.
@@ -82,7 +150,7 @@ class IntaSendAdapter extends PaymentAdapter {
     const cfg = this.getConfig({ requireConfigured: true });
     const cleanCurrency = String(currency || 'KES').toUpperCase();
     if (cleanCurrency !== 'KES') {
-      const err = new Error('IntaSend checkout is configured strictly for KES.');
+      const err = new Error('Payment checkout is configured strictly for KES.');
       err.statusCode = 400;
       throw err;
     }
@@ -97,12 +165,6 @@ class IntaSendAdapter extends PaymentAdapter {
     const normalizedPhone = this.normalizeKenyanPhone(customerPhone);
     const { first_name, last_name } = this.splitCustomerName(customerName);
     const email = (customerEmail || '').trim() || `${accountReference.toLowerCase()}@makaziflow.afrinextech.co.ke`;
-
-    const headers = {
-      Authorization: `Bearer ${cfg.secretKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    };
 
     // 1. Direct M-Pesa STK Push if explicitly selected and phone number provided
     if (paymentChannel === 'mpesa_stk') {
@@ -125,8 +187,9 @@ class IntaSendAdapter extends PaymentAdapter {
           email
         };
 
-        const response = await axios.post(`${cfg.baseUrl}/payment/mpesa-stk-push/`, stkPayload, {
-          headers,
+        const response = await this.postGateway('/payment/mpesa-stk-push/', stkPayload, {
+          authMode: 'secret',
+          cfg,
           timeout: 20000
         });
 
@@ -147,13 +210,10 @@ class IntaSendAdapter extends PaymentAdapter {
           rawResponse: data
         };
       } catch (apiErr) {
-        const errMsg =
-          apiErr.response?.data?.errors?.[0]?.detail ||
-          apiErr.response?.data?.detail ||
-          apiErr.response?.data?.message ||
-          apiErr.message;
+        const errMsg = this.extractGatewayError(apiErr);
+        const upstreamStatus = apiErr.response?.status;
         const err = new Error(`M-Pesa STK Push failed: ${errMsg}`);
-        err.statusCode = apiErr.response?.status >= 400 && apiErr.response?.status < 500 ? 400 : 502;
+        err.statusCode = (upstreamStatus === 400 || upstreamStatus === 422) ? 400 : 502;
         err.code = 'INTASEND_STK_ERROR';
         throw err;
       }
@@ -162,12 +222,6 @@ class IntaSendAdapter extends PaymentAdapter {
     // 2. Hosted Checkout (Visa, Mastercard, M-Pesa, Bank / PesaLink)
     // NOTE: IntaSend /api/v1/checkout/ authenticates via X-IntaSend-Public-API-Key + public_key in body.
     // Sending Authorization: Bearer secretKey to /checkout/ triggers "Session expired" (400).
-    const checkoutHeaders = {
-      'X-IntaSend-Public-API-Key': cfg.publishableKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    };
-
     try {
       const redirectUrl = this.buildRedirectUrl(cfg);
       const baseCheckoutPayload = {
@@ -193,15 +247,17 @@ class IntaSendAdapter extends PaymentAdapter {
 
       let response;
       try {
-        response = await axios.post(`${cfg.baseUrl}/checkout/`, checkoutPayload, {
-          headers: checkoutHeaders,
+        response = await this.postGateway('/checkout/', checkoutPayload, {
+          authMode: 'checkout',
+          cfg,
           timeout: 20000
         });
       } catch (firstErr) {
         // If merchant account does not support restricting by `method`, retry with all enabled checkout methods
         if (methodHint && firstErr.response?.status === 400) {
-          response = await axios.post(`${cfg.baseUrl}/checkout/`, baseCheckoutPayload, {
-            headers: checkoutHeaders,
+          response = await this.postGateway('/checkout/', baseCheckoutPayload, {
+            authMode: 'checkout',
+            cfg,
             timeout: 20000
           });
         } else {
@@ -228,13 +284,10 @@ class IntaSendAdapter extends PaymentAdapter {
         rawResponse: { id: checkoutId, url: checkoutUrl, methods: data.methods || [] }
       };
     } catch (apiErr) {
-      const errMsg =
-        apiErr.response?.data?.errors?.[0]?.detail ||
-        apiErr.response?.data?.detail ||
-        apiErr.response?.data?.message ||
-        apiErr.message;
+      const errMsg = this.extractGatewayError(apiErr);
+      const upstreamStatus = apiErr.response?.status;
       const err = new Error(`Checkout initiation failed: ${errMsg}`);
-      err.statusCode = apiErr.response?.status >= 400 && apiErr.response?.status < 500 ? 400 : 502;
+      err.statusCode = (upstreamStatus === 400 || upstreamStatus === 422) ? 400 : 502;
       err.code = 'INTASEND_CHECKOUT_ERROR';
       throw err;
     }
@@ -274,12 +327,6 @@ class IntaSendAdapter extends PaymentAdapter {
       throw err;
     }
 
-    const headers = {
-      Authorization: `Bearer ${cfg.secretKey}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    };
-
     const body = {
       public_key: cfg.publishableKey,
       ...(invoiceId ? { invoice_id: invoiceId } : {}),
@@ -288,8 +335,9 @@ class IntaSendAdapter extends PaymentAdapter {
     };
 
     try {
-      const response = await axios.post(`${cfg.baseUrl}/payment/status/`, body, {
-        headers,
+      const response = await this.postGateway('/payment/status/', body, {
+        authMode: 'secret',
+        cfg,
         timeout: 15000
       });
 
@@ -301,11 +349,8 @@ class IntaSendAdapter extends PaymentAdapter {
         verifiedReferenceMatch: !accountReference || !parsed.accountReference || parsed.accountReference === accountReference
       };
     } catch (apiErr) {
-      const errMsg =
-        apiErr.response?.data?.detail ||
-        apiErr.response?.data?.message ||
-        apiErr.message;
-      const err = new Error(`IntaSend status verification failed: ${errMsg}`);
+      const errMsg = this.extractGatewayError(apiErr);
+      const err = new Error(`Payment status verification failed: ${errMsg}`);
       err.statusCode = apiErr.response?.status === 404 ? 404 : 502;
       err.code = 'INTASEND_STATUS_ERROR';
       throw err;

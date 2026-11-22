@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, API_URL } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,7 @@ const formatChannelLabel = (channel, detail = "") => {
 };
 
 export default function BillingDashboardPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -84,6 +86,12 @@ export default function BillingDashboardPage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [downgradeNote, setDowngradeNote] = useState(null);
   const [activeGatewaySession, setActiveGatewaySession] = useState(null);
+
+  useEffect(() => {
+    if (user?.phone && !phoneInput) {
+      setPhoneInput(user.phone);
+    }
+  }, [user?.phone]);
 
   const { data: mySubData, isLoading: subLoading, refetch: refetchMySub } = useQuery({
     queryKey: ["my-subscription"],
@@ -305,6 +313,15 @@ export default function BillingDashboardPage() {
   };
 
   const handleStartCheckout = () => {
+    const cleanPhone = String(phoneInput || "").trim();
+    if (paymentChannel === "mpesa_stk" && cleanPhone.replace(/\D/g, "").length < 9) {
+      toast({
+        variant: "destructive",
+        title: "M-Pesa Phone Required",
+        description: "Please enter a valid Safaricom M-Pesa number (e.g. 0712345678) for STK Push."
+      });
+      return;
+    }
     subscribeMutation.mutate({
       planCode: selectedPlanCode,
       desiredUnits,
@@ -312,7 +329,7 @@ export default function BillingDashboardPage() {
       paymentChannel,
       provider: "intasend",
       promoCode,
-      phone: phoneInput,
+      phone: cleanPhone,
       idempotencyKey: `sub_${selectedPlanCode}_${desiredUnits}_${selectedCycle}_${Date.now()}`
     });
   };
