@@ -12,6 +12,7 @@ const assert = require('assert');
 const http = require('http');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
+const ExcelJS = require('exceljs');
 
 const app = require('../server');
 const User = require('../models/User');
@@ -207,7 +208,53 @@ async function runTests() {
     assert.strictEqual(await UtilityReading.countDocuments({ user: landlordA._id }), 3);
     console.log('✅ PASS 3: POST /api/utilities/reset clears targeted unit utility cleanly & blocks unauthenticated (401)');
 
-    console.log('\n🎉 ALL 3 UTILITIES PERSISTENCE & BULK UPLOAD TESTS PASSED!');
+    // TEST 4: Download .xlsx Excel template, fill readings, parse-excel & upload .xlsx via /bulk
+    const tplRes = await fetch(`${baseUrl}/api/utilities/template?propertyId=${propA._id}&item=water`, {
+      headers: { Authorization: `Bearer ${tokA}` }
+    });
+    assert.strictEqual(tplRes.status, 200);
+    assert.ok(tplRes.headers.get('content-type')?.includes('spreadsheetml.sheet'));
+    const tplBuf = Buffer.from(await tplRes.arrayBuffer());
+    assert.strictEqual(tplBuf.slice(0, 2).toString('utf8'), 'PK', 'Template must be a valid .xlsx zip binary');
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(tplBuf);
+    const sheet = wb.getWorksheet('Meter Readings');
+    assert.ok(sheet, 'Meter Readings sheet must exist');
+    // Unit 1A should prefill previous=135 from TEST 1!
+    let filledCount = 0;
+    for (let r = 2; r <= sheet.rowCount; r++) {
+      const row = sheet.getRow(r);
+      const unitNum = String(row.getCell(2).value || '');
+      if (unitNum === '1A') {
+        assert.strictEqual(Number(row.getCell(4).value), 135, 'Previous reading must prefill from latest recorded water reading');
+        row.getCell(5).value = 155; // +20 consumed
+        filledCount++;
+      }
+    }
+    assert.strictEqual(filledCount, 1);
+    const modifiedB64 = Buffer.from(await wb.xlsx.writeBuffer()).toString('base64');
+
+    const parseRes = await apiReq('/api/utilities/parse-excel', {
+      method: 'POST',
+      token: tokA,
+      body: { fileBase64: modifiedB64 }
+    });
+    assert.strictEqual(parseRes.status, 200);
+    assert.strictEqual(parseRes.data.count, 1);
+    assert.strictEqual(parseRes.data.rows[0].current, 155);
+
+    const bulkExcelRes = await apiReq('/api/utilities/bulk', {
+      method: 'POST',
+      token: tokA,
+      body: { propertyId: String(propA._id), item: 'water', fileBase64: modifiedB64 }
+    });
+    assert.strictEqual(bulkExcelRes.status, 201);
+    assert.strictEqual(bulkExcelRes.data.count, 1);
+    assert.strictEqual(await UtilityReading.countDocuments({ user: landlordA._id }), 4);
+    console.log('✅ PASS 4: Excel .xlsx template download, pre-filled previous reading, parse-excel & .xlsx bulk upload verified');
+
+    console.log('\n🎉 ALL 4 UTILITIES PERSISTENCE, EXCEL TEMPLATE & BULK UPLOAD TESTS PASSED!');
   } finally {
     await mongoose.connection.dropDatabase().catch(() => {});
     await mongoose.disconnect().catch(() => {});

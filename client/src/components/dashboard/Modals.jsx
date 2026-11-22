@@ -15,6 +15,16 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, Send, Upload, Download, DollarSign, Smartphone, Users, Building, ShieldCheck, FileSpreadsheet, Wrench } from "lucide-react";
 
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function parseUtilityCsvText(text = "") {
   const lines = String(text || "")
     .split(/\r?\n/)
@@ -1413,7 +1423,7 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 Bulk Upload Utilities
               </DialogTitle>
               <DialogDescription>
-                Upload a CSV file containing utility meter readings across units.
+                Download the Excel (.xlsx) template, fill in readings, and upload back here (.xlsx or .csv).
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4 text-xs">
@@ -1460,72 +1470,115 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                   e.preventDefault();
                   const file = e.dataTransfer.files?.[0];
                   if (!file) return;
-                  const txt = await file.text();
-                  const parsed = parseUtilityCsvText(txt);
                   setBulkUtilityFileName(file.name);
-                  setBulkUtilityRows(parsed);
+                  try {
+                    if (/\.xlsx?$/i.test(file.name)) {
+                      const b64 = arrayBufferToBase64(await file.arrayBuffer());
+                      const res = await api.parseUtilityExcel(b64);
+                      setBulkUtilityRows(res.rows || []);
+                      if (!res.rows?.length) {
+                        toast({
+                          variant: "destructive",
+                          title: "No Filled Readings Found",
+                          description: "Fill in 'Current Reading' or 'Total Override' for at least one unit row."
+                        });
+                      }
+                    } else {
+                      const parsed = parseUtilityCsvText(await file.text());
+                      setBulkUtilityRows(parsed);
+                    }
+                  } catch (err) {
+                    setBulkUtilityRows([]);
+                    toast({ variant: "destructive", title: "Parse Error", description: err.message });
+                  }
                 }}
                 className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-6 text-center flex flex-col items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition"
               >
                 <input
                   type="file"
-                  accept=".csv,.txt,text/csv"
+                  accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                   className="hidden"
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    const txt = await file.text();
-                    const parsed = parseUtilityCsvText(txt);
                     setBulkUtilityFileName(file.name);
-                    setBulkUtilityRows(parsed);
-                    if (parsed.length === 0) {
-                      toast({
-                        variant: "destructive",
-                        title: "No Rows Parsed",
-                        description: "Ensure your CSV includes a 'Unit Number' column and at least one reading row."
-                      });
+                    try {
+                      if (/\.xlsx?$/i.test(file.name)) {
+                        const b64 = arrayBufferToBase64(await file.arrayBuffer());
+                        const res = await api.parseUtilityExcel(b64);
+                        setBulkUtilityRows(res.rows || []);
+                        if (!res.rows?.length) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Filled Readings Found",
+                            description: "Fill in 'Current Reading' or 'Total Override' for at least one unit row."
+                          });
+                        }
+                      } else {
+                        const parsed = parseUtilityCsvText(await file.text());
+                        setBulkUtilityRows(parsed);
+                        if (parsed.length === 0) {
+                          toast({
+                            variant: "destructive",
+                            title: "No Rows Parsed",
+                            description: "Ensure your file includes a 'Unit Number' column and at least one reading row."
+                          });
+                        }
+                      }
+                    } catch (err) {
+                      setBulkUtilityRows([]);
+                      toast({ variant: "destructive", title: "Parse Error", description: err.message });
                     }
                   }}
                 />
                 <Upload className="w-8 h-8 text-slate-400 mb-2" />
                 <p className="font-semibold text-slate-700 dark:text-slate-200">
-                  {bulkUtilityFileName ? `Selected: ${bulkUtilityFileName}` : "Drop CSV readings file here or click to browse"}
+                  {bulkUtilityFileName ? `Selected: ${bulkUtilityFileName}` : "Drop Excel (.xlsx) or CSV readings file here"}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {bulkUtilityRows.length > 0
                     ? `${bulkUtilityRows.length} reading row(s) ready to import`
-                    : "Supported format: .CSV (use Download Template below)"}
+                    : "Supported formats: .XLSX (Excel) & .CSV"}
                 </p>
               </label>
 
               <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-900 text-[11px] text-blue-800 dark:text-blue-300 flex items-center justify-between gap-2 flex-wrap">
                 <div>
-                  <span className="font-semibold">CSV Columns:</span> Unit Number, Previous Reading, Current Reading, Rate, Total
+                  <span className="font-semibold">Template:</span> Pre-fills your units, previous readings &amp; live KES formulas.
                 </div>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   className="h-7 text-[11px] gap-1 bg-white dark:bg-slate-900 cursor-pointer"
-                  onClick={() => {
-                    const selectedProp = properties.find((p) => (p._id || p.id) === formData.propertyId);
-                    const propUnits = selectedProp?.units?.length ? selectedProp.units : units.filter((u) => !formData.propertyId || String(u.propertyId) === String(formData.propertyId));
-                    const sampleRows = propUnits.length > 0
-                      ? propUnits.map((u) => `${u.unitNumber},0,10,150,`)
-                      : ["1A,120,135,150,", "1B,90,102,150,"];
-                    const csv = ["Unit Number,Previous Reading,Current Reading,Rate,Total", ...sampleRows].join("\n");
-                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `utilities_template_${(selectedProp?.name || "property").replace(/[^a-z0-9]/gi, "_")}.csv`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    URL.revokeObjectURL(url);
+                  onClick={async () => {
+                    try {
+                      const { blob, filename } = await api.downloadUtilityExcelTemplate({
+                        propertyId: formData.propertyId || "",
+                        item: String(formData.utilityType || "Water").toLowerCase()
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                      toast({
+                        title: "Excel Template Downloaded",
+                        description: `Saved ${filename}. Fill Current Reading and upload back here.`
+                      });
+                    } catch (err) {
+                      toast({
+                        variant: "destructive",
+                        title: "Download Failed",
+                        description: err.message || "Could not download Excel template."
+                      });
+                    }
                   }}
                 >
-                  <Download className="w-3 h-3" /> Download CSV Template
+                  <Download className="w-3 h-3" /> Download Excel Template (.xlsx)
                 </Button>
               </div>
             </div>

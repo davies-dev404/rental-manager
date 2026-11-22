@@ -1,4 +1,5 @@
 const express = require('express');
+const ExcelJS = require('exceljs');
 const router = express.Router();
 const UtilityReading = require('../models/UtilityReading');
 const Property = require('../models/Property');
@@ -257,19 +258,233 @@ router.post('/batch', protect, admin, async (req, res) => {
   }
 });
 
-// @desc    Bulk upload utility readings from parsed CSV/spreadsheet rows
+function unwrapExcelCell(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'object') {
+    if (val.result !== undefined) return val.result;
+    if (Array.isArray(val.richText)) return val.richText.map((r) => r.text).join('');
+    if (val.text !== undefined) return val.text;
+  }
+  return val;
+}
+
+async function parseExcelUtilityBuffer(buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.getWorksheet('Meter Readings') || workbook.worksheets[0];
+  if (!sheet || sheet.rowCount < 2) return [];
+
+  const headerRow = sheet.getRow(1);
+  const headers = [];
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    headers[colNumber] = String(unwrapExcelCell(cell.value) || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  });
+
+  const findCol = (aliases) => {
+    for (let c = 1; c < headers.length; c++) {
+      const h = headers[c] || '';
+      if (aliases.some((a) => h === a || h.includes(a))) return c;
+    }
+    return -1;
+  };
+
+  const propCol = findCol(['propertyname', 'property']);
+  const unitCol = findCol(['unitnumber', 'unitno', 'unit']);
+  const itemCol = findCol(['utilitytype', 'utility', 'item', 'type']);
+  const prevCol = findCol(['previousreading', 'previous', 'prev']);
+  const currCol = findCol(['currentreading', 'current', 'curr']);
+  const rateCol = findCol(['rate']);
+  const totalCol = findCol(['totaloverride', 'total', 'amount', 'charge']);
+
+  if (unitCol === -1) return [];
+
+  const parsed = [];
+  for (let r = 2; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    const unitNumber = String(unwrapExcelCell(row.getCell(unitCol).value) || '').trim();
+    if (!unitNumber) continue;
+
+    const rawCurr = currCol !== -1 ? unwrapExcelCell(row.getCell(currCol).value) : '';
+    const rawTotal = totalCol !== -1 ? unwrapExcelCell(row.getCell(totalCol).value) : '';
+    const hasCurr = rawCurr !== '' && rawCurr !== null && rawCurr !== undefined && !Number.isNaN(Number(rawCurr));
+    const hasTotal = rawTotal !== '' && rawTotal !== null && rawTotal !== undefined && Number(rawTotal) > 0;
+    if (!hasCurr && !hasTotal) continue;
+
+    const prevNum = prevCol !== -1 ? Number(unwrapExcelCell(row.getCell(prevCol).value) || 0) : 0;
+    const rateNum = rateCol !== -1 ? Number(unwrapExcelCell(row.getCell(rateCol).value) || 0) : 0;
+    const propName = propCol !== -1 ? String(unwrapExcelCell(row.getCell(propCol).value) || '').trim() : '';
+    const itemName = itemCol !== -1 ? String(unwrapExcelCell(row.getCell(itemCol).value) || '').trim() : '';
+
+    parsed.push({
+      ...(propName ? { propertyName: propName } : {}),
+      unitNumber,
+      ...(itemName ? { item: itemName.toLowerCase() } : {}),
+      previous: Number.isFinite(prevNum) ? prevNum : 0,
+      ...(hasCurr ? { current: Number(rawCurr) } : {}),
+      rate: Number.isFinite(rateNum) ? rateNum : 0,
+      ...(hasTotal ? { total: Number(rawTotal) } : {})
+    });
+  }
+  return parsed;
+}
+
+// @desc    Download pre-populated Excel (.xlsx) template for Bulk Utility Upload
+// @route   GET /api/utilities/template
+// @access  Private (Admin/Landlord)
+router.get('/template', protect, admin, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const requestedPropId = req.query.propertyId && isValidObjectId(String(req.query.propertyId))
+      ? String(req.query.propertyId)
+      : '';
+    const defaultItem = String(req.query.item || 'water').trim().toLowerCase() || 'water';
+    const rateMap = { water: 150, electricity: 28, garbage: 500, sewer: 300, gas: 250, generator: 100 };
+    const fallbackRate = rateMap[defaultItem] ?? 150;
+
+    const propQuery = requestedPropId ? { _id: requestedPropId, user: userId } : { user: userId };
+    const [properties, units, latestReadings] = await Promise.all([
+      Property.find(propQuery).select('_id name').lean(),
+      Unit.find({ user: userId, ...(requestedPropId ? { propertyId: requestedPropId } : {}) })
+        .select('_id unitNumber propertyId')
+        .sort({ unitNumber: 1 })
+        .lean(),
+      UtilityReading.find({ user: userId, item: defaultItem })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(500)
+        .lean()
+    ]);
+
+    const propById = new Map(properties.map((p) => [String(p._id), p.name]));
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'MakaziFlow';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Meter Readings', {
+      views: [{ state: 'frozen', ySplit: 1 }]
+    });
+
+    sheet.columns = [
+      { header: 'Property', key: 'property', width: 22 },
+      { header: 'Unit Number', key: 'unitNumber', width: 15 },
+      { header: 'Utility Type', key: 'item', width: 15 },
+      { header: 'Previous Reading', key: 'previous', width: 18 },
+      { header: 'Current Reading', key: 'current', width: 18 },
+      { header: 'Rate (KES)', key: 'rate', width: 14 },
+      { header: 'Total Override (Optional)', key: 'totalOverride', width: 24 },
+      { header: 'Calculated Total (KES)', key: 'calculatedTotal', width: 22 }
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.height = 24;
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B1065' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    });
+
+    const rowsToWrite = units.length > 0
+      ? units.map((u) => {
+          const propName = propById.get(String(u.propertyId)) || properties[0]?.name || 'Property';
+          const prevReading = latestReadings.find(
+            (r) => String(r.unitId || '') === String(u._id) || normalizeUnitLookupKey(r.unitNumber) === normalizeUnitLookupKey(u.unitNumber)
+          );
+          return {
+            property: propName,
+            unitNumber: u.unitNumber,
+            item: defaultItem,
+            previous: prevReading ? Number(prevReading.current ?? 0) : 0,
+            current: '',
+            rate: prevReading && Number(prevReading.rate) > 0 ? Number(prevReading.rate) : fallbackRate,
+            totalOverride: ''
+          };
+        })
+      : [
+          { property: properties[0]?.name || 'Example Property', unitNumber: '1A', item: defaultItem, previous: 120, current: 135, rate: fallbackRate, totalOverride: '' },
+          { property: properties[0]?.name || 'Example Property', unitNumber: '1B', item: defaultItem, previous: 80, current: 92, rate: fallbackRate, totalOverride: '' }
+        ];
+
+    rowsToWrite.forEach((r, idx) => {
+      const rowNum = idx + 2;
+      const excelRow = sheet.addRow({
+        ...r,
+        calculatedTotal: { formula: `IF(E${rowNum}="",IF(G${rowNum}="","",G${rowNum}),MAX(0,E${rowNum}-D${rowNum})*F${rowNum})` }
+      });
+      excelRow.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+      excelRow.getCell('H').numFmt = '#,##0.00';
+    });
+
+    const guide = workbook.addWorksheet('Instructions');
+    guide.columns = [
+      { header: 'Step', key: 'step', width: 10 },
+      { header: 'MakaziFlow Bulk Utilities Template Guide', key: 'desc', width: 78 }
+    ];
+    guide.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B1065' } };
+    });
+    guide.addRow({ step: 1, desc: 'Enter Current Reading in column E for metered utilities (Water, Electricity, Gas, Generator).' });
+    guide.addRow({ step: 2, desc: 'For flat-rate bills (e.g. Garbage, Sewer), leave Current Reading blank and enter the amount in Total Override (Column G).' });
+    guide.addRow({ step: 3, desc: 'Column H automatically previews the total amount in KES. Rows without Current Reading or Total Override are skipped.' });
+    guide.addRow({ step: 4, desc: 'Save the Excel (.xlsx) file and upload it under Utilities -> Bulk Upload Utilities.' });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const safePropName = (properties.length === 1 ? properties[0].name : 'MakaziFlow')
+      .replace(/[^A-Za-z0-9_-]/g, '_');
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${safePropName}_Utilities_Template.xlsx"`,
+      'Content-Length': buffer.length
+    });
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to generate Excel template' });
+  }
+});
+
+// @desc    Parse uploaded .xlsx spreadsheet into previewable utility rows
+// @route   POST /api/utilities/parse-excel
+// @access  Private (Admin/Landlord)
+router.post('/parse-excel', protect, admin, async (req, res) => {
+  try {
+    const raw = String(req.body?.fileBase64 || '').trim();
+    if (!raw) {
+      return res.status(400).json({ message: 'Excel file content is required.' });
+    }
+    const cleanB64 = raw.includes('base64,') ? raw.split('base64,')[1] : raw;
+    const buffer = Buffer.from(cleanB64, 'base64');
+    if (!buffer.length || buffer.length > 8 * 1024 * 1024) {
+      return res.status(400).json({ message: 'Invalid or oversized Excel file (max 8MB).' });
+    }
+    const rows = await parseExcelUtilityBuffer(buffer);
+    res.json({ success: true, count: rows.length, rows });
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'Could not parse Excel (.xlsx) spreadsheet.' });
+  }
+});
+
+// @desc    Bulk upload utility readings from parsed CSV/Excel rows OR uploaded .xlsx base64
 // @route   POST /api/utilities/bulk
 // @access  Private (Admin/Landlord)
 router.post('/bulk', protect, admin, async (req, res) => {
   try {
-    const {
+    let {
       rows = [],
+      fileBase64 = '',
       propertyId = '',
       propertyName = '',
       item = 'water',
       date = new Date(),
       generateInvoices = true
     } = req.body || {};
+
+    if ((!Array.isArray(rows) || rows.length === 0) && fileBase64) {
+      const cleanB64 = String(fileBase64).includes('base64,') ? String(fileBase64).split('base64,')[1] : String(fileBase64);
+      rows = await parseExcelUtilityBuffer(Buffer.from(cleanB64, 'base64'));
+    }
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ message: 'No utility rows found in uploaded file.' });

@@ -989,6 +989,34 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to upload bulk utilities");
   },
+  downloadUtilityExcelTemplate: async ({ propertyId = "", item = "water" } = {}) => {
+    const params = new URLSearchParams();
+    if (propertyId) params.set("propertyId", propertyId);
+    if (item) params.set("item", item);
+    const qs = params.toString();
+    const response = await smartFetch(`${API_URL}/utilities/template${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.message || "Failed to download Excel template");
+    }
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || "MakaziFlow_Utilities_Template.xlsx";
+    const blob = await response.blob();
+    return { blob, filename };
+  },
+  parseUtilityExcel: async (fileBase64) => {
+    const response = await smartFetch(`${API_URL}/utilities/parse-excel`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ fileBase64 })
+    });
+    return await parseApiResponse(response, "Failed to parse Excel spreadsheet");
+  },
   resetUtilities: async (payload) => {
     const response = await smartFetch(`${API_URL}/utilities/reset`, {
       method: "POST",
