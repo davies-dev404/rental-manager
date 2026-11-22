@@ -6,6 +6,7 @@ const Property = require('../models/Property');
 const Unit = require('../models/Unit');
 const Tenant = require('../models/Tenant');
 const Invoice = require('../models/Invoice');
+const Payment = require('../models/Payment');
 const { protect, admin } = require('../middleware/authMiddleware');
 const { validateObjectId, isValidObjectId, escapeRegExp } = require('../middleware/securityMiddleware');
 const { createStructuredInvoice } = require('../services/invoiceService');
@@ -158,7 +159,17 @@ async function persistUtilityEntries({
   return { createdReadings, invoicesCreated, errors };
 }
 
-// @desc    Get recorded utilities for the authenticated landlord
+function normalizeUtilityDoc(r) {
+  const obj = typeof r.toObject === 'function' ? r.toObject() : r;
+  return {
+    ...obj,
+    propertyIdStr: obj.propertyId?._id ? String(obj.propertyId._id) : (obj.propertyId ? String(obj.propertyId) : ''),
+    propertyName: obj.propertyId?.name || obj.propertyName || 'General Property',
+    unit: obj.unitId?.unitNumber || obj.unitNumber || obj.unit || '—'
+  };
+}
+
+// @desc    Get recorded utilities for the authenticated landlord (UtilityReadings + legacy/direct utility invoices & payments)
 // @route   GET /api/utilities
 // @access  Private
 router.get('/', protect, async (req, res) => {
@@ -190,14 +201,60 @@ router.get('/', protect, async (req, res) => {
       .limit(500)
       .lean();
 
-    const normalized = readings.map((r) => ({
-      ...r,
-      propertyIdStr: r.propertyId?._id ? String(r.propertyId._id) : (r.propertyId ? String(r.propertyId) : ''),
-      propertyName: r.propertyId?.name || r.propertyName || 'General Property',
-      unit: r.unitId?.unitNumber || r.unitNumber || '—'
-    }));
+    const normalized = readings.map(normalizeUtilityDoc);
+    const linkedInvoiceIds = new Set(
+      readings.map((r) => (r.invoiceId ? String(r.invoiceId) : '')).filter(Boolean)
+    );
 
-    res.json(normalized);
+    // Sync utility line items from Invoice documents that weren't created by UtilityReading
+    const invoiceFilter = {
+      landlordId: userId,
+      invoiceCategory: 'rental',
+      'items.category': { $in: ['water', 'electricity', 'other'] }
+    };
+    if (filter.propertyId) invoiceFilter.propertyId = filter.propertyId;
+    const utilityInvoices = await Invoice.find(invoiceFilter)
+      .populate('propertyId', 'name')
+      .populate('unitId', 'unitNumber')
+      .sort({ issuedAt: -1, createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    const syncedFromInvoices = [];
+    for (const inv of utilityInvoices) {
+      if (linkedInvoiceIds.has(String(inv._id))) continue;
+      for (const it of inv.items || []) {
+        if (!['water', 'electricity', 'other'].includes(it.category)) continue;
+        const itemKey = String(it.category || 'water').toLowerCase();
+        if (filter.item && filter.item !== itemKey) continue;
+        const amt = Number(it.totalAmount || it.unitPrice || 0);
+        if (amt <= 0) continue;
+        syncedFromInvoices.push({
+          _id: `inv_${inv._id}_${itemKey}`,
+          isSyncedLegacy: true,
+          propertyId: inv.propertyId?._id || inv.propertyId,
+          propertyIdStr: inv.propertyId?._id ? String(inv.propertyId._id) : String(inv.propertyId || ''),
+          propertyName: inv.propertyId?.name || 'General Property',
+          unit: inv.unitId?.unitNumber || '—',
+          unitNumber: inv.unitId?.unitNumber || '—',
+          item: itemKey,
+          previous: 0,
+          current: 0,
+          consumed: Number(it.quantity || 1),
+          rate: amt,
+          total: amt,
+          invoiceId: inv._id,
+          invoiceNumber: inv.invoiceNumber,
+          date: inv.issuedAt || inv.createdAt
+        });
+      }
+    }
+
+    const unified = [...normalized, ...syncedFromInvoices].sort(
+      (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
+    );
+
+    res.json(unified);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -250,7 +307,7 @@ router.post('/batch', protect, admin, async (req, res) => {
       success: true,
       count: createdReadings.length,
       invoicesCreated,
-      readings: createdReadings,
+      readings: createdReadings.map(normalizeUtilityDoc),
       errors
     });
   } catch (error) {
@@ -524,7 +581,7 @@ router.post('/bulk', protect, admin, async (req, res) => {
       success: true,
       count: createdReadings.length,
       invoicesCreated,
-      readings: createdReadings,
+      readings: createdReadings.map(normalizeUtilityDoc),
       errors
     });
   } catch (error) {

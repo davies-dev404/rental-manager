@@ -458,6 +458,26 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <DialogDescription>Record meter readings or fixed utility charges.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4 text-sm">
+              <div className="space-y-1.5">
+                <Label>Property</Label>
+                <select
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                  value={formData.propertyId || ""}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    const p = properties.find((x) => (x._id || x.id) === pid);
+                    handleChange("propertyId", pid);
+                    handleChange("propertyName", p?.name || "");
+                  }}
+                >
+                  <option value="">{properties[0] ? `Default (${properties[0].name})` : "Select Property"}</option>
+                  {properties.map((p) => (
+                    <option key={p._id || p.id} value={p._id || p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Utility Type</Label>
@@ -469,7 +489,9 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                     <option value="Water">Water (Metered)</option>
                     <option value="Electricity">Electricity / Token</option>
                     <option value="Garbage">Garbage Collection</option>
-                    <option value="Service Charge">Service Charge</option>
+                    <option value="Sewer">Sewer</option>
+                    <option value="Gas">Gas</option>
+                    <option value="Generator">Generator</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -529,8 +551,11 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                   const rate = Number(formData.rate || 0);
                   setLoading(true);
                   try {
-                    const matchedProp = properties.find((p) => p.name === formData.propertyName) || properties[0];
-                    await api.recordUtilitiesBatch({
+                    const matchedProp =
+                      properties.find((p) => (p._id || p.id) === formData.propertyId) ||
+                      properties.find((p) => p.name === formData.propertyName) ||
+                      properties[0];
+                    const res = await api.recordUtilitiesBatch({
                       propertyId: matchedProp?._id || matchedProp?.id || "",
                       item: String(formData.utilityType || "Water").toLowerCase(),
                       source: "modal",
@@ -543,6 +568,13 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                         forceRecord: true
                       }]
                     });
+                    if (Array.isArray(res?.readings) && res.readings.length > 0) {
+                      queryClient.setQueryData(["utilities"], (existing) => {
+                        const list = Array.isArray(existing) ? existing : [];
+                        const ids = new Set(list.map((x) => String(x._id || "")));
+                        return [...res.readings.filter((r) => !ids.has(String(r._id || ""))), ...list];
+                      });
+                    }
                     queryClient.invalidateQueries({ queryKey: ["utilities"] });
                     queryClient.invalidateQueries({ queryKey: ["invoices"] });
                     queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
@@ -1600,6 +1632,13 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                       item: String(formData.utilityType || "Water").toLowerCase(),
                       generateInvoices: true
                     });
+                    if (Array.isArray(res?.readings) && res.readings.length > 0) {
+                      queryClient.setQueryData(["utilities"], (existing) => {
+                        const list = Array.isArray(existing) ? existing : [];
+                        const ids = new Set(list.map((x) => String(x._id || "")));
+                        return [...res.readings.filter((r) => !ids.has(String(r._id || ""))), ...list];
+                      });
+                    }
                     queryClient.invalidateQueries({ queryKey: ["utilities"] });
                     queryClient.invalidateQueries({ queryKey: ["invoices"] });
                     queryClient.invalidateQueries({ queryKey: ["activity-logs"] });

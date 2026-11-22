@@ -12,7 +12,8 @@ import {
   ChevronRight,
   ArrowLeft,
   Loader2,
-  Trash2
+  Trash2,
+  RefreshCw
 } from "lucide-react";
 
 const UTILITY_TYPE_OPTIONS = [
@@ -140,7 +141,7 @@ function AddUtilitiesFormView({ properties, existingReadings = [], onBack, onSuc
         title: "Utility Readings Recorded",
         description: `Saved ${res.count} ${utilityType} reading(s) for ${selectedProp?.name || "property"} (${res.invoicesCreated || 0} invoice(s) generated).`
       });
-      if (onSuccess) onSuccess();
+      if (onSuccess) await onSuccess(res);
       onBack();
     } catch (err) {
       toast({
@@ -575,10 +576,27 @@ export default function UtilitiesPage() {
     queryFn: api.getProperties
   });
 
-  const { data: utilitiesData = [] } = useQuery({
+  const {
+    data: utilitiesData = [],
+    isLoading: utilitiesLoading,
+    isFetching: utilitiesFetching,
+    isError: utilitiesError,
+    error: utilitiesErrObj,
+    refetch: refetchUtilities
+  } = useQuery({
     queryKey: ["utilities"],
     queryFn: () => api.getUtilities()
   });
+
+  const mergeReadingsIntoCache = (incomingReadings = []) => {
+    if (!Array.isArray(incomingReadings) || incomingReadings.length === 0) return;
+    queryClient.setQueryData(["utilities"], (prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const existingIds = new Set(list.map((x) => String(x._id || "")));
+      const fresh = incomingReadings.filter((r) => !existingIds.has(String(r._id || "")));
+      return [...fresh, ...list];
+    });
+  };
 
   useEffect(() => {
     const refresh = () => queryClient.invalidateQueries({ queryKey: ["utilities"] });
@@ -641,9 +659,12 @@ export default function UtilitiesPage() {
         properties={properties}
         existingReadings={utilitiesData}
         onBack={() => setView("list")}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["utilities"] });
-          queryClient.invalidateQueries({ queryKey: ["invoices"] });
+        onSuccess={async (res) => {
+          mergeReadingsIntoCache(res?.readings);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["utilities"] }),
+            queryClient.invalidateQueries({ queryKey: ["invoices"] })
+          ]);
         }}
       />
     );
@@ -662,7 +683,17 @@ export default function UtilitiesPage() {
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
       {/* Top Actions */}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <Button
+          type="button"
+          onClick={() => refetchUtilities()}
+          disabled={utilitiesFetching}
+          variant="outline"
+          className="text-xs h-8 px-3 gap-1.5 text-slate-700 border-slate-300 hover:bg-slate-50 transition cursor-pointer"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${utilitiesFetching ? "animate-spin" : ""}`} />
+          <span>Refresh</span>
+        </Button>
         <Button
           onClick={() => setView("add_utilities")}
           className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-8 px-4 font-medium transition cursor-pointer"
@@ -841,7 +872,20 @@ export default function UtilitiesPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {paginated.length === 0 ? (
+                      {utilitiesLoading ? (
+                        <tr>
+                          <td colSpan={11} className="text-center py-10 text-xs text-slate-400">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                            Loading recorded utilities...
+                          </td>
+                        </tr>
+                      ) : utilitiesError ? (
+                        <tr>
+                          <td colSpan={11} className="text-center py-10 text-xs text-rose-600">
+                            Failed to load utility records: {utilitiesErrObj?.message || "Server unavailable"}. Click Refresh to retry.
+                          </td>
+                        </tr>
+                      ) : paginated.length === 0 ? (
                         <tr>
                           <td colSpan={11} className="text-center py-10 text-xs text-slate-400">
                             No utility records found. Click <strong>Record Utility</strong> or <strong>Bulk Upload Utilities</strong> to add readings.
@@ -872,7 +916,7 @@ export default function UtilitiesPage() {
                               {item.date ? new Date(item.date).toLocaleDateString("en-KE") : "—"}
                             </td>
                             <td className="py-2.5 px-4 text-right">
-                              {item._id && (
+                              {item._id && !item.isSyncedLegacy ? (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteRow(item._id)}
@@ -881,7 +925,9 @@ export default function UtilitiesPage() {
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
+                              ) : item.isSyncedLegacy ? (
+                                <span className="text-[10px] text-slate-400">Invoice</span>
+                              ) : null}
                             </td>
                           </tr>
                         ))
