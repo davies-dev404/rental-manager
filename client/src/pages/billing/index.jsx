@@ -422,11 +422,6 @@ export default function BillingDashboardPage() {
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Manage your MakaziFlow rental unit allowance, subscription payments, invoices, and receipts.
-            {mySubData?.gatewayEnvironment === "sandbox" && (
-              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[10px] uppercase">
-                Sandbox Mode
-              </span>
-            )}
           </p>
         </div>
 
@@ -857,9 +852,6 @@ export default function BillingDashboardPage() {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-blue-900">
                     Pending Payment Verification
-                    {activeGatewaySession.gateway?.isSandbox && (
-                      <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px]">SANDBOX</span>
-                    )}
                   </span>
                   <Badge className="bg-amber-100 text-amber-800">Awaiting Confirmation</Badge>
                 </div>

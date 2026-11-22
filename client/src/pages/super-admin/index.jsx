@@ -215,7 +215,7 @@ export default function SuperAdminDashboardPage() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Monitor real production SaaS revenue, separate IntaSend sandbox test transactions, unit allocations, and KRA eTIMS submissions.
+            Monitor real production SaaS revenue, separate gateway sandbox test transactions, unit allocations, and KRA eTIMS submissions.
             <Badge variant="outline" className="ml-2 text-[10px] uppercase">
               Gateway Env: {m.activeGatewayEnvironment || "sandbox"}
             </Badge>
