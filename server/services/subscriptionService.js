@@ -229,13 +229,21 @@ async function logSubscriptionAudit({ landlordId, subscriptionId, actorId, actor
 
 async function notifyLandlordSubscriptionEvent({ user, subject, title, bodyHtml, smsText }) {
   if (!user) return;
+  const commMeta = {
+    category: 'subscription',
+    userId: user._id,
+    recipientName: user.name || '',
+    recipientType: 'team',
+    title: subject
+  };
   try {
     if (user.email) {
       await sendEmail({
         email: user.email,
         toName: user.name || undefined,
         subject,
-        message: getEmailTemplate(title, bodyHtml, { orgName: BUSINESS_CONFIG.name, orgEmail: BUSINESS_CONFIG.email, orgPhone: BUSINESS_CONFIG.phone })
+        message: getEmailTemplate(title, bodyHtml, { orgName: BUSINESS_CONFIG.name, orgEmail: BUSINESS_CONFIG.email, orgPhone: BUSINESS_CONFIG.phone }),
+        commMeta
       });
     }
   } catch (err) {
@@ -243,7 +251,7 @@ async function notifyLandlordSubscriptionEvent({ user, subject, title, bodyHtml,
   }
   try {
     if (user.phone && smsText) {
-      await sendSMS({ phone: user.phone, message: smsText });
+      await sendSMS({ phone: user.phone, message: smsText, commMeta });
     }
   } catch (err) {
     console.warn('Subscription SMS warning:', err.message);

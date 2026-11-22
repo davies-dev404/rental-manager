@@ -573,6 +573,17 @@ router.post('/send-invoice', protect, async (req, res) => {
                         heroSubtitle: `Official invoice #${invRef} for Unit ${uNum}`,
                         heroIcon: '!'
                     }),
+                    commMeta: {
+                        category: 'invoice',
+                        userId: req.user.id,
+                        tenantId: tenant?._id || undefined,
+                        propertyId: tenant?.unitId?.propertyId?._id || tenant?.unitId?.propertyId || undefined,
+                        propertyName: resolvedPropName || '',
+                        unitNumber: uNum || '',
+                        recipientName,
+                        recipientType: 'tenant',
+                        previewText: `Invoice #${invRef} for KES ${totalAmt} due ${cleanDueDate} (${resolvedPropName || 'Property'} Unit ${uNum}).`
+                    },
                     attachments: [
                         {
                             filename: `Invoice-${invRef.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
@@ -595,7 +606,21 @@ router.post('/send-invoice', protect, async (req, res) => {
         if (recipientPhone) {
             try {
                 const smsMsg = `Invoice #${invRef}: KES ${totalAmt} due on ${cleanDueDate} for Unit ${uNum} (${businessName}). Please remit payment on time. Thank you.`;
-                await sendSMS({ phone: recipientPhone, message: smsMsg });
+                await sendSMS({
+                    phone: recipientPhone,
+                    message: smsMsg,
+                    commMeta: {
+                        category: 'invoice',
+                        userId: req.user.id,
+                        tenantId: tenant?._id || undefined,
+                        propertyId: tenant?.unitId?.propertyId?._id || tenant?.unitId?.propertyId || undefined,
+                        propertyName: resolvedPropName || '',
+                        unitNumber: uNum || '',
+                        recipientName,
+                        recipientType: 'tenant',
+                        title: `Invoice #${invRef} SMS`
+                    }
+                });
                 smsSent = true;
                 console.log(`📱 Instant SMS invoice dispatched to ${recipientPhone}`);
             } catch (smsErr) {

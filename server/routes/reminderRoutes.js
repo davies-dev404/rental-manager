@@ -1,32 +1,158 @@
 const express = require('express');
 const router = express.Router();
 const Reminder = require('../models/Reminder');
+const CommunicationLog = require('../models/CommunicationLog');
+const PaymentReceipt = require('../models/PaymentReceipt');
 const Tenant = require('../models/Tenant');
+const Unit = require('../models/Unit');
+const Property = require('../models/Property');
+const User = require('../models/User');
 const Payment = require('../models/Payment');
 const { protect, admin, superAdmin } = require('../middleware/authMiddleware');
 const { validateObjectId, isValidObjectId } = require('../middleware/securityMiddleware');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
-const { getCorporateReminderEmailBody } = require('../utils/emailTemplates');
+const { getCorporateReminderEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
 const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
 const { createAndSendEmailCampaign } = require('../utils/brevoService');
 
-// Get all reminders
+// Get all project communications unified for the landlord (Reminders + Project Emails/SMS + Receipts)
 router.get('/', protect, async (req, res) => {
   try {
-    const reminders = await Reminder.find({ user: req.user.id })
-      .populate({
-        path: 'tenantId',
-        select: 'name email phone unitId',
-        populate: {
-          path: 'unitId',
-          select: 'unitNumber propertyId',
-          populate: { path: 'propertyId', select: 'name' }
+    const userId = req.user._id || req.user.id;
+    const [reminders, commLogs, emailedReceipts] = await Promise.all([
+      Reminder.find({ user: userId })
+        .populate({
+          path: 'tenantId',
+          select: 'name email phone unitId',
+          populate: {
+            path: 'unitId',
+            select: 'unitNumber propertyId',
+            populate: { path: 'propertyId', select: 'name' }
+          }
+        })
+        .sort({ createdAt: -1 })
+        .limit(300)
+        .lean(),
+      CommunicationLog.find({ user: userId })
+        .populate('propertyId', 'name')
+        .populate({
+          path: 'tenantId',
+          select: 'name email phone unitId',
+          populate: {
+            path: 'unitId',
+            select: 'unitNumber propertyId',
+            populate: { path: 'propertyId', select: 'name' }
+          }
+        })
+        .sort({ createdAt: -1 })
+        .limit(500)
+        .lean(),
+      PaymentReceipt.find({ landlordId: userId, emailedTo: { $nin: ['', null] } })
+        .populate({
+          path: 'tenantId',
+          select: 'name email phone unitId',
+          populate: {
+            path: 'unitId',
+            select: 'unitNumber propertyId',
+            populate: { path: 'propertyId', select: 'name' }
+          }
+        })
+        .sort({ issuedAt: -1 })
+        .limit(200)
+        .lean()
+    ]);
+
+    const normalizedReminders = reminders.map((r) => {
+      const propObj = r.tenantId?.unitId?.propertyId;
+      return {
+        ...r,
+        source: 'reminder',
+        recipientType: r.tenantId ? 'tenant' : 'tenant',
+        propertyId: propObj?._id ? String(propObj._id) : (typeof propObj === 'string' ? propObj : ''),
+        propertyName: propObj?.name || '',
+        unitNumber: r.tenantId?.unitId?.unitNumber || '',
+        charge: r.method === 'sms' ? 0.80 : 0,
+        canResend: true
+      };
+    });
+
+    const normalizedLogs = commLogs.map((l) => {
+      const propObj = l.propertyId || l.tenantId?.unitId?.propertyId;
+      const propId = propObj?._id ? String(propObj._id) : (typeof propObj === 'string' ? propObj : '');
+      const propName = l.propertyName || propObj?.name || '';
+      const unitNum = l.unitNumber || l.tenantId?.unitId?.unitNumber || '';
+      return {
+        _id: l._id,
+        source: 'communication_log',
+        title: l.title,
+        description: l.message,
+        type: l.category || l.type,
+        method: l.type,
+        recipientType: l.recipientType || (l.tenantId ? 'tenant' : 'team'),
+        tenantId: l.tenantId || null,
+        recipientName: l.recipientName || l.tenantId?.name || l.recipientEmail || l.recipientPhone || 'Recipient',
+        recipientEmail: l.recipientEmail || l.tenantId?.email || '',
+        recipientPhone: l.recipientPhone || l.tenantId?.phone || '',
+        propertyId: propId,
+        propertyName: propName,
+        unitNumber: unitNum,
+        status: l.status === 'delivered' ? 'sent' : l.status,
+        charge: Number(l.charge || 0),
+        errorMessage: l.errorMessage || '',
+        canResend: l.category !== 'security',
+        createdAt: l.createdAt
+      };
+    });
+
+    // Include historical emailed receipts that predate CommunicationLog
+    const existingReceiptKeys = new Set(
+      commLogs
+        .filter((l) => l.category === 'receipt')
+        .map((l) => `${(l.recipientEmail || '').toLowerCase()}|${new Date(l.createdAt).toISOString().slice(0, 10)}|${(l.title || '').toLowerCase()}`)
+    );
+
+    const legacyReceipts = emailedReceipts
+      .filter((rct) => {
+        const key = `${(rct.emailedTo || '').toLowerCase()}|${new Date(rct.emailedAt || rct.issuedAt).toISOString().slice(0, 10)}`;
+        for (const existingKey of existingReceiptKeys) {
+          if (existingKey.startsWith(key)) return false;
         }
+        return true;
       })
-      .sort({ createdAt: -1 });
-    res.json(reminders);
+      .map((rct) => {
+        const propObj = rct.tenantId?.unitId?.propertyId;
+        const propId = propObj?._id ? String(propObj._id) : (typeof propObj === 'string' ? propObj : '');
+        const propName = propObj?.name || '';
+        const unitNum = rct.tenantId?.unitId?.unitNumber || '';
+        const isSub = rct.receiptCategory === 'subscription';
+        return {
+          _id: rct._id,
+          source: 'receipt',
+          title: `Receipt #${rct.receiptNumber}`,
+          description: `${rct.description || 'Official Payment Receipt'} — KES ${Number(rct.amount || 0).toLocaleString()}`,
+          type: 'receipt',
+          method: 'email',
+          recipientType: isSub ? 'team' : 'tenant',
+          tenantId: rct.tenantId || null,
+          recipientName: rct.recipientName || rct.tenantId?.name || rct.emailedTo,
+          recipientEmail: rct.emailedTo || rct.recipientEmail || '',
+          propertyId: propId,
+          propertyName: propName,
+          unitNumber: unitNum,
+          status: 'sent',
+          charge: 0,
+          canResend: false,
+          createdAt: rct.emailedAt || rct.issuedAt
+        };
+      });
+
+    const unified = [...normalizedReminders, ...normalizedLogs, ...legacyReceipts].sort(
+      (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    );
+
+    res.json(unified);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -205,6 +331,7 @@ router.post('/', protect, async (req, res) => {
                 fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
                 subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                skipCommunicationLog: true,
                 message: generatePersonalizedEmailHtml(tenant, calculation, {
                   title: subject,
                   description: customNote || undefined,
@@ -224,7 +351,7 @@ router.post('/', protect, async (req, res) => {
         } else if (dispatchMethod === 'sms') {
           if (tenant.phone) {
             try {
-              await sendSMS({ phone: tenant.phone, message: description });
+              await sendSMS({ phone: tenant.phone, message: description, skipCommunicationLog: true });
               smsSent = true;
             } catch (e) {
               deliveryError = e.message;
@@ -330,6 +457,7 @@ router.post('/', protect, async (req, res) => {
                 fromName: displayBrand,
                 replyToEmail: businessProfile.orgEmail || undefined,
                 subject: subject || `${displayBrand}: Payment Reminder for Unit ${tenant.unitId?.unitNumber || ''}`,
+                skipCommunicationLog: true,
                 message: generatePersonalizedEmailHtml(tenant, item, {
                   title: subject,
                   description: customNote || undefined,
@@ -352,7 +480,7 @@ router.post('/', protect, async (req, res) => {
         } else if (dispatchMethod === 'sms') {
           if (tenant.phone) {
             try {
-              await sendSMS({ phone: tenant.phone, message: description });
+              await sendSMS({ phone: tenant.phone, message: description, skipCommunicationLog: true });
               smsDelivered = true;
               smsSentCount++;
             } catch (e) {
@@ -456,6 +584,7 @@ router.post('/:id/send', protect, validateObjectId('id'), async (req, res) => {
         fromName: displayBrand,
         replyToEmail: businessProfile.orgEmail || undefined,
         subject: reminder.title,
+        skipCommunicationLog: true,
         message: emailHtml
       });
     } else if (reminder.method === 'sms') {
@@ -464,7 +593,8 @@ router.post('/:id/send', protect, validateObjectId('id'), async (req, res) => {
       }
       await sendSMS({
         phone: recipientPhone,
-        message: reminder.description
+        message: reminder.description,
+        skipCommunicationLog: true
       });
     }
 
@@ -482,6 +612,240 @@ router.post('/:id/send', protect, validateObjectId('id'), async (req, res) => {
     res.json({ message: 'Reminder sent via Email', emailSent: reminder.method !== 'sms', reminder });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to send reminder' });
+  }
+});
+
+// Resend a logged CommunicationLog item cleanly
+router.post('/logs/:id/resend', protect, validateObjectId('id'), async (req, res) => {
+  try {
+    const log = await CommunicationLog.findOne({ _id: req.params.id, user: req.user.id });
+    if (!log) return res.status(404).json({ message: 'Communication log not found' });
+    if (log.category === 'security') {
+      return res.status(400).json({ message: 'Security verification codes cannot be resent from Communication logs.' });
+    }
+
+    const businessProfile = await getUserBusinessProfile(req.user);
+    const displayBrand = businessProfile.companyName || businessProfile.orgName || log.propertyName || businessProfile.landlordName || 'Property Management';
+
+    if (log.type === 'sms') {
+      if (!log.recipientPhone) {
+        return res.status(422).json({ message: `No phone number recorded for ${log.recipientName || 'recipient'}.` });
+      }
+      const smsRes = await sendSMS({
+        phone: log.recipientPhone,
+        message: log.message || log.title,
+        commMeta: {
+          category: log.category,
+          userId: req.user.id,
+          tenantId: log.tenantId,
+          propertyId: log.propertyId,
+          propertyName: log.propertyName,
+          unitNumber: log.unitNumber,
+          recipientName: log.recipientName,
+          recipientType: log.recipientType,
+          title: log.title
+        }
+      });
+      if (!smsRes?.success) {
+        return res.status(502).json({ message: smsRes?.error || smsRes?.reason || 'Failed to resend SMS.' });
+      }
+    } else {
+      if (!log.recipientEmail || !String(log.recipientEmail).includes('@')) {
+        return res.status(422).json({ message: `No valid email recorded for ${log.recipientName || 'recipient'}.` });
+      }
+      const safeHtml = getEmailTemplate(
+        log.title || `${displayBrand} Notice`,
+        `<p>Dear ${log.recipientName || 'Valued Resident'},</p><p>${String(log.message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`,
+        businessProfile,
+        { propertyName: log.propertyName || '' }
+      );
+      await sendEmail({
+        email: log.recipientEmail,
+        toName: log.recipientName || undefined,
+        fromName: displayBrand,
+        replyToEmail: businessProfile.orgEmail || undefined,
+        subject: log.title || `${displayBrand}: Notice`,
+        message: safeHtml,
+        commMeta: {
+          category: log.category,
+          userId: req.user.id,
+          tenantId: log.tenantId,
+          propertyId: log.propertyId,
+          propertyName: log.propertyName,
+          unitNumber: log.unitNumber,
+          recipientName: log.recipientName,
+          recipientType: log.recipientType,
+          previewText: log.message
+        }
+      });
+    }
+
+    res.json({ success: true, message: `Resent ${log.type.toUpperCase()} to ${log.recipientName || log.recipientEmail || log.recipientPhone}` });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to resend message' });
+  }
+});
+
+// Send real broadcast message to Tenants and/or Team (and record all dispatches cleanly)
+router.post('/broadcast', protect, admin, async (req, res) => {
+  try {
+    const {
+      audience = 'all_tenants',
+      propertyId = 'all',
+      method = 'email',
+      subject = 'Management Notice',
+      message = ''
+    } = req.body || {};
+
+    const cleanMessage = String(message || '').trim();
+    if (!cleanMessage) {
+      return res.status(400).json({ message: 'Message body is required.' });
+    }
+
+    const userId = req.user._id || req.user.id;
+    const businessProfile = await getUserBusinessProfile(req.user);
+    const displayBrand = businessProfile.companyName || businessProfile.orgName || businessProfile.landlordName || 'Property Management';
+    const dispatchMethod = method === 'sms' ? 'sms' : 'email';
+
+    const targets = [];
+
+    if (audience === 'team' || audience === 'both') {
+      const teamUsers = await User.find({
+        $or: [{ organizationOwner: userId }, { _id: userId }]
+      }).select('name email phone').lean();
+      teamUsers.forEach((u) => {
+        targets.push({
+          recipientType: 'team',
+          recipientName: u.name || 'Team Member',
+          email: u.email,
+          phone: u.phone,
+          propertyName: ''
+        });
+      });
+    }
+
+    if (audience !== 'team') {
+      let allTenants = await Tenant.find({ user: userId, status: 'active' })
+        .populate({
+          path: 'unitId',
+          select: 'unitNumber propertyId',
+          populate: { path: 'propertyId', select: 'name' }
+        })
+        .lean();
+
+      if (propertyId && propertyId !== 'all') {
+        allTenants = allTenants.filter((t) => {
+          const pId = t.unitId?.propertyId?._id ? String(t.unitId.propertyId._id) : String(t.unitId?.propertyId || '');
+          return pId === String(propertyId);
+        });
+      }
+
+      if (audience === 'debtors') {
+        const balances = await getTenantsWithBalances(userId);
+        const debtorIds = new Set(balances.filter((b) => b.totalDue > 0).map((b) => String(b.tenant._id)));
+        allTenants = allTenants.filter((t) => debtorIds.has(String(t._id)));
+      }
+
+      allTenants.forEach((t) => {
+        targets.push({
+          recipientType: 'tenant',
+          tenantId: t._id,
+          recipientName: t.name,
+          email: t.email,
+          phone: t.phone,
+          propertyId: t.unitId?.propertyId?._id || t.unitId?.propertyId || undefined,
+          propertyName: t.unitId?.propertyId?.name || '',
+          unitNumber: t.unitId?.unitNumber || ''
+        });
+      });
+    }
+
+    if (targets.length === 0) {
+      return res.json({ count: 0, sentCount: 0, failedCount: 0, message: 'No matching recipients found.' });
+    }
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let lastError = '';
+
+    for (const target of targets) {
+      const commMeta = {
+        category: 'broadcast',
+        userId,
+        tenantId: target.tenantId,
+        propertyId: target.propertyId,
+        propertyName: target.propertyName,
+        unitNumber: target.unitNumber,
+        recipientName: target.recipientName,
+        recipientType: target.recipientType,
+        title: subject || `${displayBrand} Announcement`,
+        previewText: cleanMessage
+      };
+
+      if (dispatchMethod === 'sms') {
+        if (!target.phone) {
+          failedCount++;
+          lastError = `Missing phone number for ${target.recipientName}`;
+          continue;
+        }
+        const smsRes = await sendSMS({
+          phone: target.phone,
+          message: `${cleanMessage} - ${displayBrand}`,
+          commMeta
+        });
+        if (smsRes?.success) sentCount++;
+        else {
+          failedCount++;
+          lastError = smsRes?.error || smsRes?.reason || 'SMS failed';
+        }
+      } else {
+        if (!target.email || !String(target.email).includes('@')) {
+          failedCount++;
+          lastError = `Missing email address for ${target.recipientName}`;
+          continue;
+        }
+        try {
+          const safeHtml = getEmailTemplate(
+            subject || `${displayBrand} Notice`,
+            `<p>Dear ${target.recipientName || 'Resident'},</p><p>${cleanMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</p>`,
+            businessProfile,
+            { propertyName: target.propertyName || '' }
+          );
+          await sendEmail({
+            email: target.email,
+            toName: target.recipientName,
+            fromName: displayBrand,
+            replyToEmail: businessProfile.orgEmail || undefined,
+            subject: subject || `${displayBrand}: ${cleanMessage.slice(0, 50)}`,
+            message: safeHtml,
+            commMeta
+          });
+          sentCount++;
+        } catch (err) {
+          failedCount++;
+          lastError = err.message;
+        }
+      }
+    }
+
+    await logActivity(
+      req.user,
+      'Broadcast Message',
+      `Dispatched ${dispatchMethod.toUpperCase()} broadcast: ${sentCount} delivered, ${failedCount} failed`,
+      'reminder',
+      sentCount > 0 ? 'success' : 'error'
+    );
+
+    res.status(201).json({
+      success: sentCount > 0,
+      count: targets.length,
+      sentCount,
+      failedCount,
+      lastError,
+      message: `Sent ${sentCount} of ${targets.length} message(s) via ${dispatchMethod.toUpperCase()}${failedCount ? ` (${failedCount} failed)` : ''}.`
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Broadcast failed' });
   }
 });
 

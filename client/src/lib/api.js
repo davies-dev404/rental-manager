@@ -895,6 +895,23 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to verify transaction status");
   },
+  sendBroadcastMessage: async (payload) => {
+    const response = await smartFetch(`${API_URL}/reminders/broadcast`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to send broadcast message");
+  },
+  resendCommunicationLog: async (logId) => {
+    const response = await smartFetch(`${API_URL}/reminders/logs/${logId}/resend`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to resend communication");
+  },
   getStructuredInvoices: async (category = "") => {
     const response = await smartFetch(`${API_URL}/v2/payments/invoices${category ? `?category=${category}` : ""}`, {
       headers: getAuthHeaders(),

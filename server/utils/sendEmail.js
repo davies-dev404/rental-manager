@@ -7,6 +7,7 @@ const {
   sendTransactionalEmail,
   sendSmtpRelayEmail
 } = require('./brevoService');
+const { logCommunication } = require('./logCommunication');
 
 /**
  * Unified Brevo-First Email Dispatcher:
@@ -90,6 +91,18 @@ const sendEmail = async (options) => {
         attachments: options.attachments
       });
       console.log(`📧 Email sent via Brevo API v3 to ${options.email} [ID: ${result?.messageId || 'ok'}]`);
+      if (!options.skipCommunicationLog) {
+        logCommunication({
+          type: 'email',
+          email: options.email,
+          toName: resolvedToName,
+          subject: options.subject,
+          message: options.message || options.html,
+          status: 'delivered',
+          provider: 'brevo_api',
+          commMeta: options.commMeta
+        });
+      }
       return { success: true, provider: 'brevo_api', messageId: result?.messageId };
     } catch (err) {
       const errMsg = err.response?.data?.message || err.message;
@@ -117,6 +130,18 @@ const sendEmail = async (options) => {
         attachments: options.attachments
       });
       console.log(`📧 Email sent via Brevo SMTP Relay to ${options.email}`);
+      if (!options.skipCommunicationLog) {
+        logCommunication({
+          type: 'email',
+          email: options.email,
+          toName: resolvedToName,
+          subject: options.subject,
+          message: options.message || options.html,
+          status: 'delivered',
+          provider: 'brevo_smtp',
+          commMeta: options.commMeta
+        });
+      }
       return { success: true, provider: 'brevo_smtp' };
     } catch (err) {
       console.warn(`⚠️ Brevo SMTP Relay failed (${err.message})`);
@@ -149,6 +174,18 @@ const sendEmail = async (options) => {
         attachments: options.attachments
       });
       console.log(`📧 Email sent via Custom DB SMTP to ${options.email}`);
+      if (!options.skipCommunicationLog) {
+        logCommunication({
+          type: 'email',
+          email: options.email,
+          toName: resolvedToName,
+          subject: options.subject,
+          message: options.message || options.html,
+          status: 'delivered',
+          provider: 'custom_smtp',
+          commMeta: options.commMeta
+        });
+      }
       return { success: true, provider: 'custom_smtp' };
     } catch (err) {
       errors.push(`Custom DB SMTP: ${err.message}`);
@@ -157,6 +194,18 @@ const sendEmail = async (options) => {
 
   const finalError = `Brevo email delivery failed. Errors: [${errors.join(' | ')}]`;
   console.error(finalError);
+  if (!options.skipCommunicationLog) {
+    logCommunication({
+      type: 'email',
+      email: options.email,
+      toName: resolvedToName,
+      subject: options.subject,
+      message: options.message || options.html,
+      status: 'failed',
+      errorMessage: finalError,
+      commMeta: options.commMeta
+    });
+  }
   throw new Error(finalError);
 };
 

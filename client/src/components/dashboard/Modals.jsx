@@ -164,6 +164,25 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         });
         queryClient.invalidateQueries({ queryKey: ["expenses"] });
         queryClient.invalidateQueries({ queryKey: ["stats"] });
+      } else if (modalType === "send_message") {
+        const res = await api.sendBroadcastMessage({
+          audience: formData.broadcastAudience || "all_tenants",
+          propertyId: formData.broadcastPropertyId || "all",
+          method: formData.broadcastChannel || "email",
+          subject: formData.broadcastSubject || "Management Notice",
+          message: formData.message
+        });
+        queryClient.invalidateQueries({ queryKey: ["reminders"] });
+        if (res?.sentCount === 0 && res?.lastError) {
+          throw new Error(res.lastError);
+        }
+        toast({
+          title: "Broadcast Dispatched",
+          description: res?.message || "Messages sent cleanly."
+        });
+        window.dispatchEvent(new CustomEvent("dwello_message_sent", { detail: null }));
+        onClose();
+        return;
       } else if (modalType === "send_reminders" || modalType === "remind_tenant") {
         const dispatchMethod = formData.reminderChannel || "email";
         const reminderRes = await api.addReminder({
@@ -866,34 +885,78 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         {modalType === "send_message" && (
           <div>
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold">Send Announcement / SMS</DialogTitle>
-              <DialogDescription>Broadcast a notice or SMS alert to all tenants.</DialogDescription>
+              <DialogTitle className="text-xl font-bold">Send Announcement / Message</DialogTitle>
+              <DialogDescription>Broadcast a notice via Email or SMS to tenants or your team.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4 text-sm">
+            <div className="space-y-3 py-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Audience</Label>
+                  <select
+                    value={formData.broadcastAudience || "all_tenants"}
+                    onChange={(e) => handleChange("broadcastAudience", e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                  >
+                    <option value="all_tenants">All Active Tenants</option>
+                    <option value="debtors">Tenants with Arrears Only</option>
+                    <option value="team">Team Members</option>
+                    <option value="both">Tenants &amp; Team</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Channel</Label>
+                  <select
+                    value={formData.broadcastChannel || "email"}
+                    onChange={(e) => handleChange("broadcastChannel", e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                  >
+                    <option value="email">Email</option>
+                    <option value="sms">SMS</option>
+                  </select>
+                </div>
+              </div>
+              {formData.broadcastAudience !== "team" && (
+                <div className="space-y-1.5">
+                  <Label>Property Filter</Label>
+                  <select
+                    value={formData.broadcastPropertyId || "all"}
+                    onChange={(e) => handleChange("broadcastPropertyId", e.target.value)}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
+                  >
+                    <option value="all">All Properties</option>
+                    {properties.map((p) => (
+                      <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="space-y-1.5">
-                <Label>Audience</Label>
-                <select className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs">
-                  <option>All Active Tenants (13 tenants)</option>
-                  <option>Tenants with Arrears Only (13 tenants)</option>
-                  <option>Specific Building</option>
-                </select>
+                <Label>Subject / Title</Label>
+                <Input
+                  placeholder="Management Notice"
+                  value={formData.broadcastSubject ?? "Management Notice"}
+                  onChange={(e) => handleChange("broadcastSubject", e.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Message</Label>
                 <textarea
                   rows={4}
                   className="w-full rounded-md border border-input bg-background p-3 text-sm shadow-xs focus:ring-1 focus:ring-blue-500"
-                  defaultValue="Notice: Water maintenance will be scheduled for tomorrow between 10am and 2pm. Management."
+                  placeholder="Type your notice or announcement..."
+                  value={formData.message || ""}
+                  onChange={(e) => handleChange("message", e.target.value)}
                 />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button
+                disabled={loading || !(formData.message || "").trim()}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => handleSubmit("Message Broadcast", "SMS notice sent to 13 tenants successfully.")}
+                onClick={() => handleSubmit("Broadcast Dispatched", "Messages dispatched.")}
               >
-                Send Message
+                {loading ? "Sending..." : "Send Message"}
               </Button>
             </DialogFooter>
           </div>

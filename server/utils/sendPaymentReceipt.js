@@ -79,6 +79,17 @@ const sendPaymentReceipt = async (paymentId) => {
                 replyToEmail: settings?.orgEmail || undefined,
                 subject: `Official Payment Receipt - ${businessName} - #${reference}`,
                 message: emailHtml,
+                commMeta: {
+                    category: 'receipt',
+                    userId: payment.user,
+                    tenantId: tenant._id,
+                    propertyId: payment.propertyId || payment.unitId?.propertyId || undefined,
+                    propertyName: propertyName || '',
+                    unitNumber: payment.unitId?.unitNumber || '',
+                    recipientName: tenant.name,
+                    recipientType: 'tenant',
+                    previewText: `Official payment receipt #${reference} for KES ${amountFormatted} (${unitNumber}).`
+                },
                 attachments: [
                     {
                         filename: `Receipt-${businessName.replace(/\s+/g, '_')}-${reference}.pdf`,

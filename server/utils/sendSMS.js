@@ -1,12 +1,13 @@
 const mongoose = require('mongoose');
 const Settings = require('../models/Settings');
 const { resolveBrevoApiKey, sendTransactionalSMS } = require('./brevoService');
+const { logCommunication } = require('./logCommunication');
 
 /**
  * Unified Brevo Transactional SMS / OTP Dispatcher
  */
 const sendSMS = async (options) => {
-  const { phone, message, sender, type } = options || {};
+  const { phone, message, sender, type, skipCommunicationLog, commMeta } = options || {};
   if (!phone || !message) {
     console.warn('SMS Error: Missing phone or message');
     return { success: false, reason: 'Missing phone or message' };
@@ -42,10 +43,34 @@ const sendSMS = async (options) => {
         type: type || 'transactional'
       });
       console.log(`📱 SMS sent via Brevo to ${phone} [Ref: ${result?.messageId || result?.reference || 'ok'}]`);
+      if (!skipCommunicationLog) {
+        logCommunication({
+          type: 'sms',
+          phone,
+          subject: commMeta?.title || 'SMS Notification',
+          message,
+          status: 'delivered',
+          provider: 'brevo_sms',
+          charge: 0.80,
+          commMeta
+        });
+      }
       return { success: true, provider: 'brevo', result };
     } catch (err) {
       const errMsg = err.response?.data?.message || err.message;
       console.warn(`⚠️ Brevo SMS delivery notice (${errMsg})`);
+      if (!skipCommunicationLog) {
+        logCommunication({
+          type: 'sms',
+          phone,
+          subject: commMeta?.title || 'SMS Notification',
+          message,
+          status: 'failed',
+          provider: 'brevo_sms',
+          errorMessage: errMsg,
+          commMeta
+        });
+      }
       return { success: false, provider: 'brevo', error: errMsg };
     }
   }

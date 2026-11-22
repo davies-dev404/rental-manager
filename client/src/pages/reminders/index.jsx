@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import {
   Send,
   Minus,
+  Plus,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  RotateCw
+  RotateCw,
+  RefreshCw
 } from "lucide-react";
 import { ActionModals } from "@/components/dashboard/Modals";
 
@@ -64,7 +66,11 @@ export default function CommunicationPage() {
     queryFn: api.getProperties
   });
 
-  const { data: apiReminders = [] } = useQuery({
+  const {
+    data: apiReminders = [],
+    isFetching: isRefreshing,
+    refetch: refetchReminders
+  } = useQuery({
     queryKey: ["reminders"],
     queryFn: api.getReminders
   });
@@ -77,7 +83,7 @@ export default function CommunicationPage() {
   useEffect(() => {
     const handleNewMessage = (e) => {
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
-      if (e.detail) {
+      if (e.detail && (e.detail.text || e.detail.message)) {
         setLiveMessages((prev) => [e.detail, ...prev]);
       }
     };
@@ -86,6 +92,12 @@ export default function CommunicationPage() {
       window.removeEventListener("dwello_message_sent", handleNewMessage);
     };
   }, [queryClient]);
+
+  // Reset pagination & row selection whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedRows([]);
+  }, [startDate, endDate, selectedProperty, recipientFilters, statusFilters, channelFilters]);
 
   const messagesData = useMemo(() => {
     const mappedReminders = (Array.isArray(apiReminders) ? apiReminders : []).map((r) => {
@@ -100,31 +112,56 @@ export default function CommunicationPage() {
       const parsedDate = d ? new Date(d) : null;
       const rawDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate.toISOString().split("T")[0] : "";
       const propObj = r.tenantId?.unitId?.propertyId;
-      const propertyId = propObj?._id ? String(propObj._id) : (typeof propObj === "string" ? propObj : undefined);
-      const propertyName = propObj?.name || "";
-      const unitNum = r.tenantId?.unitId?.unitNumber;
+      const propertyId = r.propertyId
+        ? String(r.propertyId)
+        : propObj?._id
+        ? String(propObj._id)
+        : typeof propObj === "string"
+        ? propObj
+        : undefined;
+      const propertyName = r.propertyName || propObj?.name || "";
+      const unitNum = r.unitNumber || r.tenantId?.unitId?.unitNumber || "";
+      const recipientType = (r.recipientType || (r.tenantId ? "tenant" : "team")).toLowerCase();
       const propertyUnit = propertyName && unitNum
         ? `${propertyName} (Unit ${unitNum})`
+        : propertyName
+        ? propertyName
         : unitNum
         ? `Unit ${unitNum}`
+        : recipientType === "team"
+        ? "Account / Team"
         : (r.title || "—");
+      const methodLower = (r.method || "email").toLowerCase();
+      const numericCharge = Number(r.charge || 0);
+      const formattedCharge =
+        numericCharge > 0
+          ? `${numericCharge.toFixed(2)} KES`
+          : methodLower === "sms"
+          ? "0.80 KES"
+          : "Email";
       return {
         _id: r._id,
-        type: (r.method || "email").toUpperCase(),
+        source: r.source || "reminder",
+        type: methodLower.toUpperCase(),
         date: parsedDate && !isNaN(parsedDate.getTime())
           ? parsedDate.toLocaleString("en-KE", { dateStyle: "short", timeStyle: "short" })
           : "—",
         rawDate,
         recipient: r.recipientName || r.tenantId?.name || r.recipientEmail || "—",
         recipientEmail: r.recipientEmail || r.tenantId?.email || "",
+        recipientType,
         propertyUnit,
         text: r.description || r.title || "—",
-        charge: r.method === "sms" ? "0.80 KES" : "Email",
+        charge: formattedCharge,
         status: normalizedStatus,
-        propertyId
+        propertyId,
+        errorMessage: r.errorMessage || "",
+        canResend: r.canResend !== undefined ? Boolean(r.canResend) : Boolean(r._id)
       };
     });
-    return [...liveMessages, ...mappedReminders];
+    const existingIds = new Set(mappedReminders.map((m) => String(m._id || "")).filter(Boolean));
+    const uniqueLive = liveMessages.filter((m) => !m._id || !existingIds.has(String(m._id)));
+    return [...uniqueLive, ...mappedReminders];
   }, [apiReminders, liveMessages]);
 
   const activeChannels = Object.entries(channelFilters)
@@ -135,6 +172,9 @@ export default function CommunicationPage() {
     if (selectedProperty !== "all" && m.propertyId !== selectedProperty) return false;
     if (startDate && m.rawDate && m.rawDate < startDate) return false;
     if (endDate && m.rawDate && m.rawDate > endDate) return false;
+    const isTeam = (m.recipientType || "tenant").toLowerCase() === "team";
+    if (!recipientFilters.tenants && !isTeam) return false;
+    if (!recipientFilters.team && isTeam) return false;
     const st = (m.status || "pending").toLowerCase();
     if (statusFilters[st] === false) return false;
     if (activeChannels.length > 0 && !activeChannels.includes((m.type || "email").toLowerCase())) {
@@ -169,27 +209,37 @@ export default function CommunicationPage() {
     }
   };
 
+  const dispatchResend = async (msg) => {
+    if (!msg?._id || msg.canResend === false) {
+      throw new Error("This entry cannot be resent (read-only receipt or masked security alert).");
+    }
+    if (msg.source === "communication_log") {
+      return api.resendCommunicationLog(msg._id);
+    }
+    return api.sendReminderNow(msg._id);
+  };
+
   const handleResend = async (msg) => {
-    if (!msg?._id) {
+    if (!msg?._id || msg.canResend === false) {
       toast({
         variant: "destructive",
         title: "Cannot Resend",
-        description: "This log entry does not have a reminder ID to resend."
+        description: "This log entry cannot be resent directly."
       });
       return;
     }
     try {
-      await api.sendReminderNow(msg._id);
+      await dispatchResend(msg);
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
       toast({
-        title: "Reminder Sent via Email",
-        description: `Dispatched to ${msg.recipientEmail || msg.recipient || "tenant"}.`
+        title: `Message Resent via ${msg.type || "Email"}`,
+        description: `Dispatched to ${msg.recipientEmail || msg.recipient || "recipient"}.`
       });
     } catch (err) {
       toast({
         variant: "destructive",
         title: "Resend Failed",
-        description: err.message || "Could not send reminder via Email."
+        description: err.message || "Could not resend message."
       });
     }
   };
@@ -204,7 +254,20 @@ export default function CommunicationPage() {
             <h4 className="text-xs font-bold text-[#0b1065] dark:text-blue-400">
               Filters
             </h4>
-            <span className="w-2.5 h-0.5 bg-[#4f46e5] rounded select-none cursor-pointer"></span>
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+                setSelectedProperty("all");
+                setRecipientFilters({ tenants: true, team: true });
+                setStatusFilters({ pending: true, delivered: true, failed: true });
+                setChannelFilters({ sms: false, whatsapp: false, email: false });
+              }}
+              className="text-[11px] font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
+            >
+              Reset
+            </button>
           </div>
 
           {/* 1. Date */}
@@ -470,7 +533,7 @@ export default function CommunicationPage() {
             {!collapseMessages && (
               <>
                 {/* Action Toolbar */}
-                <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/40 dark:bg-slate-800/20">
+                <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/40 dark:bg-slate-800/20">
                   <Button
                     disabled={isResending}
                     onClick={async () => {
@@ -487,13 +550,8 @@ export default function CommunicationPage() {
                       let failedCount = 0;
                       let lastErr = "";
                       for (const msg of targets) {
-                        if (!msg._id) {
-                          failedCount++;
-                          lastErr = "Missing reminder ID";
-                          continue;
-                        }
                         try {
-                          await api.sendReminderNow(msg._id);
+                          await dispatchResend(msg);
                           sentCount++;
                         } catch (err) {
                           failedCount++;
@@ -507,14 +565,14 @@ export default function CommunicationPage() {
                         toast({
                           variant: "destructive",
                           title: "Resend Failed",
-                          description: lastErr || "Could not resend messages via Email."
+                          description: lastErr || "Could not resend selected messages."
                         });
                       } else {
                         toast({
-                          title: "Messages Resent via Email",
+                          title: "Messages Resent",
                           description: failedCount > 0
-                            ? `Sent ${sentCount} reminder(s) (${failedCount} failed: ${lastErr}).`
-                            : `Successfully resent ${sentCount} reminder(s) via Email.`
+                            ? `Sent ${sentCount} message(s) (${failedCount} skipped/failed: ${lastErr}).`
+                            : `Successfully resent ${sentCount} message(s).`
                         });
                       }
                     }}
@@ -524,6 +582,27 @@ export default function CommunicationPage() {
                     <Send className="w-3.5 h-3.5 text-[#0b1065]" />
                     <span>{isResending ? "Resending..." : "Resend Messages"}</span>
                   </Button>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => refetchReminders()}
+                      disabled={isRefreshing}
+                      className="text-xs h-7.5 px-3 gap-1.5 font-medium text-slate-700 border-slate-300 hover:bg-slate-100 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+                      <span>{isRefreshing ? "Syncing..." : "Refresh"}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => setActiveModal("send_message")}
+                      className="text-xs h-7.5 px-3.5 gap-1.5 font-medium bg-[#0b1065] hover:bg-[#090d52] text-white cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Send Message</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Table */}
@@ -595,7 +674,7 @@ export default function CommunicationPage() {
                             <td className="py-2.5 px-4 text-slate-700 dark:text-slate-300">
                               {msg.propertyUnit || "—"}
                             </td>
-                            <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400 max-w-xs truncate">
+                            <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400 max-w-xs truncate" title={msg.text || ""}>
                               {msg.text || "—"}
                             </td>
                             <td className="py-2.5 px-4 text-center text-slate-700 dark:text-slate-300">
@@ -603,6 +682,7 @@ export default function CommunicationPage() {
                             </td>
                             <td className="py-2.5 px-4 text-center">
                               <span
+                                title={msg.errorMessage || ""}
                                 className={`px-2 py-0.5 rounded-full text-[10px] capitalize ${
                                   msg.status === "failed"
                                     ? "bg-rose-100 text-rose-700"
@@ -618,8 +698,14 @@ export default function CommunicationPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                disabled={!msg._id || msg.canResend === false}
+                                title={
+                                  !msg._id || msg.canResend === false
+                                    ? "Read-only receipt or masked security alert"
+                                    : "Resend message"
+                                }
                                 onClick={() => handleResend(msg)}
-                                className="h-6 text-xs text-blue-600 hover:text-blue-700 px-2"
+                                className="h-6 text-xs text-blue-600 hover:text-blue-700 px-2 disabled:opacity-40"
                               >
                                 <RotateCw className="w-3 h-3 mr-1" /> Resend
                               </Button>
