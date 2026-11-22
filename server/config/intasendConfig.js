@@ -83,10 +83,12 @@ function getIntaSendConfig({ requireConfigured = false } = {}) {
     'http://localhost:5173'
   ).replace(/\/+$/, '');
 
-  const callbackUrl = (
+  const rawCallbackUrl = (
     process.env.INTASEND_CALLBACK_URL ||
-    `${frontendBase}/billing?payment_return=1&provider=intasend`
+    `${frontendBase}/billing`
   ).trim();
+  // IntaSend /api/v1/checkout/ rejects query strings (?...) in redirect_url; strip any query parameters safely
+  const callbackUrl = rawCallbackUrl.split('?')[0];
 
   const ipnUrl = (
     process.env.INTASEND_IPN_URL ||

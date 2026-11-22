@@ -786,6 +786,14 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to load subscription details");
   },
+  refreshSubscriptionStatuses: async () => {
+    const response = await smartFetch(`${API_URL}/subscriptions/refresh-status`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to refresh payment statuses");
+  },
   subscribeToPlan: async (payload) => {
     const response = await smartFetch(`${API_URL}/subscriptions/subscribe`, {
       method: "POST",
@@ -858,7 +866,7 @@ export const api = {
       credentials: "include",
       body: JSON.stringify(payload)
     });
-    return await parseApiResponse(response, "Failed to verify IntaSend payment callback");
+    return await parseApiResponse(response, "Failed to verify payment callback");
   },
   getGatewayTransactions: async (params = {}) => {
     const qs = new URLSearchParams(params).toString();

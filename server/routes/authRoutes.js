@@ -60,6 +60,7 @@ const clearAuthCookies = (res) => {
 
 const logActivity = require('../utils/logActivity');
 const { seedDemoDataForUser, clearDemoDataForUser } = require('../utils/seedDemoData');
+const { getOtpEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
 
 // Branded email header — corporate banner, centered layout
 const getEmailHeader = () => {
@@ -186,18 +187,18 @@ router.post('/login', authLoginLimiter, async (req, res) => {
         try {
           await sendEmail({
             email: user.email,
+            toName: user.name,
             subject: 'Security Alert: MakaziFlow Account Temporarily Locked',
-            message: `
-              <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-                ${getEmailHeader()}
-                <h2 style="color:#e11d48;font-size:18px;margin-bottom:8px;text-align:center;">Security Alert</h2>
-                <p style="color:#475569;font-size:14px;line-height:1.5;">
-                  We detected <strong>5 consecutive failed login attempts</strong> on your MakaziFlow account from IP <code>${reqIp}</code>.
-                </p>
-                <p style="color:#475569;font-size:14px;line-height:1.5;">
-                  For your protection, your account has been <strong>temporarily locked for 15 minutes</strong>. If this was not you, please reset your password immediately.
-                </p>
-              </div>`
+            message: getEmailTemplate(
+              'Security Alert',
+              `<p style="color:#f8fafc;font-size:15px;font-weight:700;margin:0 0 10px 0;">Hello ${user.name || 'User'},</p>
+               <p style="color:#cbd5e1;font-size:13.5px;line-height:1.6;margin:0 0 16px 0;">We detected <strong>5 consecutive failed login attempts</strong> on your MakaziFlow account.</p>
+               <div style="background-color:#2a151c;border:1px solid #7f1d1d;border-radius:10px;padding:14px 16px;color:#fecdd3;font-size:12.5px;line-height:1.5;text-align:center;">
+                 For your protection, your account has been <strong>temporarily locked for 15 minutes</strong>. If this was not you, please reset your password immediately.
+               </div>`,
+              { orgName: 'MakaziFlow' },
+              { heroTitle: 'Security Alert', heroSubtitle: 'Temporary account protection triggered', heroIcon: '!' }
+            )
           });
         } catch (emailErr) {
           console.error('Security alert email failed:', emailErr.message);
@@ -230,28 +231,22 @@ router.post('/login', authLoginLimiter, async (req, res) => {
     user.otpExpires = new Date(Date.now() + 3 * 60 * 1000);
     await user.save();
 
-    // Send OTP via email
+    // Send OTP via email (SHA-style layout with MakaziFlow colors)
     let emailSent = false;
     let emailError = null;
     try {
       await sendEmail({
         email: user.email,
         toName: user.name,
-        subject: 'MakaziFlow — Your Login Verification Code',
-        message: `
-          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-            ${getEmailHeader()}
-            <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
-            <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
-            </p>
-            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
-              ${loginOtp}
-            </div>
-            <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-              If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
-            </p>
-          </div>`
+        subject: 'MakaziFlow — Your One-Time Password (OTP)',
+        message: getOtpEmailBody({
+          name: user.name,
+          otp: loginOtp,
+          title: 'Your One-Time Password (OTP)',
+          subtitle: 'Secure verification for your account',
+          instruction: 'Use the verification code below to complete your sign-in securely.',
+          expiryMinutes: 3
+        })
       });
       emailSent = true;
       console.log(`📧 Login OTP email dispatched to ${user.email}`);
@@ -322,28 +317,22 @@ router.post('/resend-login-otp', authOtpLimiter, async (req, res) => {
     user.otpExpires = new Date(Date.now() + 3 * 60 * 1000);
     await user.save();
 
-    // Send OTP via email
+    // Send OTP via email (SHA-style layout with MakaziFlow colors)
     let emailSent = false;
     let emailError = null;
     try {
       await sendEmail({
         email: user.email,
         toName: user.name,
-        subject: 'MakaziFlow — Your Login Verification Code',
-        message: `
-          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-            ${getEmailHeader()}
-            <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Two-Factor Verification</h2>
-            <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-              Use the verification code below to complete your sign-in to your MakaziFlow account. This code expires in <strong>3 minutes</strong>.
-            </p>
-            <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
-              ${loginOtp}
-            </div>
-            <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-              If you did not attempt to sign in to MakaziFlow, please ignore this email or change your password immediately.
-            </p>
-          </div>`
+        subject: 'MakaziFlow — Your One-Time Password (OTP)',
+        message: getOtpEmailBody({
+          name: user.name,
+          otp: loginOtp,
+          title: 'Your One-Time Password (OTP)',
+          subtitle: 'Secure verification for your account',
+          instruction: 'Use the verification code below to complete your sign-in securely.',
+          expiryMinutes: 3
+        })
       });
       emailSent = true;
       console.log(`📧 Login OTP email resent to ${user.email}`);
@@ -629,21 +618,16 @@ router.post('/register', authOtpLimiter, async (req, res) => {
             await sendEmail({
               email: user.email,
               toName: user.name,
-              subject: 'MakaziFlow — Your Email Verification Code',
-              message: `
-                <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-                  ${getEmailHeader()}
-                  <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Verify Your Email</h2>
-                  <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                    Welcome to MakaziFlow! Use the code below to verify your email address. This code expires in <strong>3 minutes</strong>.
-                  </p>
-                  <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
-                    ${otp}
-                  </div>
-                  <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-                    If you did not create a MakaziFlow account, please ignore this email.
-                  </p>
-                </div>`
+              subject: 'MakaziFlow — Your Email Verification Code (OTP)',
+              message: getOtpEmailBody({
+                name: user.name,
+                otp,
+                title: 'Your One-Time Password (OTP)',
+                subtitle: 'Verify your MakaziFlow email address',
+                instruction: 'Use the verification code below to verify your email address and activate your account.',
+                expiryMinutes: 3,
+                warningText: 'If you did not create a MakaziFlow account, please ignore this email or contact support immediately.'
+              })
             });
             emailSent = true;
         } catch (emailError) {
@@ -843,21 +827,16 @@ router.post('/forgot-password', authResetLimiter, async (req, res) => {
             await sendEmail({
                 email: user.email,
                 toName: user.name,
-                subject: 'MakaziFlow — Your Password Reset Code',
-                message: `
-                  <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:28px 24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
-                    ${getEmailHeader()}
-                    <h2 style="color:#1e293b;font-size:18px;margin-bottom:8px;text-align:center;">Password Reset Request</h2>
-                    <p style="color:#475569;font-size:14px;line-height:1.5;text-align:center;margin-bottom:20px;">
-                      You requested a password reset for your MakaziFlow account. Use the 6-digit verification code below to reset your password. This code is valid for <strong>one-time use</strong> and expires in <strong>3 minutes</strong>.
-                    </p>
-                    <div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#0d2240;text-align:center;padding:18px 0;background:#f0fafa;border:1px dashed #5eead4;border-radius:8px;margin-bottom:20px;font-family:monospace;">
-                      ${resetCode}
-                    </div>
-                    <p style="color:#64748b;font-size:12px;line-height:1.4;text-align:center;margin:0;">
-                      If you did not request a password reset, please ignore this email or contact support.
-                    </p>
-                  </div>`
+                subject: 'MakaziFlow — Your Password Reset Code (OTP)',
+                message: getOtpEmailBody({
+                    name: user.name,
+                    otp: resetCode,
+                    title: 'Your One-Time Password (OTP)',
+                    subtitle: 'Password reset verification',
+                    instruction: 'Use the one-time verification code below to reset your password securely.',
+                    expiryMinutes: 3,
+                    warningText: 'If you did not request a password reset, please ignore this email or contact support immediately.'
+                })
             });
             emailSent = true;
             console.log(`📧 Password reset OTP email dispatched to ${user.email}`);

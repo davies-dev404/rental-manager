@@ -147,6 +147,32 @@ export default function PublicFooter() {
           </div>
         </div>
 
+        {/* PCI-DSS Payment Trust Badge */}
+        <div className="mt-6 pt-6 border-t border-white/5 text-center">
+          <a
+            href="https://intasend.com/security"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block"
+          >
+            <img
+              src="https://intasend-prod-static.s3.amazonaws.com/img/trust-badges/intasend-trust-badge-with-mpesa-hr-dark.png"
+              alt="IntaSend Secure Payments (PCI-DSS Compliant)"
+              className="mx-auto w-full max-w-[375px] h-auto"
+            />
+          </a>
+          <strong>
+            <a
+              href="https://intasend.com/security"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-[#fafafa] no-underline text-[0.8em] mt-2 hover:underline"
+            >
+              Secured by IntaSend Payments
+            </a>
+          </strong>
+        </div>
+
       </div>
     </footer>
   );

@@ -82,12 +82,30 @@ router.get('/my', protect, async (req, res) => {
     );
 
     const history = await LandlordSubscription.find({ landlordId }).sort({ createdAt: -1 }).limit(20);
-    const invoices = await Invoice.find({ landlordId, invoiceCategory: 'subscription' }).sort({ createdAt: -1 }).limit(30);
+    const allInvoices = await Invoice.find({ landlordId, invoiceCategory: 'subscription' }).sort({ createdAt: -1 }).limit(30);
     const receipts = await PaymentReceipt.find({ landlordId, receiptCategory: 'subscription' }).sort({ issuedAt: -1 }).limit(30);
-    const transactions = await PaymentTransaction.find({
+    const allTransactions = await PaymentTransaction.find({
       landlordId,
       paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] }
     }).sort({ createdAt: -1 }).limit(30);
+
+    // Exclude legacy/aborted pre-gateway initiation failures so billing history stays clean
+    const transactions = allTransactions.filter((t) => {
+      const hasGatewaySession = Boolean(t.trackingId || t.checkoutId || t.gatewayInvoiceNumber || t.providerReference);
+      if (t.status === 'failed' && (!hasGatewaySession || t.provider === 'pesaflow')) {
+        return false;
+      }
+      return true;
+    });
+
+    const activeOrSettledInvoiceIds = new Set(
+      transactions
+        .filter((t) => t.invoiceId && ['paid', 'pending', 'processing'].includes(t.status))
+        .map((t) => String(t.invoiceId))
+    );
+    const invoices = allInvoices.filter(
+      (inv) => inv.status !== 'open' || activeOrSettledInvoiceIds.has(String(inv._id))
+    );
 
     const purchasedUnits = entitlement.purchasedLimit || 0;
     const registeredUnits = entitlement.activeUnitCount || 0;
@@ -250,27 +268,88 @@ router.post('/subscribe', protect, admin, paymentCheckoutLimiter, async (req, re
         description: `MakaziFlow ${plan.name} (${requestedUnits} Units - ${quote.billingCycle})`
       });
 
-      const gatewayLabel = chosenProvider === 'intasend' ? 'IntaSend' : 'Pesaflow';
       return res.status(201).json({
         success: true,
-        message: `Subscription pending payment verification. Complete payment via ${gatewayLabel} to activate.`,
+        message: 'Subscription pending payment verification. Complete your payment to activate.',
         subscription,
         invoice,
         transaction: paymentResult.transaction,
         gateway: paymentResult.gateway
       });
     } catch (gatewayErr) {
-      // Return pending subscription & invoice clearly along with exact gateway configuration/error state
+      // Remove orphaned pending subscription, open invoice, and failed-to-init transaction so Billing stays clean
+      await PaymentTransaction.deleteMany({
+        subscriptionId: subscription._id,
+        status: 'failed',
+        trackingId: { $in: ['', null] },
+        checkoutId: { $in: ['', null] }
+      }).catch(() => {});
+      await Invoice.deleteOne({ _id: invoice._id, status: 'open' }).catch(() => {});
+      await LandlordSubscription.deleteOne({ _id: subscription._id, status: 'pending_payment' }).catch(() => {});
+
       return res.status(gatewayErr.statusCode || 502).json({
         success: false,
         code: gatewayErr.code || 'GATEWAY_INITIATION_FAILED',
-        message: gatewayErr.message,
-        subscription,
-        invoice
+        message: gatewayErr.message
       });
     }
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// @desc    Refresh status of all recent pending/processing subscription payments directly with gateway
+// @route   POST /api/subscriptions/refresh-status
+// @access  Private (Landlord / Admin)
+router.post('/refresh-status', protect, admin, async (req, res) => {
+  try {
+    const landlordId = req.user._id || req.user.id;
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const openTxns = await PaymentTransaction.find({
+      landlordId,
+      paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] },
+      status: { $in: ['pending', 'processing'] },
+      createdAt: { $gte: cutoff },
+      $or: [
+        { trackingId: { $nin: ['', null] } },
+        { checkoutId: { $nin: ['', null] } },
+        { gatewayInvoiceNumber: { $nin: ['', null] } }
+      ]
+    }).sort({ createdAt: -1 }).limit(10);
+
+    let checkedCount = 0;
+    let activatedCount = 0;
+    let latestStatus = openTxns.length === 0 ? 'none_pending' : 'pending';
+
+    for (const txn of openTxns) {
+      try {
+        checkedCount++;
+        const result = await PaymentService.verifyTransactionStatus(txn._id);
+        const st = result?.transaction?.status || 'pending';
+        if (st === 'paid' || result?.alreadySettled) {
+          activatedCount++;
+          latestStatus = 'paid';
+        } else if (latestStatus !== 'paid') {
+          latestStatus = st;
+        }
+      } catch (innerErr) {
+        console.warn(`Refresh status check skipped for ${txn.accountReference}:`, innerErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      checkedCount,
+      activatedCount,
+      latestStatus,
+      message: activatedCount > 0
+        ? 'Payment verified and subscription activated.'
+        : (checkedCount > 0
+          ? `Checked ${checkedCount} pending transaction(s). Current status: ${latestStatus}.`
+          : 'No pending transactions require verification.')
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

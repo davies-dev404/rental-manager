@@ -7,6 +7,7 @@ process.env.NODE_ENV = 'test';
 process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/rental_manager_qa_test';
 process.env.MONGODB_DEV_URI = 'mongodb://127.0.0.1:27017/rental_manager_qa_test';
 process.env.JWT_SECRET = 'test_jwt_secret_for_qa_suite';
+process.env.PAYMENT_DEFAULT_PROVIDER = 'pesaflow';
 process.env.PESAFLOW_ENVIRONMENT = 'sandbox';
 process.env.PESAFLOW_API_CLIENT_ID = 'TEST_CLIENT_001';
 process.env.PESAFLOW_API_KEY = 'TEST_API_KEY_001';

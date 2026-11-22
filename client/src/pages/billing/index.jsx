@@ -52,10 +52,24 @@ const BILLING_CYCLES = [
 ];
 
 const PAYMENT_CHANNELS = [
-  { id: "hosted_checkout", label: "IntaSend Checkout (M-Pesa, Visa, Mastercard)", icon: ShieldCheck },
-  { id: "mpesa_stk", label: "M-Pesa STK Push (via IntaSend)", icon: Smartphone },
-  { id: "card", label: "Visa / Mastercard (via IntaSend)", icon: CreditCard }
+  { id: "hosted_checkout", label: "All Methods (M-Pesa, Visa, Mastercard, Bank)", icon: ShieldCheck },
+  { id: "mpesa_stk", label: "M-Pesa STK Push", icon: Smartphone },
+  { id: "card", label: "Visa / Mastercard", icon: CreditCard },
+  { id: "bank_transfer", label: "Bank Transfer / PesaLink", icon: Building2 }
 ];
+
+const formatChannelLabel = (channel, detail = "") => {
+  if (detail && detail.toUpperCase().includes("M-PESA")) return "M-Pesa";
+  if (detail && (detail.toUpperCase().includes("CARD") || detail.toUpperCase().includes("VISA") || detail.toUpperCase().includes("MASTER"))) return "Visa / Mastercard";
+  if (detail && detail.toUpperCase().includes("PESALINK")) return "Bank / PesaLink";
+  switch (channel) {
+    case "mpesa_stk": return "M-Pesa STK Push";
+    case "card": return "Visa / Mastercard";
+    case "bank_transfer": return "Bank Transfer / PesaLink";
+    case "hosted_checkout": return "Hosted Checkout";
+    default: return channel || "Online Payment";
+  }
+};
 
 export default function BillingDashboardPage() {
   const { toast } = useToast();
@@ -95,7 +109,7 @@ export default function BillingDashboardPage() {
     enabled: Boolean(upgradeOpen && selectedPlanCode)
   });
 
-  // Handle IntaSend hosted checkout redirect return securely via backend status verification
+  // Handle hosted checkout redirect return securely via backend status verification
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hasReturn = params.get("payment_return") || params.get("tracking_id") || params.get("checkout_id") || params.get("invoice_id") || params.get("txnId");
@@ -115,12 +129,12 @@ export default function BillingDashboardPage() {
         if (res?.transaction?.status === "paid" || res?.alreadySettled) {
           toast({
             title: "Payment Verified & Subscription Active",
-            description: "IntaSend verified your payment and updated your subscription."
+            description: "Your payment has been verified and your subscription is now active."
           });
         } else {
           toast({
             title: `Payment Status: ${res?.transaction?.status || "pending"}`,
-            description: "Verification checked with IntaSend. Click Refresh or Verify if still processing."
+            description: "Click Refresh Status or Verify once payment completes."
           });
         }
         queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
@@ -145,10 +159,10 @@ export default function BillingDashboardPage() {
         subscription: res.subscription
       });
       toast({
-        title: "Checkout Initiated via IntaSend",
+        title: "Payment Session Ready",
         description: res.gateway?.checkoutUrl
-          ? "Complete payment on IntaSend Hosted Checkout. Activation happens automatically once verified."
-          : "Check your phone for the M-Pesa STK prompt, then click Verify Payment Status."
+          ? "Complete your payment on the secure checkout page. Your plan activates automatically once confirmed."
+          : "Check your phone for the M-Pesa PIN prompt, then wait or click Verify Payment Status."
       });
       queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
     },
@@ -168,7 +182,7 @@ export default function BillingDashboardPage() {
       if (res.transaction?.status === "paid" || res.alreadySettled) {
         toast({
           title: "Subscription Activated",
-          description: "IntaSend verified your payment and unlocked your unit entitlement."
+          description: "Your payment was verified and your unit entitlement is now active."
         });
         setActiveGatewaySession(null);
         setUpgradeOpen(false);
@@ -177,14 +191,78 @@ export default function BillingDashboardPage() {
       } else {
         toast({
           title: `Status: ${res.transaction?.status || "pending"}`,
-          description: "Waiting for IntaSend settlement confirmation."
+          description: "Waiting for payment settlement confirmation."
         });
+        queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
       }
     },
     onError: (err) => {
       toast({ variant: "destructive", title: "Verification Error", description: err.message });
     }
   });
+
+  const refreshStatusMutation = useMutation({
+    mutationFn: api.refreshSubscriptionStatuses,
+    onSuccess: async (res) => {
+      await refetchMySub();
+      if (res?.activatedCount > 0) {
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+        toast({
+          title: "Subscription Activated",
+          description: res.message || "Payment verified and subscription activated."
+        });
+      } else if (res?.checkedCount > 0) {
+        toast({
+          title: "Status Refreshed",
+          description: res.message || "Checked pending payment status."
+        });
+      } else {
+        toast({
+          title: "Status Up to Date",
+          description: "Your subscription telemetry is up to date."
+        });
+      }
+    },
+    onError: async (err) => {
+      await refetchMySub();
+      toast({ variant: "destructive", title: "Status Refresh Notice", description: err.message });
+    }
+  });
+
+  // Auto-poll payment status every 5 seconds while a payment confirmation modal is open
+  useEffect(() => {
+    const txnId = activeGatewaySession?.transaction?._id;
+    if (!upgradeOpen || !txnId) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const res = await api.verifyGatewayTransaction(txnId);
+        if (res?.transaction?.status === "paid" || res?.alreadySettled) {
+          clearInterval(timer);
+          setActiveGatewaySession(null);
+          setUpgradeOpen(false);
+          queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
+          queryClient.invalidateQueries({ queryKey: ["stats"] });
+          toast({
+            title: "Subscription Activated",
+            description: "Payment confirmed! Your subscription is now active."
+          });
+        } else if (res?.transaction?.status === "failed" || res?.transaction?.status === "cancelled") {
+          clearInterval(timer);
+          queryClient.invalidateQueries({ queryKey: ["my-subscription"] });
+          toast({
+            variant: "destructive",
+            title: `Payment ${res.transaction.status}`,
+            description: res.transaction.failureReason || "The payment was not completed."
+          });
+        }
+      } catch {
+        // Ignore transient polling errors cleanly
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [upgradeOpen, activeGatewaySession?.transaction?._id]);
 
   const etimsMutation = useMutation({
     mutationFn: (invoiceId) => api.submitInvoiceToEtims(invoiceId),
@@ -281,7 +359,7 @@ export default function BillingDashboardPage() {
             Billing &amp; Subscription Management
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Manage your MakaziFlow rental unit allowance, IntaSend payments, invoices, and receipts.
+            Manage your MakaziFlow rental unit allowance, subscription payments, invoices, and receipts.
             {mySubData?.gatewayEnvironment === "sandbox" && (
               <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[10px] uppercase">
                 Sandbox Mode
@@ -294,10 +372,12 @@ export default function BillingDashboardPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetchMySub()}
+            disabled={refreshStatusMutation.isPending}
+            onClick={() => refreshStatusMutation.mutate()}
             className="text-xs h-9 cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh Status
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshStatusMutation.isPending ? "animate-spin" : ""}`} />
+            {refreshStatusMutation.isPending ? "Refreshing..." : "Refresh Status"}
           </Button>
           <Button
             size="sm"
@@ -357,7 +437,7 @@ export default function BillingDashboardPage() {
               {mySubData.daysRemaining} day{mySubData.daysRemaining === 1 ? "" : "s"} remaining in your 14-day free trial ({entitlement.planName || activeSub?.planName || "Starter"} — {purchasedUnits} units)
             </p>
             <p className="mt-0.5 opacity-85">
-              Complete subscription payment via Pesaflow before your trial ends on{" "}
+              Complete subscription payment before your trial ends on{" "}
               <strong>{activeSub?.expiryDate ? new Date(activeSub.expiryDate).toLocaleDateString("en-KE") : "expiry"}</strong> to avoid workspace lock.
             </p>
           </div>
@@ -512,11 +592,11 @@ export default function BillingDashboardPage() {
           <CardHeader>
             <div className="flex items-center gap-2 text-cyan-300 text-xs font-bold uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4" />
-              <span>IntaSend Verified Gateway</span>
+              <span>Verified Payment Gateway</span>
             </div>
             <CardTitle className="text-lg mt-1">Need Higher Capacity?</CardTitle>
             <CardDescription className="text-slate-300 text-xs">
-              Upgrade directly via M-Pesa STK Push, Visa, or Mastercard through IntaSend Hosted Checkout.
+              Upgrade seamlessly via M-Pesa STK Push, Visa, Mastercard, or Bank Transfer / PesaLink.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -529,6 +609,30 @@ export default function BillingDashboardPage() {
             <div className="text-[11px] text-slate-300 space-y-1 pt-2 border-t border-white/10">
               <p>Billing Support Desk:</p>
               <p className="font-semibold text-white">Tel: 0790264792 | info@afrinextech.co.ke</p>
+            </div>
+            <div className="pt-3 border-t border-white/10 text-center">
+              <a
+                href="https://intasend.com/security"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block"
+              >
+                <img
+                  src="https://intasend-prod-static.s3.amazonaws.com/img/trust-badges/intasend-trust-badge-with-mpesa-hr-dark.png"
+                  alt="IntaSend Secure Payments (PCI-DSS Compliant)"
+                  className="mx-auto w-full max-w-[320px] h-auto"
+                />
+              </a>
+              <strong>
+                <a
+                  href="https://intasend.com/security"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-[#fafafa] no-underline text-[11px] mt-1.5 hover:underline"
+                >
+                  Secured by IntaSend Payments
+                </a>
+              </strong>
             </div>
           </CardContent>
         </Card>
@@ -604,7 +708,7 @@ export default function BillingDashboardPage() {
               Payment History &amp; Receipts
             </CardTitle>
             <CardDescription className="text-xs">
-              Verify pending IntaSend payments or download verified PDF receipts.
+              Verify pending payments or download verified PDF receipts.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -631,7 +735,7 @@ export default function BillingDashboardPage() {
             )}
 
             <div className="space-y-2">
-              <p className="text-[11px] font-bold uppercase text-slate-500">Gateway Transactions</p>
+              <p className="text-[11px] font-bold uppercase text-slate-500">Payment Transactions</p>
               {transactions.length === 0 ? (
                 <p className="text-xs text-slate-500 py-4 text-center">No subscription transactions recorded yet.</p>
               ) : (
@@ -643,10 +747,10 @@ export default function BillingDashboardPage() {
                         <Badge className="text-[10px] uppercase">{txn.status}</Badge>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        KES {Number(txn.amount).toLocaleString()} · {txn.provider} ({txn.paymentChannel})
+                        KES {Number(txn.amount).toLocaleString()} · {formatChannelLabel(txn.paymentChannel, txn.paymentMethodDetail)}
                       </p>
                     </div>
-                    {txn.status === "pending" && (
+                    {["pending", "processing"].includes(txn.status) && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -654,7 +758,7 @@ export default function BillingDashboardPage() {
                         onClick={() => verifyMutation.mutate(txn._id)}
                         className="h-7 px-2.5 text-[11px] cursor-pointer"
                       >
-                        <RefreshCw className="w-3 h-3 mr-1" /> Verify
+                        <RefreshCw className={`w-3 h-3 mr-1 ${verifyMutation.isPending ? "animate-spin" : ""}`} /> Verify
                       </Button>
                     )}
                   </div>
@@ -671,7 +775,7 @@ export default function BillingDashboardPage() {
           <DialogHeader>
             <DialogTitle>Upgrade or Renew MakaziFlow Subscription</DialogTitle>
             <DialogDescription>
-              Choose your plan, rental unit allowance, billing cycle (Monthly/Annual), and pay securely via IntaSend.
+              Choose your plan, rental unit allowance, billing cycle (Monthly/Annual), and preferred payment method.
             </DialogDescription>
           </DialogHeader>
 
@@ -680,12 +784,12 @@ export default function BillingDashboardPage() {
               <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-blue-900">
-                    Pending IntaSend Payment Verification
+                    Pending Payment Verification
                     {activeGatewaySession.gateway?.isSandbox && (
                       <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px]">SANDBOX</span>
                     )}
                   </span>
-                  <Badge className="bg-amber-100 text-amber-800">Pending Gateway Verification</Badge>
+                  <Badge className="bg-amber-100 text-amber-800">Awaiting Confirmation</Badge>
                 </div>
                 <p className="text-blue-800">
                   Reference: <strong className="font-mono">{activeGatewaySession.transaction?.accountReference}</strong>
@@ -702,7 +806,7 @@ export default function BillingDashboardPage() {
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[#0b1065] text-white font-semibold hover:bg-[#161c8a]"
                     >
-                      Open IntaSend Checkout <ExternalLink className="w-3.5 h-3.5" />
+                      Complete Secure Payment <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   )}
                   <Button
@@ -819,8 +923,8 @@ export default function BillingDashboardPage() {
 
               {/* Payment Channel */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">3. Choose Payment Channel (IntaSend Gateway)</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <Label className="text-xs font-semibold">3. Choose Payment Method</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {PAYMENT_CHANNELS.map((ch) => (
                     <button
                       key={ch.id}
@@ -838,7 +942,7 @@ export default function BillingDashboardPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  M-Pesa renewals require explicit payment confirmation per cycle; recurring card billing applies only where enabled with customer consent on IntaSend Checkout.
+                  M-Pesa renewals require explicit payment confirmation per cycle; recurring card billing applies only where enabled with your consent at checkout.
                 </p>
               </div>
 
@@ -856,7 +960,7 @@ export default function BillingDashboardPage() {
                   className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-10 px-6 cursor-pointer"
                 >
                   {subscribeMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
-                  Proceed to IntaSend Payment
+                  Proceed to Payment
                 </Button>
               </div>
             </div>

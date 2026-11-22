@@ -265,9 +265,120 @@ const getReceiptEmailBody = (payment, tenantName, settings, propertyName, unitNu
     });
 };
 
+/**
+ * SHA-Layout One-Time Password (OTP) Verification Email styled in MakaziFlow Brand Colors
+ */
+const getOtpEmailBody = ({
+    name = 'User',
+    otp = '',
+    title = 'Your One-Time Password (OTP)',
+    subtitle = 'Secure verification for your account',
+    instruction = 'Use the verification code below to continue your sign-in securely.',
+    expiryMinutes = 3,
+    warningText = 'If you did not request this code, please ignore this email or contact support immediately.',
+    orgName = BUSINESS_CONFIG.name || 'MakaziFlow'
+}) => {
+    const safeTitle = escapeHtml(title);
+    const safeSubtitle = escapeHtml(subtitle);
+    const safeName = escapeHtml(String(name || 'User').trim());
+    const safeInstruction = escapeHtml(instruction);
+    const safeWarning = escapeHtml(warningText);
+    const safeOrgName = escapeHtml(String(orgName || 'MakaziFlow').trim());
+    const digits = String(otp || '').trim().split('').filter(Boolean);
+
+    const digitCellsHtml = digits.map((digit) => `
+        <td style="padding: 0 5px;">
+            <div style="width: 44px; height: 50px; line-height: 50px; background-color: #1c2434; border: 1.5px solid #00a99d; border-radius: 10px; color: #00d4c8; font-size: 22px; font-weight: 800; font-family: 'Courier New', Courier, monospace, sans-serif; text-align: center;">
+                ${escapeHtml(digit)}
+            </div>
+        </td>
+    `).join('');
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>${safeTitle}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b1120; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #0b1120; padding: 28px 10px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="540" style="max-width: 540px; width: 100%; margin: 0 auto; background-color: #131823; border-radius: 16px; overflow: hidden; border: 1px solid #263042; box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.55);">
+                    <!-- MakaziFlow Navy-to-Teal Gradient Banner -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #0a1e35 0%, #0d2240 58%, #00a99d 100%); padding: 28px 32px; text-align: center; border-bottom: 3px solid #00d4c8;">
+                            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.4px; color: #99f6e4; margin-bottom: 8px;">
+                                ${safeOrgName}
+                            </div>
+                            <h1 style="margin: 0 0 6px 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">
+                                ${safeTitle}
+                            </h1>
+                            <p style="margin: 0; font-size: 13px; color: #ccfbf1; line-height: 1.4;">
+                                ${safeSubtitle}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Dark Card Body -->
+                    <tr>
+                        <td style="padding: 34px 32px 28px 32px; background-color: #131823; text-align: center;">
+                            <p style="margin: 0 0 10px 0; font-size: 19px; font-weight: 800; color: #ffffff;">
+                                Hello ${safeName},
+                            </p>
+                            <p style="margin: 0 0 24px 0; font-size: 13.5px; color: #cbd5e1; line-height: 1.55;">
+                                ${safeInstruction}
+                            </p>
+
+                            <!-- Individual Rounded Digit Boxes -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 0 auto 24px auto;">
+                                <tr>
+                                    ${digitCellsHtml}
+                                </tr>
+                            </table>
+
+                            <p style="margin: 0 0 22px 0; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                                This code expires in <strong style="color: #f8fafc;">${Number(expiryMinutes) || 3} minutes</strong>. If it expires, request a new one and try again.
+                            </p>
+
+                            <!-- Security Warning Callout Box -->
+                            <div style="background-color: #171e2b; border: 1px solid #273244; border-radius: 10px; padding: 14px 18px; margin: 0 0 24px 0; color: #cbd5e1; font-size: 12.5px; line-height: 1.5; text-align: center;">
+                                ${safeWarning}
+                            </div>
+
+                            <p style="margin: 0; font-size: 13px; font-weight: 600; color: #94a3b8;">
+                                ${safeOrgName}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #0d1522; padding: 18px 32px; border-top: 1px solid #263042; text-align: center;">
+                            <p style="margin: 0 0 4px 0; color: #64748b; font-size: 11.5px;">
+                                Copyright &copy; ${new Date().getFullYear()}. All Rights Reserved.
+                            </p>
+                            <p style="margin: 0; color: #94a3b8; font-size: 11.5px; font-weight: 600;">
+                                ${safeOrgName}
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+    `;
+};
+
 module.exports = {
     getEmailTemplate,
     getReceiptEmailBody,
     getCorporateReminderEmailBody,
+    getOtpEmailBody,
     renderDetailRow
 };

@@ -86,9 +86,11 @@ async function runTests() {
     const u = String(url);
     if (u.includes('intasend.com/api/v1/checkout/')) {
       lastIntaSendEndpointCalled = u;
+      assert.ok(config?.headers?.['X-IntaSend-Public-API-Key'], '/checkout/ must pass X-IntaSend-Public-API-Key');
+      assert.strictEqual(config?.headers?.Authorization, undefined, '/checkout/ must NOT send Authorization Bearer header');
       const cid = `CHK-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const iid = `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      mockGatewayState.set(iid, {
+      mockGatewayState.set(cid, {
         invoice_id: iid,
         checkout_id: cid,
         state: 'PENDING',
@@ -102,7 +104,6 @@ async function runTests() {
         status: 200,
         data: {
           id: cid,
-          invoice_id: iid,
           url: `${u.includes('sandbox.') ? 'https://sandbox.intasend.com' : 'https://payment.intasend.com'}/checkout/${cid}/`,
           signature: `sig_${cid}`
         }
@@ -316,8 +317,8 @@ async function runTests() {
       body: { planCode: 'growth', desiredUnits: 25, billingCycle: 'monthly', paymentChannel: 'hosted_checkout', provider: 'intasend' }
     });
     assert.ok(subCancel.data.gateway.checkoutUrl.startsWith('https://sandbox.intasend.com/checkout/'));
-    mockGatewayState.set(subCancel.data.transaction.trackingId, {
-      ...mockGatewayState.get(subCancel.data.transaction.trackingId),
+    mockGatewayState.set(subCancel.data.transaction.checkoutId, {
+      ...mockGatewayState.get(subCancel.data.transaction.checkoutId),
       state: 'CANCELLED',
       failed_reason: 'User cancelled hosted checkout'
     });
@@ -325,19 +326,22 @@ async function runTests() {
     assert.strictEqual(resCancel.data.transaction.status, 'cancelled');
     assert.strictEqual((await LandlordSubscription.findById(subCancel.data.subscription._id)).status, 'pending_payment');
 
-    // Underpayment protection
+    // Underpayment protection + refresh-status endpoint check
     const subUnder = await apiReq('/api/subscriptions/subscribe', {
       method: 'POST',
       token: tokB,
       body: { planCode: 'growth', desiredUnits: 25, billingCycle: 'monthly', paymentChannel: 'card', provider: 'intasend' }
     });
-    mockGatewayState.set(subUnder.data.transaction.trackingId, {
-      ...mockGatewayState.get(subUnder.data.transaction.trackingId),
+    mockGatewayState.set(subUnder.data.transaction.checkoutId, {
+      ...mockGatewayState.get(subUnder.data.transaction.checkoutId),
       state: 'COMPLETE',
       provider: 'CARD-PAYMENT',
       value: '100.00', // expected 4500!
       currency: 'KES'
     });
+    const refreshUnder = await apiReq('/api/subscriptions/refresh-status', { method: 'POST', token: tokB });
+    assert.strictEqual(refreshUnder.status, 200);
+    assert.strictEqual(refreshUnder.data.activatedCount, 0);
     const resUnder = await apiReq(`/api/v2/payments/verify/${subUnder.data.transaction._id}`, { token: tokB });
     assert.strictEqual(resUnder.data.transaction.reconciliationStatus, 'amount_mismatch');
     assert.notStrictEqual(resUnder.data.transaction.status, 'paid');
@@ -371,8 +375,8 @@ async function runTests() {
     });
     assert.strictEqual(subAnnual.status, 201);
     assert.strictEqual(subAnnual.data.transaction.amount, 24000);
-    mockGatewayState.set(subAnnual.data.transaction.trackingId, {
-      ...mockGatewayState.get(subAnnual.data.transaction.trackingId),
+    mockGatewayState.set(subAnnual.data.transaction.checkoutId, {
+      ...mockGatewayState.get(subAnnual.data.transaction.checkoutId),
       state: 'COMPLETE',
       provider: 'CARD-PAYMENT',
       value: '24000.00',
@@ -381,7 +385,7 @@ async function runTests() {
     const resAnnual = await apiReq('/api/v2/payments/callback/intasend', {
       method: 'POST',
       token: tokA,
-      body: { tracking_id: subAnnual.data.transaction.trackingId }
+      body: { checkout_id: subAnnual.data.transaction.checkoutId }
     });
     assert.strictEqual(resAnnual.status, 200);
     assert.strictEqual(resAnnual.data.transaction.status, 'paid');
@@ -455,8 +459,9 @@ async function runTests() {
     assert.strictEqual(prodSubRes.data.transaction.isSandbox, false);
     assert.ok(lastIntaSendEndpointCalled.startsWith('https://payment.intasend.com/api/v1/checkout/'));
 
-    mockGatewayState.set(prodSubRes.data.transaction.trackingId, {
-      ...mockGatewayState.get(prodSubRes.data.transaction.trackingId),
+    const prodMockRec = mockGatewayState.get(prodSubRes.data.transaction.checkoutId);
+    mockGatewayState.set(prodSubRes.data.transaction.checkoutId, {
+      ...prodMockRec,
       state: 'COMPLETE',
       provider: 'M-PESA',
       mpesa_reference: 'PRODMPESA001',
@@ -466,7 +471,8 @@ async function runTests() {
     const prodHook = await apiReq('/api/v2/payments/webhooks/intasend', {
       method: 'POST',
       body: {
-        invoice_id: prodSubRes.data.transaction.trackingId,
+        invoice_id: prodMockRec.invoice_id,
+        checkout_id: prodSubRes.data.transaction.checkoutId,
         state: 'COMPLETE',
         api_ref: prodSubRes.data.transaction.accountReference,
         value: '2500.00',

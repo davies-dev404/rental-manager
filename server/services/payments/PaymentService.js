@@ -184,8 +184,12 @@ class PaymentService {
     const isSandbox = gatewayEnv === 'sandbox';
 
     const internalTransactionId = this.generateInternalId('TXN-MF');
-    const prefix = paymentCategory.startsWith('subscription') || paymentCategory === 'unit_upgrade' ? 'MFSUB' : 'MFRNT';
-    const accountReference = `${prefix}-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const shortRand = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const shortTime = Date.now().toString(36).slice(-4).toUpperCase();
+    const isSubCat = paymentCategory.startsWith('subscription') || paymentCategory === 'unit_upgrade';
+    const accountReference = resolvedProvider === 'intasend'
+      ? `MakaziFlow-${shortTime}${shortRand}`
+      : `${isSubCat ? 'MFSUB' : 'MFRNT'}-${Date.now().toString(36).toUpperCase()}-${shortRand}`;
 
     const txn = await PaymentTransaction.create({
       internalTransactionId,
