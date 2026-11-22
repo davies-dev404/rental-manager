@@ -336,6 +336,19 @@ app.get('/api/health', async (req, res) => {
     const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
     const dbState = states[mongoose.connection.readyState] || 'unknown';
     const rawKey = (process.env.BREVO_API_KEY || '').trim();
+    let paymentGateway = { provider: 'intasend', configured: false };
+    try {
+        const { getIntaSendConfig } = require('./config/intasendConfig');
+        const gwCfg = getIntaSendConfig({ requireConfigured: false });
+        paymentGateway = {
+            provider: 'intasend',
+            environment: gwCfg.environment,
+            configured: gwCfg.isConfigured,
+            webhookChallengeConfigured: Boolean(gwCfg.webhookChallenge)
+        };
+    } catch (gwErr) {
+        paymentGateway = { provider: 'intasend', configured: false, configError: gwErr.code || 'CONFIG_ERROR' };
+    }
     res.json({
         status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),
@@ -346,6 +359,7 @@ app.get('/api/health', async (req, res) => {
         messaging: {
             configured: Boolean(rawKey)
         },
+        paymentGateway,
         env: process.env.NODE_ENV || 'development'
     });
 });

@@ -66,8 +66,9 @@ class IntaSendAdapter extends PaymentAdapter {
   buildGatewayHeaders(authMode, cfg) {
     const baseHeaders = {
       'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': 'MakaziFlow-Server/2.0 (+https://makaziflow.afrinextech.co.ke)'
+      Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
     };
     if (authMode === 'checkout') {
       return {
@@ -87,17 +88,52 @@ class IntaSendAdapter extends PaymentAdapter {
     const status = apiErr?.response?.status;
     const data = apiErr?.response?.data;
     if (data && typeof data === 'object') {
-      return (
+      const msg =
         data?.errors?.[0]?.detail ||
         data?.detail ||
         data?.message ||
-        apiErr.message
-      );
+        JSON.stringify(data).slice(0, 180);
+      return msg || apiErr.message;
     }
-    if (status === 403 || (typeof data === 'string' && /cloudflare|attention required|<html|just a moment|forbidden/i.test(data))) {
-      return 'Gateway request blocked (403). Check IP Whitelist settings or allow server requests in your payment portal.';
+    if (typeof data === 'string' && data.trim()) {
+      const cfTitle = data.match(/<title>([^<]+)<\/title>/i)?.[1];
+      if (/cloudflare|attention required|just a moment/i.test(data)) {
+        return `Upstream firewall blocked server IP (${status || 403}${cfTitle ? `: ${cfTitle.trim()}` : ''}). Try Card/Checkout or whitelist Render server IP.`;
+      }
+      return data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    }
+    if (status === 403) {
+      return 'Gateway returned 403 Forbidden. Verify Render env keys match INTASEND_ENV and check server IP permissions.';
     }
     return apiErr?.message || 'Gateway request failed';
+  }
+
+  async postViaFetchFallback(url, payload, headers, timeoutMs = 20000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      const text = await res.text();
+      let parsed = text;
+      try { parsed = JSON.parse(text); } catch {}
+      if (!res.ok) {
+        const err = new Error(`Request failed with status code ${res.status}`);
+        err.response = {
+          status: res.status,
+          data: parsed,
+          headers: Object.fromEntries(res.headers.entries())
+        };
+        throw err;
+      }
+      return { status: res.status, data: parsed, headers: Object.fromEntries(res.headers.entries()) };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 20000 }) {
@@ -110,21 +146,23 @@ class IntaSendAdapter extends PaymentAdapter {
       const cfRay = primaryErr?.response?.headers?.['cf-ray'] || '';
       const serverHdr = primaryErr?.response?.headers?.server || '';
       console.warn(
-        `[IntaSend Gateway Warning] path=${path} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay}`
+        `[IntaSend Gateway Warning] url=${primaryUrl} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay}`
       );
 
-      // If primary host returns 403 WAF/edge block, retry once via unified api.intasend.com with same env keys
-      if (status === 403 && !cfg.baseUrl.includes('api.intasend.com')) {
-        const secondaryUrl = `https://api.intasend.com/api/v1${path}`;
+      // If primary host hits 403 WAF/edge challenge, retry via api.intasend.com + native fetch TLS stack with exact same env keys
+      if (status === 403) {
+        const retryUrl = !cfg.baseUrl.includes('api.intasend.com')
+          ? `https://api.intasend.com/api/v1${path}`
+          : primaryUrl;
         try {
-          return await axios.post(secondaryUrl, payload, { headers, timeout });
-        } catch (secondaryErr) {
-          const sStatus = secondaryErr?.response?.status;
-          const sRay = secondaryErr?.response?.headers?.['cf-ray'] || '';
+          return await this.postViaFetchFallback(retryUrl, payload, headers, timeout);
+        } catch (retryErr) {
+          const rStatus = retryErr?.response?.status;
+          const rRay = retryErr?.response?.headers?.['cf-ray'] || '';
           console.warn(
-            `[IntaSend Unified Retry Warning] path=${path} status=${sStatus || 'ERR'} cfRay=${sRay}`
+            `[IntaSend Retry Warning] url=${retryUrl} status=${rStatus || 'ERR'} cfRay=${rRay}`
           );
-          throw secondaryErr;
+          throw retryErr;
         }
       }
       throw primaryErr;
