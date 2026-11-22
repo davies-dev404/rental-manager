@@ -347,7 +347,7 @@ class PaymentService {
     callbackRecord.internalTransactionId = txn.internalTransactionId;
 
     // Cross-environment isolation check (never allow sandbox callback to affect production txn or vice versa)
-    const txnEnv = txn.gatewayEnvironment || (txn.isSandbox ? 'sandbox' : 'sandbox');
+    const txnEnv = txn.gatewayEnvironment || (txn.isSandbox === false ? 'production' : 'sandbox');
     if (cleanProvider === 'intasend' && txnEnv !== activeEnv) {
       callbackRecord.processingStatus = 'environment_mismatch';
       callbackRecord.processingMessage = `Blocked cross-environment webhook: txn is ${txnEnv}, server is ${activeEnv}`;
@@ -692,7 +692,7 @@ class PaymentService {
       trackingId,
       checkoutId,
       signature,
-      expectedEnvironment: txn.gatewayEnvironment || (txn.isSandbox ? 'sandbox' : 'sandbox')
+      expectedEnvironment: txn.gatewayEnvironment || (txn.isSandbox === false ? 'production' : 'sandbox')
     });
 
     if (verified.verifiedReferenceMatch === false) {

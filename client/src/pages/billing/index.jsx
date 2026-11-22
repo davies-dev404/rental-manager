@@ -313,12 +313,14 @@ export default function BillingDashboardPage() {
   };
 
   const handleStartCheckout = () => {
-    const cleanPhone = String(phoneInput || "").trim();
-    if (paymentChannel === "mpesa_stk" && cleanPhone.replace(/\D/g, "").length < 9) {
+    if (subscribeMutation.isPending) return;
+    const cleanPhone = String(phoneInput || "").replace(/[\s()-]/g, "").trim();
+    const isValidKePhone = /^(?:254|0|\+254)?[17]\d{8}$/.test(cleanPhone);
+    if (paymentChannel === "mpesa_stk" && !isValidKePhone) {
       toast({
         variant: "destructive",
-        title: "M-Pesa Phone Required",
-        description: "Please enter a valid Safaricom M-Pesa number (e.g. 0712345678) for STK Push."
+        title: "Invalid M-Pesa Phone Number",
+        description: "Enter a valid Kenyan mobile number (e.g. 0712345678, 0112345678, or 254712345678) for M-Pesa STK Push."
       });
       return;
     }
@@ -399,6 +401,7 @@ export default function BillingDashboardPage() {
           <Button
             size="sm"
             onClick={() => {
+              setActiveGatewaySession(null);
               if (plans.length > 0 && (activeSub?.planCode || entitlement?.planCode)) {
                 setSelectedPlanCode(activeSub?.planCode || entitlement.planCode);
                 setDesiredUnits(activeSub?.purchasedUnits || entitlement?.purchasedUnits || 10);
@@ -816,7 +819,7 @@ export default function BillingDashboardPage() {
                   {" "}· Amount: <strong>KES {Number(activeGatewaySession.transaction?.amount || 0).toLocaleString()}</strong>
                 </p>
                 <div className="pt-2 flex flex-wrap gap-2">
-                  {activeGatewaySession.gateway?.checkoutUrl && (
+                  {activeGatewaySession.gateway?.checkoutUrl && /^https:\/\//i.test(activeGatewaySession.gateway.checkoutUrl) && (
                     <a
                       href={activeGatewaySession.gateway.checkoutUrl}
                       target="_blank"

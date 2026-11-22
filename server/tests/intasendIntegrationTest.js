@@ -46,6 +46,7 @@ const PaymentTransaction = require('../models/PaymentTransaction');
 const PaymentCallback = require('../models/PaymentCallback');
 const PaymentReceipt = require('../models/PaymentReceipt');
 const { getIntaSendConfig, validateIntaSendConfig } = require('../config/intasendConfig');
+const IntaSendAdapter = require('../services/payments/IntaSendAdapter');
 const { seedDefaultPlans, processSubscriptionExpirations, activatePaidSubscription } = require('../services/subscriptionService');
 const PaymentService = require('../services/payments/PaymentService');
 
@@ -495,7 +496,106 @@ async function runTests() {
     assert.ok(!String(prodCsv.data).includes('QWE123MPESA'), 'Production CSV report must NOT contain sandbox transactions');
     console.log('✅ PASS 7: Production env switching via config alone, sandbox-to-prod isolation, and clean CSV reporting');
 
-    console.log('\n🎉 ALL 7 INTASEND INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');
+    // TEST 8: Phone normalization, validation, missing credentials & Section 8 error classification (ZERO 403 retries)
+    process.env.INTASEND_ENV = 'sandbox';
+    const adapter = new IntaSendAdapter();
+    assert.strictEqual(adapter.normalizeKenyanPhone('0712345678'), '254712345678');
+    assert.strictEqual(adapter.normalizeKenyanPhone('0112345678'), '254112345678');
+    assert.strictEqual(adapter.normalizeKenyanPhone('254712345678'), '254712345678');
+    assert.strictEqual(adapter.normalizeKenyanPhone('+254 712 345 678'), '254712345678');
+    assert.strictEqual(adapter.normalizeKenyanPhone('+2540712345678'), '254712345678');
+
+    // Invalid phone, invalid currency, invalid amount
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-VAL-1', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '0800123456' }),
+      (e) => e.statusCode === 400
+    );
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-VAL-1B', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '12345' }),
+      (e) => e.statusCode === 400
+    );
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-VAL-2', amount: 0, currency: 'KES', paymentChannel: 'hosted_checkout' }),
+      (e) => e.statusCode === 400
+    );
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-VAL-3', amount: 1500, currency: 'USD', paymentChannel: 'hosted_checkout' }),
+      (e) => e.statusCode === 400
+    );
+
+    // Missing credentials throws 503 INTASEND_NOT_CONFIGURED
+    const savedSec = process.env.INTASEND_SANDBOX_SECRET_KEY;
+    process.env.INTASEND_SANDBOX_SECRET_KEY = '';
+    assert.throws(() => getIntaSendConfig({ requireConfigured: true }), (e) => e.statusCode === 503 && e.code === 'INTASEND_NOT_CONFIGURED');
+    process.env.INTASEND_SANDBOX_SECRET_KEY = savedSec;
+
+    // Mocked upstream errors: Cloudflare 403 (must NOT retry), Auth 401, Validation 400, Timeout ECONNABORTED, Upstream 500
+    const prevAxiosPost = axios.post;
+    let callCount = 0;
+
+    axios.post = async () => {
+      callCount++;
+      const err = new Error('Request failed with status code 403');
+      err.response = {
+        status: 403,
+        headers: { server: 'cloudflare', 'cf-ray': 'test-ray-403-SIN' },
+        data: '<html><head><title>Attention Required! | Cloudflare</title></head><body>Sorry, you have been blocked</body></html>'
+      };
+      throw err;
+    };
+    const cfRes = await apiReq('/api/subscriptions/subscribe', {
+      method: 'POST',
+      token: tokA,
+      body: { planCode: 'starter', desiredUnits: 5, billingCycle: 'monthly', paymentChannel: 'mpesa_stk', provider: 'intasend', phone: '0712345678' }
+    });
+    assert.strictEqual(callCount, 1, 'Cloudflare 403 MUST NOT trigger blind retry requests');
+    assert.strictEqual(cfRes.status, 503);
+    assert.strictEqual(cfRes.data.code, 'INTASEND_CLOUDFLARE_BLOCK');
+    assert.strictEqual(cfRes.data.details?.cfRay, 'test-ray-403-SIN');
+
+    axios.post = async () => {
+      const err = new Error('Unauthorized');
+      err.response = { status: 401, headers: {}, data: { detail: 'Invalid token' } };
+      throw err;
+    };
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-ERR-401', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '0712345678' }),
+      (e) => e.statusCode === 502 && e.code === 'INTASEND_AUTH_FAILED'
+    );
+
+    axios.post = async () => {
+      const err = new Error('Bad Request');
+      err.response = { status: 400, headers: {}, data: { errors: [{ detail: 'Invalid phone_number format' }] } };
+      throw err;
+    };
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-ERR-400', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '0712345678' }),
+      (e) => e.statusCode === 400 && e.code === 'INTASEND_VALIDATION_ERROR'
+    );
+
+    axios.post = async () => {
+      const err = new Error('timeout of 30000ms exceeded');
+      err.code = 'ECONNABORTED';
+      throw err;
+    };
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-ERR-TO', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '0712345678' }),
+      (e) => e.statusCode === 504 && e.code === 'GATEWAY_TIMEOUT'
+    );
+
+    axios.post = async () => {
+      const err = new Error('Server Error');
+      err.response = { status: 500, headers: {}, data: { detail: 'Internal upstream error' } };
+      throw err;
+    };
+    await assert.rejects(
+      () => adapter.initiatePayment({ accountReference: 'MF-ERR-500', amount: 1500, currency: 'KES', paymentChannel: 'mpesa_stk', customerPhone: '0712345678' }),
+      (e) => e.statusCode === 502 && e.code === 'INTASEND_UPSTREAM_ERROR'
+    );
+    axios.post = prevAxiosPost;
+    console.log('✅ PASS 8: Phone normalization, missing creds (503), zero 403 retries, Cloudflare/Auth/Validation/Timeout/500 error classification');
+
+    console.log('\n🎉 ALL 8 INTASEND INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');
   } finally {
     if (axiosOrigPost) axios.post = axiosOrigPost;
     await mongoose.connection.dropDatabase().catch(() => {});

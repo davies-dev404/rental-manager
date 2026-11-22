@@ -290,11 +290,13 @@ router.post('/subscribe', protect, admin, paymentCheckoutLimiter, async (req, re
       return res.status(gatewayErr.statusCode || 502).json({
         success: false,
         code: gatewayErr.code || 'GATEWAY_INITIATION_FAILED',
-        message: gatewayErr.message
+        message: gatewayErr.message,
+        retryable: Boolean(gatewayErr.retryable),
+        ...(gatewayErr.details ? { details: gatewayErr.details } : {})
       });
     }
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(err.statusCode || 400).json({ message: err.message });
   }
 });
 

@@ -35,7 +35,8 @@ class IntaSendAdapter extends PaymentAdapter {
   normalizeKenyanPhone(phone = '') {
     const digits = String(phone || '').replace(/\D/g, '');
     if (!digits) return '';
-    if (digits.startsWith('254') && digits.length >= 12) return digits;
+    if (digits.startsWith('2540') && digits.length === 13) return `254${digits.slice(4)}`;
+    if (digits.startsWith('254') && digits.length === 12) return digits;
     if (digits.startsWith('0') && digits.length === 10) return `254${digits.slice(1)}`;
     if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length === 9) return `254${digits}`;
     return digits;
@@ -94,45 +95,95 @@ class IntaSendAdapter extends PaymentAdapter {
     if (typeof data === 'string' && data.trim()) {
       const cfTitle = data.match(/<title>([^<]+)<\/title>/i)?.[1];
       if (/cloudflare|attention required|just a moment/i.test(data)) {
-        return `Cloudflare blocked server request (${status || 403}${cfTitle ? `: ${cfTitle.trim()}` : ''}). Check Render egress IP / IntaSend portal access.`;
+        return `Cloudflare blocked server request (${status || 403}${cfTitle ? `: ${cfTitle.trim()}` : ''}).`;
       }
       return data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
     }
     if (status === 403) {
-      return 'Gateway returned 403 Forbidden. Check IntaSend API keys and Render server access.';
+      return 'Gateway returned 403 Forbidden. Check IntaSend API permissions or server IP allowlisting.';
     }
     return apiErr?.message || 'Gateway request failed';
   }
 
-  async postViaFetchFallback(url, payload, headers, timeoutMs = 30000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      const text = await res.text();
-      let parsed = text;
-      try { parsed = JSON.parse(text); } catch {}
-      if (!res.ok) {
-        const err = new Error(`Request failed with status code ${res.status}`);
-        err.response = {
-          status: res.status,
-          data: parsed,
-          headers: Object.fromEntries(res.headers.entries())
-        };
-        throw err;
-      }
-      return { status: res.status, data: parsed, headers: Object.fromEntries(res.headers.entries()) };
-    } finally {
-      clearTimeout(timer);
+  classifyGatewayError(apiErr, contextLabel, fallbackCode) {
+    const status = apiErr?.response?.status;
+    const headers = apiErr?.response?.headers || {};
+    const data = apiErr?.response?.data;
+    const cfRay = String(headers['cf-ray'] || '').trim();
+    const serverHdr = String(headers.server || '').trim().toLowerCase();
+    const isTimeout =
+      apiErr?.code === 'ECONNABORTED' ||
+      apiErr?.code === 'ETIMEDOUT' ||
+      /timeout|aborted/i.test(String(apiErr?.message || ''));
+
+    if (isTimeout && !status) {
+      const err = new Error(`${contextLabel} timed out waiting for IntaSend. Please wait a moment and click Verify / Refresh Status before retrying.`);
+      err.statusCode = 504;
+      err.code = 'GATEWAY_TIMEOUT';
+      err.retryable = true;
+      return err;
     }
+
+    if (status === 401) {
+      const err = new Error(`${contextLabel} failed: Gateway authentication rejected (401). Verify active IntaSend API keys on the server.`);
+      err.statusCode = 502;
+      err.code = 'INTASEND_AUTH_FAILED';
+      err.retryable = false;
+      return err;
+    }
+
+    const isCloudflareBlock =
+      status === 403 &&
+      (
+        (typeof data === 'string' && /cloudflare|attention required|just a moment/i.test(data)) ||
+        Boolean(headers['cf-mitigated']) ||
+        serverHdr === 'cloudflare'
+      );
+
+    if (isCloudflareBlock) {
+      const rayNote = cfRay ? ` Ray ID: ${cfRay}.` : '';
+      const err = new Error(
+        `${contextLabel} blocked by IntaSend's Cloudflare firewall (403) for this server's outbound IP.${rayNote} Contact IntaSend support to allowlist Render outbound IPs.`
+      );
+      err.statusCode = 503;
+      err.code = 'INTASEND_CLOUDFLARE_BLOCK';
+      err.retryable = true;
+      err.details = { upstreamStatus: 403, server: serverHdr || 'cloudflare', ...(cfRay ? { cfRay } : {}) };
+      return err;
+    }
+
+    if (status === 403) {
+      const err = new Error(`${contextLabel} rejected (403): ${this.extractGatewayError(apiErr)}`);
+      err.statusCode = 503;
+      err.code = 'INTASEND_FORBIDDEN';
+      err.retryable = false;
+      return err;
+    }
+
+    if (status === 400 || status === 422) {
+      const err = new Error(`${contextLabel} rejected by gateway validation: ${this.extractGatewayError(apiErr)}`);
+      err.statusCode = 400;
+      err.code = 'INTASEND_VALIDATION_ERROR';
+      err.retryable = false;
+      return err;
+    }
+
+    if (status === 404) {
+      const err = new Error(`${contextLabel} failed: Transaction reference not found on IntaSend (404).`);
+      err.statusCode = 404;
+      err.code = 'INTASEND_NOT_FOUND';
+      err.retryable = false;
+      return err;
+    }
+
+    const err = new Error(`${contextLabel} failed: ${this.extractGatewayError(apiErr)}`);
+    err.statusCode = 502;
+    err.code = status >= 500 ? 'INTASEND_UPSTREAM_ERROR' : fallbackCode;
+    err.retryable = status >= 500;
+    return err;
   }
 
-  async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 30000 }) {
+  async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 30000, ref = '' }) {
     const headers = this.buildGatewayHeaders(authMode, cfg);
     const primaryUrl = `${cfg.baseUrl}${path}`;
     try {
@@ -142,23 +193,11 @@ class IntaSendAdapter extends PaymentAdapter {
       const cfRay = primaryErr?.response?.headers?.['cf-ray'] || '';
       const cfMitigated = primaryErr?.response?.headers?.['cf-mitigated'] || '';
       const serverHdr = primaryErr?.response?.headers?.server || '';
+      const detail = this.extractGatewayError(primaryErr);
+      // Never log Authorization headers, secret keys, or customer PII; preserve diagnostic telemetry cleanly
       console.warn(
-        `[IntaSend Gateway Warning] url=${primaryUrl} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay} cfMitigated=${cfMitigated}`
+        `[IntaSend Gateway Error] endpoint=${path} ref=${ref || 'none'} status=${status || primaryErr?.code || 'ERR'} server=${serverHdr || 'unknown'} cfRay=${cfRay || 'none'} cfMitigated=${cfMitigated || 'none'} detail=${JSON.stringify(detail)}`
       );
-
-      // On 403 edge/TLS anomaly, retry the same unified URL once via Node native fetch (undici)
-      if (status === 403) {
-        try {
-          return await this.postViaFetchFallback(primaryUrl, payload, headers, timeout);
-        } catch (retryErr) {
-          const rStatus = retryErr?.response?.status;
-          const rRay = retryErr?.response?.headers?.['cf-ray'] || '';
-          console.warn(
-            `[IntaSend Fetch Retry Warning] url=${primaryUrl} status=${rStatus || 'ERR'} cfRay=${rRay}`
-          );
-          throw retryErr;
-        }
-      }
       throw primaryErr;
     }
   }
@@ -208,21 +247,16 @@ class IntaSendAdapter extends PaymentAdapter {
 
       try {
         const stkPayload = {
-          public_key: cfg.publishableKey,
           amount: Math.ceil(numericAmount),
-          currency: 'KES',
           phone_number: normalizedPhone,
-          api_ref: accountReference,
-          narrative: String(`Afrinex Tech - MakaziFlow ${description || accountReference}`).slice(0, 100),
-          first_name,
-          last_name,
-          email
+          api_ref: accountReference
         };
 
         const response = await this.postGateway('/payment/mpesa-stk-push/', stkPayload, {
           authMode: 'secret',
           cfg,
-          timeout: 30000
+          timeout: 30000,
+          ref: accountReference
         });
 
         const data = response.data || {};
@@ -242,12 +276,7 @@ class IntaSendAdapter extends PaymentAdapter {
           rawResponse: data
         };
       } catch (apiErr) {
-        const errMsg = this.extractGatewayError(apiErr);
-        const upstreamStatus = apiErr.response?.status;
-        const err = new Error(`M-Pesa STK Push failed: ${errMsg}`);
-        err.statusCode = (upstreamStatus === 400 || upstreamStatus === 422) ? 400 : 502;
-        err.code = 'INTASEND_STK_ERROR';
-        throw err;
+        throw this.classifyGatewayError(apiErr, 'M-Pesa STK Push', 'INTASEND_STK_ERROR');
       }
     }
 
@@ -282,7 +311,8 @@ class IntaSendAdapter extends PaymentAdapter {
         response = await this.postGateway('/checkout/', checkoutPayload, {
           authMode: 'checkout',
           cfg,
-          timeout: 30000
+          timeout: 30000,
+          ref: accountReference
         });
       } catch (firstErr) {
         // If merchant account does not support restricting by `method`, retry with all enabled checkout methods
@@ -290,7 +320,8 @@ class IntaSendAdapter extends PaymentAdapter {
           response = await this.postGateway('/checkout/', baseCheckoutPayload, {
             authMode: 'checkout',
             cfg,
-            timeout: 30000
+            timeout: 30000,
+            ref: accountReference
           });
         } else {
           throw firstErr;
@@ -316,12 +347,7 @@ class IntaSendAdapter extends PaymentAdapter {
         rawResponse: { id: checkoutId, url: checkoutUrl, methods: data.methods || [] }
       };
     } catch (apiErr) {
-      const errMsg = this.extractGatewayError(apiErr);
-      const upstreamStatus = apiErr.response?.status;
-      const err = new Error(`Checkout initiation failed: ${errMsg}`);
-      err.statusCode = (upstreamStatus === 400 || upstreamStatus === 422) ? 400 : 502;
-      err.code = 'INTASEND_CHECKOUT_ERROR';
-      throw err;
+      throw this.classifyGatewayError(apiErr, 'Checkout initiation', 'INTASEND_CHECKOUT_ERROR');
     }
   }
 
@@ -370,7 +396,8 @@ class IntaSendAdapter extends PaymentAdapter {
       const response = await this.postGateway('/payment/status/', body, {
         authMode: 'secret',
         cfg,
-        timeout: 15000
+        timeout: 30000,
+        ref: accountReference || invoiceId || cleanCheckoutId
       });
 
       const parsed = this.parseWebhookPayload(response.data || {});
@@ -381,11 +408,7 @@ class IntaSendAdapter extends PaymentAdapter {
         verifiedReferenceMatch: !accountReference || !parsed.accountReference || parsed.accountReference === accountReference
       };
     } catch (apiErr) {
-      const errMsg = this.extractGatewayError(apiErr);
-      const err = new Error(`Payment status verification failed: ${errMsg}`);
-      err.statusCode = apiErr.response?.status === 404 ? 404 : 502;
-      err.code = 'INTASEND_STATUS_ERROR';
-      throw err;
+      throw this.classifyGatewayError(apiErr, 'Payment status verification', 'INTASEND_STATUS_ERROR');
     }
   }
 
