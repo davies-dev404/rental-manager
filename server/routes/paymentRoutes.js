@@ -362,7 +362,7 @@ router.post('/:id/email', protect, validateObjectId('id'), async (req, res) => {
 router.get('/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
     try {
         const payment = await Payment.findOne({ _id: req.params.id, user: req.user.id })
-            .populate('tenantId', 'name email phone')
+            .populate('tenantId', 'name email phone accountNumber')
             .populate('unitId', 'unitNumber propertyId')
             .populate('invoiceId', 'invoiceNumber');
 
@@ -516,9 +516,11 @@ router.post('/send-invoice', protect, async (req, res) => {
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
                 const mpesaShortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
-                const mpesaLabel = settings?.mpesaType === 'Till' ? 'M-Pesa Till Number' : 'M-Pesa Paybill Number';
+                const isTill = settings?.mpesaType === 'Till';
+                const mpesaLabel = isTill ? 'M-Pesa Till Number' : 'M-Pesa Paybill Number';
                 const defaultAcct = String(settings?.paybillAccount || '').trim();
-                const payAcct = tenant?.accountNumber || (uNum && defaultAcct ? `${uNum} (Default: ${defaultAcct})` : uNum || defaultAcct || invRef);
+                const payAcct = tenant?.accountNumber || defaultAcct || uNum || invRef;
+                const mpesaLine = isTill ? mpesaShortcode : `${mpesaShortcode} • A/C: ${payAcct}`;
 
                 const emailContent = `
                     <p style="color: #f8fafc; font-size: 15px; font-weight: 700; margin: 0 0 10px 0;">
@@ -546,7 +548,7 @@ router.post('/send-invoice', protect, async (req, res) => {
                     ${renderDetailRow('Invoice Reference', invRef)}
                     ${renderDetailRow('Property / Unit', resolvedPropName ? `${resolvedPropName} — Unit ${uNum}` : `Unit ${uNum}`)}
                     ${renderDetailRow('Organisation', businessName)}
-                    ${mpesaShortcode ? renderDetailRow(mpesaLabel, `${mpesaShortcode} • A/C: ${payAcct}`) : ''}
+                    ${mpesaShortcode ? renderDetailRow(mpesaLabel, mpesaLine) : ''}
                     ${settings?.orgPhone ? renderDetailRow('Landlord Phone', settings.orgPhone) : ''}
                     ${notes ? renderDetailRow('Notes', notes) : ''}
 

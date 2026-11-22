@@ -738,7 +738,7 @@ router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res
     const receipt = await PaymentReceipt.findById(req.params.id)
       .populate({
         path: 'tenantId',
-        select: 'name email phone unitId',
+        select: 'name email phone accountNumber unitId',
         populate: {
           path: 'unitId',
           select: 'unitNumber propertyId',
@@ -780,7 +780,8 @@ router.get('/receipts/:id/pdf', protect, validateObjectId('id'), async (req, res
       tenantId: {
         name: receipt.recipientName || receipt.tenantId?.name || 'Customer',
         email: receipt.recipientEmail || receipt.tenantId?.email || '',
-        phone: receipt.tenantId?.phone || ''
+        phone: receipt.tenantId?.phone || '',
+        accountNumber: receipt.tenantId?.accountNumber || ''
       }
     };
     const pdfBuffer = await generateReceiptPDF(pseudoPayment, settings, propName);
@@ -895,13 +896,16 @@ router.get('/tenant-portal/summary', protect, async (req, res) => {
     const landlordSettings = await Settings.findOne({ user: tenant.user }).lean();
     const shortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || '').trim();
     const mpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
-    const defaultAccount = String(landlordSettings?.paybillAccount || '').trim();
-    const recommendedAccount = String(
-      tenant.accountNumber ||
-      tenant.unitId?.unitNumber ||
-      defaultAccount ||
-      ''
-    ).trim();
+    const isTill = mpesaType === 'Till';
+    const defaultAccount = isTill ? '' : String(landlordSettings?.paybillAccount || '').trim();
+    const recommendedAccount = isTill
+      ? ''
+      : String(
+          tenant.accountNumber ||
+          defaultAccount ||
+          tenant.unitId?.unitNumber ||
+          ''
+        ).trim();
 
     res.json({
       linked: true,
@@ -961,13 +965,16 @@ router.get('/paybill-config', protect, async (req, res) => {
     const landlordSettings = await Settings.findOne({ user: landlordId }).lean();
     const shortcode = String(landlordSettings?.integrations?.mpesa?.shortcode || '').trim();
     const mpesaType = landlordSettings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
-    const defaultAccount = String(landlordSettings?.paybillAccount || '').trim();
-    const recommendedAccount = String(
-      tenant?.accountNumber ||
-      tenant?.unitId?.unitNumber ||
-      defaultAccount ||
-      ''
-    ).trim();
+    const isTill = mpesaType === 'Till';
+    const defaultAccount = isTill ? '' : String(landlordSettings?.paybillAccount || '').trim();
+    const recommendedAccount = isTill
+      ? ''
+      : String(
+          tenant?.accountNumber ||
+          defaultAccount ||
+          tenant?.unitId?.unitNumber ||
+          ''
+        ).trim();
 
     res.json({
       enabled: Boolean(shortcode),

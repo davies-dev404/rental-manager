@@ -102,6 +102,27 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
             <p className="mb-2">{businessName}</p>
             <p className="font-bold text-[#0d2240]">Payment Mode:</p>
             <p className="mb-2 uppercase">{String(payment.method || 'CASH').replace(/_/g, ' ')}</p>
+            {(() => {
+              const isTill = businessInfo?.mpesaType === 'Till';
+              const shortcode = businessInfo?.integrations?.mpesa?.shortcode || businessInfo?.paybillNumber || '';
+              const acctNo = payment.accountNumber || businessInfo?.paybillAccount || '';
+              return (
+                <>
+                  {shortcode && (
+                    <>
+                      <p className="font-bold text-[#0d2240]">{isTill ? 'Till Number:' : 'Paybill Number:'}</p>
+                      <p className="mb-2 font-mono">{shortcode}</p>
+                    </>
+                  )}
+                  {!isTill && acctNo && (
+                    <>
+                      <p className="font-bold text-[#0d2240]">Account Number:</p>
+                      <p className="mb-2 font-mono">{acctNo}</p>
+                    </>
+                  )}
+                </>
+              );
+            })()}
             <p className="font-bold text-[#0d2240]">Amount Paid:</p>
             <p className="font-bold">{currency} {amountFormatted}</p>
           </div>

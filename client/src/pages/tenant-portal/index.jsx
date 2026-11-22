@@ -248,7 +248,7 @@ export default function TenantPortalPage() {
                           ? "M-Pesa Till Payment Details"
                           : "Lipa na M-Pesa Paybill Details"}
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <div className={`grid grid-cols-1 ${(gatewaySession.gateway?.paybillInstructions?.mpesaType || activePaybillConfig?.type) === "Till" ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-2 pt-1`}>
                         <div className="p-2 rounded bg-slate-50 border">
                           <span className="text-[10px] text-slate-500 block">
                             {(gatewaySession.gateway?.paybillInstructions?.mpesaType || activePaybillConfig?.type) === "Till"
@@ -259,12 +259,14 @@ export default function TenantPortalPage() {
                             {gatewaySession.gateway?.paybillInstructions?.businessNumber || activePaybillConfig?.businessNumber}
                           </strong>
                         </div>
-                        <div className="p-2 rounded bg-slate-50 border">
-                          <span className="text-[10px] text-slate-500 block">Account Number</span>
-                          <strong className="font-mono text-sm text-[#0b1065]">
-                            {gatewaySession.gateway?.paybillInstructions?.accountReference || activePaybillConfig?.recommendedAccount || activePaybillConfig?.defaultAccount || "Unit #"}
-                          </strong>
-                        </div>
+                        {(gatewaySession.gateway?.paybillInstructions?.mpesaType || activePaybillConfig?.type) !== "Till" && (
+                          <div className="p-2 rounded bg-slate-50 border">
+                            <span className="text-[10px] text-slate-500 block">Account Number</span>
+                            <strong className="font-mono text-sm text-[#0b1065]">
+                              {gatewaySession.gateway?.paybillInstructions?.accountReference || activePaybillConfig?.recommendedAccount || activePaybillConfig?.defaultAccount || "Unit #"}
+                            </strong>
+                          </div>
+                        )}
                         <div className="p-2 rounded bg-slate-50 border">
                           <span className="text-[10px] text-slate-500 block">Amount (KES)</span>
                           <strong className="font-mono text-sm text-emerald-700">
@@ -402,9 +404,11 @@ export default function TenantPortalPage() {
                         <p className="font-bold text-emerald-900 dark:text-emerald-200">
                           Configured M-Pesa {activePaybillConfig.type}: <span className="font-mono">{activePaybillConfig.businessNumber}</span>
                         </p>
-                        <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                          Default Account #: <strong className="font-mono">{activePaybillConfig.recommendedAccount || activePaybillConfig.defaultAccount || "Unit Number"}</strong>
-                        </p>
+                        {activePaybillConfig.type !== "Till" && (
+                          <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                            Account Number: <strong className="font-mono">{activePaybillConfig.recommendedAccount || activePaybillConfig.defaultAccount || "Unit Number"}</strong>
+                          </p>
+                        )}
                       </div>
                       <Badge className="bg-emerald-600 text-white text-[10px]">Direct Paybill Active</Badge>
                     </div>

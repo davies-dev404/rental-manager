@@ -559,7 +559,7 @@ function MpesaTransactionsTab() {
             </Badge>
             {configuredPaybill && (
               <Badge className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 text-[10px] font-semibold">
-                {configuredMpesaType} #{configuredPaybill}{configuredDefaultAcct ? ` · A/C ${configuredDefaultAcct}` : ""}
+                {configuredMpesaType} #{configuredPaybill}{configuredMpesaType !== "Till" && configuredDefaultAcct ? ` · A/C ${configuredDefaultAcct}` : ""}
               </Badge>
             )}
           </div>
@@ -1592,29 +1592,33 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl pt-1">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-1.5">
-                      <Label className="text-xs text-slate-700 dark:text-slate-300">Paybill Number</Label>
+                      <Label className="text-xs text-slate-700 dark:text-slate-300">
+                        {generalSettings.mpesaType === "Till" ? "Till Number" : "Paybill Number"}
+                      </Label>
                       <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
                     </div>
                     <Input
-                      placeholder="e.g. 247247"
+                      placeholder={generalSettings.mpesaType === "Till" ? "e.g. 123456" : "e.g. 516600"}
                       value={generalSettings.paybillNumber}
                       onChange={(e) => setGeneralSettings({ ...generalSettings, paybillNumber: e.target.value })}
                       className="h-9 text-xs"
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs text-slate-700 dark:text-slate-300">Paybill Default Account #</Label>
-                      <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
+                  {generalSettings.mpesaType !== "Till" && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs text-slate-700 dark:text-slate-300">Account Number</Label>
+                        <Info className="w-3.5 h-3.5 text-slate-400 cursor-pointer" />
+                      </div>
+                      <Input
+                        placeholder="e.g. 385410"
+                        value={generalSettings.paybillAccount}
+                        onChange={(e) => setGeneralSettings({ ...generalSettings, paybillAccount: e.target.value })}
+                        className="h-9 text-xs"
+                      />
                     </div>
-                    <Input
-                      placeholder="e.g. Unit Number"
-                      value={generalSettings.paybillAccount}
-                      onChange={(e) => setGeneralSettings({ ...generalSettings, paybillAccount: e.target.value })}
-                      className="h-9 text-xs"
-                    />
-                  </div>
+                  )}
                 </div>
               </div>
 

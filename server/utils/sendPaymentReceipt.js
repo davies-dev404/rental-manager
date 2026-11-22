@@ -36,7 +36,7 @@ const sendPaymentReceipt = async (paymentId) => {
     try {
         console.log(`🧾 Dispatching payment receipts for: ${paymentId}`);
         const payment = await Payment.findOne({ _id: paymentId })
-            .populate('tenantId', 'name email phone')
+            .populate('tenantId', 'name email phone accountNumber')
             .populate('unitId', 'unitNumber propertyId')
             .populate('invoiceId', 'invoiceNumber');
 

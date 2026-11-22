@@ -200,18 +200,21 @@ async function runTests() {
       const text = extractPdfText(buf);
       assert.ok(text.includes('TENANT DETAILS') && text.includes('PAYMENT SUMMARY'), `Unified rent layout missing on ${url}`);
       assert.ok(text.includes('INVOICE PAYMENT RECEIPT') && text.includes('RNT-2026-0099'), `Invoice label missing on ${url}`);
+      assert.ok(text.includes('Paybill Number:') && text.includes('516600'), `Paybill Number missing on receipt ${url}`);
+      assert.ok(text.includes('Account Number:') && text.includes('385410'), `Account Number 385410 missing on receipt ${url}`);
     }
-    console.log('✅ PASS 2: Both /payments/:id/pdf and /v2/payments/receipts/:id/pdf render unified Rent layout + Invoice reference');
+    console.log('✅ PASS 2: Both /payments/:id/pdf and /v2/payments/receipts/:id/pdf render SHA Rent layout + Invoice + Account # 385410');
 
-    // TEST 3: Both /v2/payments/invoices/:id/pdf and /payments/invoice-pdf include Registered Landlord Payment Details
+    // TEST 3: Both /v2/payments/invoices/:id/pdf and /payments/invoice-pdf use SHA MakaziFlow layout + Paybill & Account # 385410
     const v2InvRes = await fetch(`${baseUrl}/api/v2/payments/invoices/${invoice._id}/pdf`, {
       headers: { Authorization: `Bearer ${tok}` }
     });
     assert.strictEqual(v2InvRes.status, 200);
     const v2InvText = extractPdfText(Buffer.from(await v2InvRes.arrayBuffer()));
+    assert.ok(v2InvText.includes('BILL TO') && v2InvText.includes('INVOICE DETAILS') && v2InvText.includes('INVOICE SUMMARY'), 'SHA 3-col layout missing on v2 Invoice PDF');
     assert.ok(v2InvText.includes('PAYMENT DETAILS'), 'Invoice PDF must include Payment Details section');
-    assert.ok(v2InvText.includes('516600'), 'Invoice PDF must include Landlord Paybill 516600');
-    assert.ok(v2InvText.includes('385410') || v2InvText.includes('2A'), 'Invoice PDF must include Account/Unit reference');
+    assert.ok(v2InvText.includes('Paybill Number:') && v2InvText.includes('516600'), 'Invoice PDF must include Paybill Number 516600');
+    assert.ok(v2InvText.includes('Account Number:') && v2InvText.includes('385410'), 'Invoice PDF must include Account Number 385410');
 
     const adHocInvRes = await fetch(`${baseUrl}/api/payments/invoice-pdf`, {
       method: 'POST',
@@ -226,8 +229,24 @@ async function runTests() {
     });
     assert.strictEqual(adHocInvRes.status, 200);
     const adHocText = extractPdfText(Buffer.from(await adHocInvRes.arrayBuffer()));
-    assert.ok(adHocText.includes('516600') && adHocText.includes('0712345678'), 'Ad-hoc Invoice PDF must include Paybill 516600 & Landlord Phone');
-    console.log('✅ PASS 3: Both Rental Invoice PDF endpoints display Landlord registered Paybill & payment details');
+    assert.ok(adHocText.includes('516600') && adHocText.includes('385410') && adHocText.includes('0712345678'), 'Ad-hoc Invoice PDF must include Paybill, Account 385410 & Landlord Phone');
+
+    // Switch Landlord M-Pesa config to Till -> Till Number MUST show, Account Number MUST NOT show on Invoice & Receipt
+    await Settings.updateOne({ user: landlord._id }, { $set: { mpesaType: 'Till', integrations: { mpesa: { shortcode: '778899' } } } });
+    const tillInvRes = await fetch(`${baseUrl}/api/v2/payments/invoices/${invoice._id}/pdf`, {
+      headers: { Authorization: `Bearer ${tok}` }
+    });
+    const tillInvText = extractPdfText(Buffer.from(await tillInvRes.arrayBuffer()));
+    assert.ok(tillInvText.includes('Till Number:') && tillInvText.includes('778899'), 'Till Invoice must show Till Number 778899');
+    assert.ok(!tillInvText.includes('Account Number:'), 'Till Invoice MUST NOT show Account Number');
+
+    const tillRctRes = await fetch(`${baseUrl}/api/payments/${payment._id}/pdf`, {
+      headers: { Authorization: `Bearer ${tok}` }
+    });
+    const tillRctText = extractPdfText(Buffer.from(await tillRctRes.arrayBuffer()));
+    assert.ok(tillRctText.includes('Till Number:') && tillRctText.includes('778899'), 'Till Receipt must show Till Number 778899');
+    assert.ok(!tillRctText.includes('Account Number:'), 'Till Receipt MUST NOT show Account Number');
+    console.log('✅ PASS 3: Invoices & Receipts render SHA MakaziFlow layout, Paybill+Account # (385410), and Till omits Account #');
 
     console.log('\n🎉 ALL 3 UNIFIED RECEIPT & INVOICE PAYMENT DETAILS TESTS PASSED!');
   } finally {
