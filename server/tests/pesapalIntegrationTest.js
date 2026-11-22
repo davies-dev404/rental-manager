@@ -516,6 +516,14 @@ async function runTests() {
     });
     assert.strictEqual(lookupOtherLandlord.status, 200);
     assert.strictEqual(lookupOtherLandlord.data.found, false, 'Lookup MUST NOT leak another landlord transaction');
+
+    const lookupTenantRentOnly = await apiReq('/api/v2/payments/lookup', {
+      method: 'POST',
+      token: tokA,
+      body: { query: 'PPMPESA001', tenantMpesaRentOnly: true }
+    });
+    assert.strictEqual(lookupTenantRentOnly.status, 200);
+    assert.strictEqual(lookupTenantRentOnly.data.found, false, 'tenantMpesaRentOnly MUST exclude SaaS subscriptions');
     console.log('✅ PASS 6: Production switching via PESAPAL_ENV alone, strict sandbox-to-prod isolation, and landlord CSV/PDF/lookup');
 
     console.log('\n🎉 ALL 6 PESAPAL API 3.0 INTEGRATION, SWITCHING & SECURITY TEST GROUPS PASSED!');

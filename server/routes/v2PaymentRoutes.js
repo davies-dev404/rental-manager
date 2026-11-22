@@ -320,6 +320,7 @@ router.post('/tenant/initiate', protect, paymentCheckoutLimiter, async (req, res
 router.post('/lookup', protect, async (req, res) => {
   try {
     const cleanQuery = String(req.body?.query || '').trim();
+    const tenantMpesaRentOnly = Boolean(req.body?.tenantMpesaRentOnly);
     if (!cleanQuery) {
       return res.status(400).json({ success: false, message: 'Transaction code or reference is required.' });
     }
@@ -339,11 +340,27 @@ router.post('/lookup', protect, async (req, res) => {
       orClauses.push({ _id: cleanQuery });
     }
 
-    const scopeFilter = isSuper
+    const baseScope = isSuper
       ? { $or: orClauses }
       : (req.user.role === 'tenant' && req.user.tenantId
         ? { tenantId: req.user.tenantId, $or: orClauses }
         : { landlordId: req.user._id || req.user.id, $or: orClauses });
+
+    const scopeFilter = tenantMpesaRentOnly
+      ? {
+          $and: [
+            baseScope,
+            { tenantId: { $ne: null } },
+            { paymentCategory: { $in: ['rent', 'combined'] } },
+            {
+              $or: [
+                { paymentChannel: { $in: ['mpesa_stk', 'mpesa_paybill'] } },
+                { paymentMethodDetail: /m-?pesa/i }
+              ]
+            }
+          ]
+        }
+      : baseScope;
 
     let txn = await PaymentTransaction.findOne(scopeFilter)
       .populate('tenantId', 'name email phone')
@@ -385,9 +402,20 @@ router.post('/lookup', protect, async (req, res) => {
     // Fallback: search tenant collection Payment records owned by this user
     const paymentClauses = [{ reference: cleanQuery }];
     if (isValidObjectId(cleanQuery)) paymentClauses.push({ _id: cleanQuery });
-    const paymentFilter = isSuper
+    const basePayFilter = isSuper
       ? { $or: paymentClauses }
       : { user: req.user._id || req.user.id, $or: paymentClauses };
+
+    const paymentFilter = tenantMpesaRentOnly
+      ? {
+          $and: [
+            basePayFilter,
+            { tenantId: { $ne: null } },
+            { method: /m-?pesa|daraja|stk|paybill/i },
+            { $or: [{ category: { $in: ['rent', 'combined'] } }, { rentAmount: { $gt: 0 } }, { type: /^rent$/i }] }
+          ]
+        }
+      : basePayFilter;
 
     const pay = await Payment.findOne(paymentFilter).populate('tenantId', 'name').lean();
     if (pay) {

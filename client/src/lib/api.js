@@ -886,12 +886,12 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to load transactions");
   },
-  lookupGatewayTransaction: async (query) => {
+  lookupGatewayTransaction: async (query, opts = {}) => {
     const response = await smartFetch(`${API_URL}/v2/payments/lookup`, {
       method: "POST",
       headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query, ...opts })
     });
     return await parseApiResponse(response, "Failed to verify transaction status");
   },

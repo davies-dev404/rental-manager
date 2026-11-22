@@ -314,18 +314,31 @@ function MpesaTransactionsTab() {
   const payments = paymentsQuery.data || [];
   const gatewayTxns = gatewayTxnsQuery.data || [];
 
-  // Merge Pesapal/gateway transactions and legacy/manual payment records cleanly without duplicates
+  // Only capture rent payments paid via M-Pesa by tenants (exclude subscriptions, cash, card, bank, other)
   const displayTransactions = React.useMemo(() => {
+    const isMpesaText = (val = "") => /m-?pesa|daraja|stk|paybill/i.test(String(val));
+
     const normalizedGateway = gatewayTxns
-      .filter((t) => !(t.status === "failed" && !t.trackingId && !t.checkoutId && !t.providerReference))
+      .filter((t) => {
+        if (!t.tenantId) return false;
+        const isRent =
+          t.paymentCategory === "rent" ||
+          (t.paymentCategory === "combined" && Number(t.chargeBreakdown?.rent || 0) > 0);
+        if (!isRent) return false;
+        const isMpesa =
+          ["mpesa_stk", "mpesa_paybill"].includes(t.paymentChannel) ||
+          isMpesaText(t.paymentMethodDetail);
+        if (!isMpesa) return false;
+        return !(t.status === "failed" && !t.trackingId && !t.checkoutId && !t.providerReference);
+      })
       .map((t) => ({
         _id: t._id,
         isGatewayTxn: true,
         date: t.paidAt || t.createdAt,
         reference: t.providerReference || t.accountReference || t.trackingId || "—",
         subReference: t.providerReference && t.accountReference ? t.accountReference : (t.trackingId || ""),
-        tenantId: t.tenantId?.name || t.customerName || "Subscriber",
-        method: t.paymentMethodDetail || (t.provider === "pesapal" ? `Pesapal (${t.paymentChannel || "Checkout"})` : t.paymentChannel || t.provider || "Pesapal"),
+        tenantId: t.tenantId?.name || t.customerName || "Tenant",
+        method: t.paymentMethodDetail || "M-Pesa (Pesapal)",
         amount: t.amountPaid || t.amount || 0,
         status: t.status || "pending",
         provider: t.provider || "pesapal",
@@ -337,6 +350,15 @@ function MpesaTransactionsTab() {
     const merged = [...normalizedGateway];
 
     payments.forEach((p) => {
+      if (!p.tenantId) return;
+      if (!isMpesaText(p.method)) return;
+      const isRentPayment =
+        !p.category ||
+        ["rent", "combined"].includes(String(p.category).toLowerCase()) ||
+        Number(p.rentAmount || 0) > 0 ||
+        /^rent$/i.test(String(p.type || ""));
+      if (!isRentPayment) return;
+
       const refKey = String(p.reference || p._id || "").toLowerCase();
       if (!seenRefs.has(refKey)) {
         merged.push({
@@ -347,7 +369,7 @@ function MpesaTransactionsTab() {
           subReference: "",
           tenantId: p.tenantId || "Tenant",
           method: p.method || "M-Pesa",
-          amount: p.amount || 0,
+          amount: p.rentAmount > 0 ? p.rentAmount : (p.amount || 0),
           status: p.status || "Completed",
           phoneNumber: p.phoneNumber || ""
         });
@@ -400,7 +422,7 @@ function MpesaTransactionsTab() {
 
     setIsQuerying(true);
     try {
-      const res = await api.lookupGatewayTransaction(queryCode.trim());
+      const res = await api.lookupGatewayTransaction(queryCode.trim(), { tenantMpesaRentOnly: true });
       if (res?.found) {
         setQueryResult({
           success: true,
@@ -472,7 +494,7 @@ function MpesaTransactionsTab() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Live M-Pesa, Visa, and Mastercard payment callbacks, instant transaction verification, and Pesapal IPN logs.
+            Tenant rent payments paid via M-Pesa through Pesapal, live IPN callbacks, and instant verification.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -669,9 +691,9 @@ function MpesaTransactionsTab() {
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400">
                     <Smartphone className="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
-                    <p className="font-medium text-slate-600 dark:text-slate-300">No Pesapal / M-Pesa transactions found</p>
+                    <p className="font-medium text-slate-600 dark:text-slate-300">No tenant M-Pesa rent transactions found</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Incoming Pesapal IPN callbacks and M-Pesa / card collections will be logged automatically.
+                      Rent payments initiated by tenants via M-Pesa (Pesapal) will appear here automatically.
                     </p>
                   </td>
                 </tr>
