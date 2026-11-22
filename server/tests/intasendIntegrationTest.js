@@ -104,7 +104,7 @@ async function runTests() {
         status: 200,
         data: {
           id: cid,
-          url: `${u.includes('sandbox.') ? 'https://sandbox.intasend.com' : 'https://payment.intasend.com'}/checkout/${cid}/`,
+          url: `${String(data?.public_key || '').includes('_test_') ? 'https://sandbox.intasend.com' : 'https://payment.intasend.com'}/checkout/${cid}/`,
           signature: `sig_${cid}`
         }
       };
@@ -187,7 +187,7 @@ async function runTests() {
     // TEST 1: Config validation & Environment URL selection (Sandbox vs Production switching)
     const sbCfg = getIntaSendConfig({ requireConfigured: true });
     assert.strictEqual(sbCfg.environment, 'sandbox');
-    assert.strictEqual(sbCfg.baseUrl, 'https://sandbox.intasend.com/api/v1');
+    assert.strictEqual(sbCfg.baseUrl, 'https://api.intasend.com/api/v1');
     assert.strictEqual(sbCfg.isSandbox, true);
 
     process.env.INTASEND_ENV = 'invalid_env';
@@ -219,7 +219,7 @@ async function runTests() {
     assert.strictEqual(subMpesa.data.transaction.gatewayEnvironment, 'sandbox');
     assert.strictEqual(subMpesa.data.transaction.isSandbox, true);
     assert.strictEqual(subMpesa.data.subscription.status, 'pending_payment');
-    assert.ok(lastIntaSendEndpointCalled.startsWith('https://sandbox.intasend.com/api/v1/payment/mpesa-stk-push/'));
+    assert.ok(lastIntaSendEndpointCalled.startsWith('https://api.intasend.com/api/v1/payment/mpesa-stk-push/'));
 
     // Redirect callback while IntaSend still reports PENDING MUST NOT activate
     const cbPending = await apiReq('/api/v2/payments/callback/intasend', {
@@ -413,7 +413,7 @@ async function runTests() {
     // Switch dynamically to PRODUCTION via env var ONLY (no code change, no rebuild!)
     process.env.INTASEND_ENV = 'production';
     const prodCfg = getIntaSendConfig({ requireConfigured: true });
-    assert.strictEqual(prodCfg.baseUrl, 'https://payment.intasend.com/api/v1');
+    assert.strictEqual(prodCfg.baseUrl, 'https://api.intasend.com/api/v1');
 
     // Verify sandbox transaction CANNOT activate a production subscription when INTASEND_ENV=production!
     const sandboxTxn = await PaymentTransaction.findById(subMpesa.data.transaction._id);
@@ -457,7 +457,7 @@ async function runTests() {
     assert.strictEqual(prodSubRes.status, 201);
     assert.strictEqual(prodSubRes.data.transaction.gatewayEnvironment, 'production');
     assert.strictEqual(prodSubRes.data.transaction.isSandbox, false);
-    assert.ok(lastIntaSendEndpointCalled.startsWith('https://payment.intasend.com/api/v1/checkout/'));
+    assert.ok(lastIntaSendEndpointCalled.startsWith('https://api.intasend.com/api/v1/checkout/'));
 
     const prodMockRec = mockGatewayState.get(prodSubRes.data.transaction.checkoutId);
     mockGatewayState.set(prodSubRes.data.transaction.checkoutId, {

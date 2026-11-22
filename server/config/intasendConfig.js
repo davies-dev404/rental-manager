@@ -1,15 +1,23 @@
 /**
  * Centralized IntaSend Payment Gateway Configuration & Environment Validation
- * Strictly separates Sandbox (`sandbox.intasend.com`) and Production (`payment.intasend.com`).
+ * Uses IntaSend's unified v1 API base URL (`https://api.intasend.com/api/v1`),
+ * where environment routing is determined strictly by `_test_` vs `_live_` keys.
  * NEVER falls back between sandbox and production environments or exposes secrets to clients.
  */
 
 const VALID_ENVS = new Set(['sandbox', 'production']);
 
+const DEFAULT_INTASEND_BASE_URL = 'https://api.intasend.com/api/v1';
+
 const INTASEND_ENDPOINTS = {
-  sandbox: 'https://sandbox.intasend.com/api/v1',
-  production: 'https://payment.intasend.com/api/v1'
+  sandbox: DEFAULT_INTASEND_BASE_URL,
+  production: DEFAULT_INTASEND_BASE_URL
 };
+
+function resolveBaseUrl(environment) {
+  const custom = (process.env.INTASEND_BASE_URL || '').trim().replace(/\/+$/, '');
+  return custom || INTASEND_ENDPOINTS[environment] || DEFAULT_INTASEND_BASE_URL;
+}
 
 function resolveEnvironment() {
   const raw = (process.env.INTASEND_ENV || 'sandbox').trim().toLowerCase();
@@ -26,7 +34,7 @@ function resolveEnvironment() {
 function getIntaSendConfig({ requireConfigured = false } = {}) {
   const environment = resolveEnvironment();
   const isSandbox = environment === 'sandbox';
-  const baseUrl = INTASEND_ENDPOINTS[environment];
+  const baseUrl = resolveBaseUrl(environment);
 
   const publishableKey = isSandbox
     ? (process.env.INTASEND_SANDBOX_PUBLISHABLE_KEY || '').trim()
@@ -139,8 +147,10 @@ function validateIntaSendConfig({ strictStartup = false } = {}) {
 
 module.exports = {
   VALID_ENVS,
+  DEFAULT_INTASEND_BASE_URL,
   INTASEND_ENDPOINTS,
   resolveEnvironment,
+  resolveBaseUrl,
   getIntaSendConfig,
   validateIntaSendConfig
 };

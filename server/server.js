@@ -105,6 +105,7 @@ app.use(
           "https://payments.ecitizen.go.ke",
           "https://*.pesaflow.com",
           "https://*.intasend.com",
+          "https://api.intasend.com",
           "https://sandbox.intasend.com",
           "https://payment.intasend.com",
           "https://etims-api-sbx.kra.go.ke",

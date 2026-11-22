@@ -4,10 +4,9 @@ const PaymentAdapter = require('./PaymentAdapter');
 const { getIntaSendConfig } = require('../../config/intasendConfig');
 
 /**
- * IntaSend API v1/3.0 Payment Adapter (Sandbox + Production)
- * Official Endpoints:
- * - Sandbox base:    https://sandbox.intasend.com/api/v1
- * - Production base: https://payment.intasend.com/api/v1
+ * IntaSend API v1 Payment Adapter (Sandbox + Production)
+ * Official Unified Endpoint: https://api.intasend.com/api/v1
+ * (Sandbox vs Production is determined by `_test_` vs `_live_` keys and enforced by INTASEND_ENV)
  * - Checkout:        POST /checkout/
  * - M-Pesa STK Push: POST /payment/mpesa-stk-push/
  * - Payment Status:  POST /payment/status/
@@ -64,18 +63,15 @@ class IntaSendAdapter extends PaymentAdapter {
   }
 
   buildGatewayHeaders(authMode, cfg) {
+    // Use clean official API headers — avoid spoofed browser User-Agents that mismatch Node's TLS fingerprint on Cloudflare
     const baseHeaders = {
       'Content-Type': 'application/json',
-      Accept: 'application/json, text/plain, */*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      Accept: 'application/json'
     };
     if (authMode === 'checkout') {
       return {
         ...baseHeaders,
-        'X-IntaSend-Public-API-Key': cfg.publishableKey,
-        Origin: cfg.frontendUrl,
-        Referer: `${cfg.frontendUrl}/`
+        'X-IntaSend-Public-API-Key': cfg.publishableKey
       };
     }
     return {
@@ -98,17 +94,17 @@ class IntaSendAdapter extends PaymentAdapter {
     if (typeof data === 'string' && data.trim()) {
       const cfTitle = data.match(/<title>([^<]+)<\/title>/i)?.[1];
       if (/cloudflare|attention required|just a moment/i.test(data)) {
-        return `Upstream firewall blocked server IP (${status || 403}${cfTitle ? `: ${cfTitle.trim()}` : ''}). Try Card/Checkout or whitelist Render server IP.`;
+        return `Cloudflare blocked server request (${status || 403}${cfTitle ? `: ${cfTitle.trim()}` : ''}). Check Render egress IP / IntaSend portal access.`;
       }
       return data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
     }
     if (status === 403) {
-      return 'Gateway returned 403 Forbidden. Verify Render env keys match INTASEND_ENV and check server IP permissions.';
+      return 'Gateway returned 403 Forbidden. Check IntaSend API keys and Render server access.';
     }
     return apiErr?.message || 'Gateway request failed';
   }
 
-  async postViaFetchFallback(url, payload, headers, timeoutMs = 20000) {
+  async postViaFetchFallback(url, payload, headers, timeoutMs = 30000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -136,7 +132,7 @@ class IntaSendAdapter extends PaymentAdapter {
     }
   }
 
-  async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 20000 }) {
+  async postGateway(path, payload, { authMode = 'secret', cfg, timeout = 30000 }) {
     const headers = this.buildGatewayHeaders(authMode, cfg);
     const primaryUrl = `${cfg.baseUrl}${path}`;
     try {
@@ -144,23 +140,21 @@ class IntaSendAdapter extends PaymentAdapter {
     } catch (primaryErr) {
       const status = primaryErr?.response?.status;
       const cfRay = primaryErr?.response?.headers?.['cf-ray'] || '';
+      const cfMitigated = primaryErr?.response?.headers?.['cf-mitigated'] || '';
       const serverHdr = primaryErr?.response?.headers?.server || '';
       console.warn(
-        `[IntaSend Gateway Warning] url=${primaryUrl} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay}`
+        `[IntaSend Gateway Warning] url=${primaryUrl} status=${status || 'ERR'} server=${serverHdr} cfRay=${cfRay} cfMitigated=${cfMitigated}`
       );
 
-      // If primary host hits 403 WAF/edge challenge, retry via api.intasend.com + native fetch TLS stack with exact same env keys
+      // On 403 edge/TLS anomaly, retry the same unified URL once via Node native fetch (undici)
       if (status === 403) {
-        const retryUrl = !cfg.baseUrl.includes('api.intasend.com')
-          ? `https://api.intasend.com/api/v1${path}`
-          : primaryUrl;
         try {
-          return await this.postViaFetchFallback(retryUrl, payload, headers, timeout);
+          return await this.postViaFetchFallback(primaryUrl, payload, headers, timeout);
         } catch (retryErr) {
           const rStatus = retryErr?.response?.status;
           const rRay = retryErr?.response?.headers?.['cf-ray'] || '';
           console.warn(
-            `[IntaSend Retry Warning] url=${retryUrl} status=${rStatus || 'ERR'} cfRay=${rRay}`
+            `[IntaSend Fetch Retry Warning] url=${primaryUrl} status=${rStatus || 'ERR'} cfRay=${rRay}`
           );
           throw retryErr;
         }
@@ -228,7 +222,7 @@ class IntaSendAdapter extends PaymentAdapter {
         const response = await this.postGateway('/payment/mpesa-stk-push/', stkPayload, {
           authMode: 'secret',
           cfg,
-          timeout: 20000
+          timeout: 30000
         });
 
         const data = response.data || {};
@@ -288,7 +282,7 @@ class IntaSendAdapter extends PaymentAdapter {
         response = await this.postGateway('/checkout/', checkoutPayload, {
           authMode: 'checkout',
           cfg,
-          timeout: 20000
+          timeout: 30000
         });
       } catch (firstErr) {
         // If merchant account does not support restricting by `method`, retry with all enabled checkout methods
@@ -296,7 +290,7 @@ class IntaSendAdapter extends PaymentAdapter {
           response = await this.postGateway('/checkout/', baseCheckoutPayload, {
             authMode: 'checkout',
             cfg,
-            timeout: 20000
+            timeout: 30000
           });
         } else {
           throw firstErr;
