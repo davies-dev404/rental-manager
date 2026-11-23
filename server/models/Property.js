@@ -7,7 +7,20 @@ const propertySchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   caretakerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Optional
   image: { type: String },
+  status: {
+    type: String,
+    enum: ['active', 'flagged', 'inactive', 'suspended'],
+    default: 'active',
+    index: true
+  },
+  isFlagged: { type: Boolean, default: false, index: true },
+  flagReason: { type: String, default: '' },
+  flaggedAt: { type: Date },
+  flaggedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
+
+propertySchema.index({ user: 1, createdAt: -1 });
+propertySchema.index({ location: 1, type: 1 });
 
 module.exports = mongoose.model('Property', propertySchema);

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -43,7 +43,36 @@ import UnitsPage from "@/pages/properties/UnitsPage";
 import StatementsPage from "@/pages/reports/StatementsPage";
 import InsightsPage from "@/pages/reports/InsightsPage";
 import BillingDashboardPage from "@/pages/billing";
-import SuperAdminDashboardPage from "@/pages/super-admin";
+const AdminLayout = lazy(() => import("@/admin/layouts/AdminLayout"));
+const AdminDashboard = lazy(() => import("@/admin/pages/AdminDashboard"));
+const AdminUsers = lazy(() => import("@/admin/pages/AdminUsers"));
+const AdminProperties = lazy(() => import("@/admin/pages/AdminProperties"));
+const AdminTenants = lazy(() => import("@/admin/pages/AdminTenants"));
+const AdminPayments = lazy(() => import("@/admin/pages/AdminPayments"));
+const AdminSubscriptions = lazy(() => import("@/admin/pages/AdminSubscriptions"));
+const AdminReports = lazy(() => import("@/admin/pages/AdminReports"));
+const AdminSupport = lazy(() => import("@/admin/pages/AdminSupport"));
+const AdminSettings = lazy(() => import("@/admin/pages/AdminSettings"));
+const AdminActivityLogs = lazy(() => import("@/admin/pages/AdminActivityLogs"));
+
+function AdminRoute({ component: Component }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#f4f6fa] dark:bg-slate-950 text-slate-600 gap-3">
+          <Loader2 className="w-7 h-7 animate-spin text-[#00a99d]" />
+          <p className="text-sm font-medium">Loading Super Admin module...</p>
+        </div>
+      }
+    >
+      <AdminLayout>
+        <ErrorBoundary>
+          <Component />
+        </ErrorBoundary>
+      </AdminLayout>
+    </Suspense>
+  );
+}
 
 function PrivateRoute({ component: Component, ...rest }) {
     const { user, isLoading } = useAuth();
@@ -180,8 +209,38 @@ function Router() {
       <Route path="/billing">
         {() => <PrivateRoute component={BillingDashboardPage}/>}
       </Route>
+      <Route path="/admin">
+        {() => <AdminRoute component={AdminDashboard}/>}
+      </Route>
+      <Route path="/admin/users">
+        {() => <AdminRoute component={AdminUsers}/>}
+      </Route>
+      <Route path="/admin/properties">
+        {() => <AdminRoute component={AdminProperties}/>}
+      </Route>
+      <Route path="/admin/tenants">
+        {() => <AdminRoute component={AdminTenants}/>}
+      </Route>
+      <Route path="/admin/payments">
+        {() => <AdminRoute component={AdminPayments}/>}
+      </Route>
+      <Route path="/admin/subscriptions">
+        {() => <AdminRoute component={AdminSubscriptions}/>}
+      </Route>
+      <Route path="/admin/reports">
+        {() => <AdminRoute component={AdminReports}/>}
+      </Route>
+      <Route path="/admin/support">
+        {() => <AdminRoute component={AdminSupport}/>}
+      </Route>
+      <Route path="/admin/settings">
+        {() => <AdminRoute component={AdminSettings}/>}
+      </Route>
+      <Route path="/admin/activity">
+        {() => <AdminRoute component={AdminActivityLogs}/>}
+      </Route>
       <Route path="/super-admin">
-        {() => <PrivateRoute component={SuperAdminDashboardPage}/>}
+        {() => <AdminRoute component={AdminDashboard}/>}
       </Route>
 
       <Route component={NotFound}/>

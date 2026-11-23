@@ -213,7 +213,7 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
             id: "super_admin",
             icon: ShieldCheck,
             label: "Super Admin",
-            href: "/super-admin"
+            href: "/admin"
           }
         ]
       : []),

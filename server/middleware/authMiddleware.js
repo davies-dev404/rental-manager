@@ -27,6 +27,22 @@ const protect = async (req, res, next) => {
         return res.status(401).json({ message: 'User belonging to this token no longer exists' });
       }
 
+      if (user.accountStatus === 'suspended') {
+        return res.status(403).json({
+          code: 'ACCOUNT_SUSPENDED',
+          message: user.suspendedReason
+            ? `Your account has been suspended: ${user.suspendedReason}`
+            : 'Your account has been suspended by a platform administrator.'
+        });
+      }
+
+      if (user.accountStatus === 'deactivated') {
+        return res.status(403).json({
+          code: 'ACCOUNT_DEACTIVATED',
+          message: 'Your account has been deactivated. Please contact platform support.'
+        });
+      }
+
       // Enforce session invalidation after password reset / change / forced logout
       if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.tokenVersion || 0)) {
         return res.status(401).json({ message: 'Session has been revoked. Please sign in again.' });

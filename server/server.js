@@ -306,6 +306,9 @@ const unitRoutes = require('./routes/unitRoutes');
 const userRoutes = require('./routes/userRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const { requireActiveSubscription } = require('./middleware/subscriptionLockMiddleware');
+const { enforceMaintenanceMode } = require('./middleware/adminMiddleware');
+
+app.use(enforceMaintenanceMode);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/properties', requireActiveSubscription, propertyRoutes);
@@ -323,7 +326,9 @@ app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
 app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/super-admin', require('./routes/superAdminRoutes'));
+app.use('/api/support', require('./routes/supportRoutes'));
 app.use('/api/public', require('./routes/publicRoutes'));
 
 app.use('/assets', express.static(path.join(__dirname, 'assets')));

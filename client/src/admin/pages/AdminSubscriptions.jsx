@@ -1,0 +1,452 @@
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { adminService } from "../services/adminService";
+import DataTable from "../components/DataTable";
+import StatCard from "../components/StatCard";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter
+} from "@/components/ui/dialog";
+import { Layers, Award, AlertCircle, XCircle, CreditCard, Plus, Pencil, RefreshCw } from "lucide-react";
+
+const emptyPlanForm = {
+  code: "",
+  name: "",
+  maxUnits: 10,
+  isCustomUnlimited: false,
+  monthly: 0,
+  quarterly: 0,
+  semi_annual: 0,
+  annual: 0,
+  trialDays: 14,
+  gracePeriodDays: 7,
+  discountPercent: 0,
+  featuresText: "",
+  isActive: true
+};
+
+export default function AdminSubscriptions() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [planFilter, setPlanFilter] = useState("all");
+  const [page, setPage] = useState(1);
+
+  const [planDialog, setPlanDialog] = useState(null); // { mode: 'create'|'edit', id?, form }
+  const [overrideTarget, setOverrideTarget] = useState(null);
+  const [overrideForm, setOverrideForm] = useState({ action: "activate", purchasedLimit: 10, expiryDate: "", reason: "" });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-subscriptions", statusFilter, planFilter, page],
+    queryFn: () => adminService.getSubscriptions({ status: statusFilter, planCode: planFilter, page, limit: 15 })
+  });
+
+  const savePlanMutation = useMutation({
+    mutationFn: ({ mode, id, payload }) =>
+      mode === "create" ? adminService.createPlan(payload) : adminService.updatePlan(id, payload),
+    onSuccess: () => {
+      toast({ title: "Subscription Plan Saved" });
+      setPlanDialog(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Save Failed", description: err.message })
+  });
+
+  const overrideMutation = useMutation({
+    mutationFn: ({ landlordId, payload }) => adminService.overrideSubscription(landlordId, payload),
+    onSuccess: () => {
+      toast({ title: "Subscription Updated", description: "Landlord subscription override recorded in Audit Log." });
+      setOverrideTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Override Failed", description: err.message })
+  });
+
+  const sweepMutation = useMutation({
+    mutationFn: adminService.runExpirySweep,
+    onSuccess: (res) => {
+      toast({
+        title: "Expiry Sweep Complete",
+        description: `Warnings: ${res.summary?.warningsSent || 0}, Grace: ${res.summary?.movedToGrace || 0}, Expired: ${res.summary?.expiredCount || 0}`
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+    }
+  });
+
+  const summary = data?.summary || {};
+  const plans = data?.plans || [];
+
+  const handleSavePlan = () => {
+    const f = planDialog.form;
+    const payload = {
+      code: String(f.code || "").trim().toLowerCase(),
+      name: String(f.name || "").trim(),
+      maxUnits: Number(f.maxUnits || 5),
+      isCustomUnlimited: Boolean(f.isCustomUnlimited),
+      pricing: {
+        monthly: Number(f.monthly || 0),
+        quarterly: Number(f.quarterly || 0),
+        semi_annual: Number(f.semi_annual || 0),
+        annual: Number(f.annual || 0)
+      },
+      trialDays: Number(f.trialDays || 14),
+      gracePeriodDays: Number(f.gracePeriodDays || 7),
+      discountPercent: Number(f.discountPercent || 0),
+      features: String(f.featuresText || "").split("\n").map((x) => x.trim()).filter(Boolean),
+      isActive: Boolean(f.isActive)
+    };
+    savePlanMutation.mutate({ mode: planDialog.mode, id: planDialog.id, payload });
+  };
+
+  const columns = [
+    {
+      key: "landlord",
+      label: "Landlord",
+      render: (s) => (
+        <div>
+          <p className="font-bold text-slate-900 dark:text-white">{s.landlordId?.name || "—"}</p>
+          <p className="text-[11px] text-slate-500">{s.landlordId?.email}</p>
+        </div>
+      )
+    },
+    {
+      key: "plan",
+      label: "Plan & Cycle",
+      render: (s) => (
+        <div>
+          <p className="font-semibold">{s.planName}</p>
+          <p className="text-[10.5px] text-slate-500 capitalize">
+            {s.billingCycle} · {s.isCustomUnlimited ? "Unlimited" : `${s.purchasedUnits} units`}
+          </p>
+        </div>
+      )
+    },
+    {
+      key: "price",
+      label: "Amount",
+      render: (s) => <span className="font-bold">{s.currency || "KES"} {Number(s.priceAmount || 0).toLocaleString()}</span>
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (s) => (
+        <Badge
+          variant="outline"
+          className={`text-[10px] uppercase ${
+            ["active", "trial"].includes(s.status)
+              ? "bg-[#00a99d]/15 text-[#00a99d] border-[#00a99d]/30"
+              : s.status === "expired"
+              ? "bg-rose-100 text-rose-700 border-rose-200"
+              : "bg-slate-100 text-slate-700"
+          }`}
+        >
+          {s.status.replace(/_/g, " ")}
+        </Badge>
+      )
+    },
+    {
+      key: "dates",
+      label: "Renewal / Expiry",
+      render: (s) => (
+        <span className="text-slate-500">
+          {s.expiryDate ? new Date(s.expiryDate).toLocaleDateString("en-KE") : "—"}
+        </span>
+      )
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      align: "right",
+      render: (s) =>
+        s.landlordId?._id && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setOverrideTarget(s);
+              setOverrideForm({
+                action: "activate",
+                purchasedLimit: s.entitlement?.purchasedLimit || s.purchasedUnits || 10,
+                expiryDate: s.expiryDate ? new Date(s.expiryDate).toISOString().slice(0, 10) : "",
+                reason: ""
+              });
+            }}
+            className="h-7 px-2.5 text-[11px] cursor-pointer"
+          >
+            Override
+          </Button>
+        )
+    }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Subscription Management</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Configure SaaS tiers, billing intervals, unit allowances, renewals, and subscription revenue.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" disabled={sweepMutation.isPending} onClick={() => sweepMutation.mutate()} className="text-xs cursor-pointer">
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${sweepMutation.isPending ? "animate-spin" : ""}`} />
+            Run Expiry Sweep
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setPlanDialog({ mode: "create", form: { ...emptyPlanForm } })}
+            className="bg-[#00a99d] hover:bg-[#008f85] text-white text-xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" /> New Plan
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard title="Subscription Revenue" value={`KES ${Number(summary.totalSubscriptionRevenue || 0).toLocaleString()}`} icon={CreditCard} accent="teal" />
+        <StatCard title="Active & Trial" value={summary.active || 0} icon={Award} accent="navy" />
+        <StatCard title="Expired" value={summary.expired || 0} icon={AlertCircle} accent="amber" />
+        <StatCard title="Cancelled / Suspended" value={(summary.cancelled || 0) + (summary.suspended || 0)} icon={XCircle} accent="rose" />
+      </div>
+
+      {/* Configurable Plans */}
+      <div>
+        <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-[#00a99d]" /> Configured Subscription Plans ({plans.length})
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {plans.map((p) => (
+            <Card key={p._id} className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                <div>
+                  <CardTitle className="text-sm font-bold">{p.name}</CardTitle>
+                  <p className="text-[10.5px] font-mono text-slate-400">code: {p.code}</p>
+                </div>
+                <Badge variant="outline" className="text-[10px]">
+                  {p.isCustomUnlimited ? "Unlimited Units" : `Max ${p.maxUnits} units`}
+                </Badge>
+              </CardHeader>
+              <CardContent className="space-y-2.5 text-xs">
+                <div className="grid grid-cols-2 gap-1.5 text-[11px] bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg">
+                  <span>Monthly: <strong>KES {Number(p.pricing?.monthly || 0).toLocaleString()}</strong></span>
+                  <span>Quarterly: <strong>KES {Number(p.pricing?.quarterly || 0).toLocaleString()}</strong></span>
+                  <span>Semi-Annual: <strong>KES {Number(p.pricing?.semi_annual || 0).toLocaleString()}</strong></span>
+                  <span>Annual: <strong>KES {Number(p.pricing?.annual || 0).toLocaleString()}</strong></span>
+                </div>
+                {(p.features || []).length > 0 && (
+                  <p className="text-[11px] text-slate-500 line-clamp-2">Features: {p.features.join(" · ")}</p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPlanDialog({
+                      mode: "edit",
+                      id: p._id,
+                      form: {
+                        code: p.code,
+                        name: p.name,
+                        maxUnits: p.maxUnits,
+                        isCustomUnlimited: Boolean(p.isCustomUnlimited),
+                        monthly: p.pricing?.monthly || 0,
+                        quarterly: p.pricing?.quarterly || 0,
+                        semi_annual: p.pricing?.semi_annual || 0,
+                        annual: p.pricing?.annual || 0,
+                        trialDays: p.trialDays || 14,
+                        gracePeriodDays: p.gracePeriodDays || 7,
+                        discountPercent: p.discountPercent || 0,
+                        featuresText: (p.features || []).join("\n"),
+                        isActive: p.isActive !== false
+                      }
+                    })
+                  }
+                  className="w-full h-8 text-xs cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3 mr-1.5" /> Edit Plan
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Subscriptions Table */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2.5 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+          <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2.5 text-xs bg-white dark:bg-slate-800">
+            <option value="all">All Subscription Statuses</option>
+            <option value="active">Active</option>
+            <option value="trial">Trial</option>
+            <option value="grace_period">Grace Period</option>
+            <option value="expired">Expired</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="suspended">Suspended</option>
+          </select>
+          <select value={planFilter} onChange={(e) => { setPlanFilter(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2.5 text-xs bg-white dark:bg-slate-800">
+            <option value="all">All Plans</option>
+            {plans.map((p) => <option key={p._id} value={p.code}>{p.name}</option>)}
+          </select>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={data?.subscriptions || []}
+          isLoading={isLoading}
+          pagination={data?.pagination}
+          onPageChange={setPage}
+          emptyMessage="No landlord subscriptions match your filters."
+        />
+      </div>
+
+      {/* Create/Edit Plan Dialog */}
+      <Dialog open={Boolean(planDialog)} onOpenChange={() => setPlanDialog(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">
+              {planDialog?.mode === "create" ? "Create Subscription Plan" : `Edit Plan: ${planDialog?.form?.name}`}
+            </DialogTitle>
+            <DialogDescription className="text-xs">Configure pricing intervals (KES), unit cap, and included features.</DialogDescription>
+          </DialogHeader>
+          {planDialog && (
+            <div className="grid grid-cols-2 gap-3 text-xs py-2">
+              <div>
+                <Label>Plan Code</Label>
+                <Input
+                  value={planDialog.form.code}
+                  disabled={planDialog.mode === "edit"}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, code: e.target.value } })}
+                  placeholder="e.g. free, basic, pro"
+                />
+              </div>
+              <div>
+                <Label>Plan Name</Label>
+                <Input
+                  value={planDialog.form.name}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, name: e.target.value } })}
+                  placeholder="Professional"
+                />
+              </div>
+              <div>
+                <Label>Max Units</Label>
+                <Input
+                  type="number"
+                  value={planDialog.form.maxUnits}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, maxUnits: Number(e.target.value) } })}
+                />
+              </div>
+              <div>
+                <Label>Monthly (KES)</Label>
+                <Input
+                  type="number"
+                  value={planDialog.form.monthly}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, monthly: Number(e.target.value) } })}
+                />
+              </div>
+              <div>
+                <Label>Quarterly (KES)</Label>
+                <Input
+                  type="number"
+                  value={planDialog.form.quarterly}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, quarterly: Number(e.target.value) } })}
+                />
+              </div>
+              <div>
+                <Label>Semi-Annual (KES)</Label>
+                <Input
+                  type="number"
+                  value={planDialog.form.semi_annual}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, semi_annual: Number(e.target.value) } })}
+                />
+              </div>
+              <div>
+                <Label>Annual (KES)</Label>
+                <Input
+                  type="number"
+                  value={planDialog.form.annual}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, annual: Number(e.target.value) } })}
+                />
+              </div>
+              <div>
+                <Label>Trial / Grace Days</Label>
+                <div className="flex gap-2">
+                  <Input type="number" value={planDialog.form.trialDays} onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, trialDays: Number(e.target.value) } })} />
+                  <Input type="number" value={planDialog.form.gracePeriodDays} onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, gracePeriodDays: Number(e.target.value) } })} />
+                </div>
+              </div>
+              <div className="col-span-2">
+                <Label>Features (one per line)</Label>
+                <Textarea
+                  rows={3}
+                  value={planDialog.form.featuresText}
+                  onChange={(e) => setPlanDialog({ ...planDialog, form: { ...planDialog.form, featuresText: e.target.value } })}
+                  placeholder="Unlimited invoices&#10;M-Pesa Paybill auto-sync&#10;Priority email support"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPlanDialog(null)}>Cancel</Button>
+            <Button onClick={handleSavePlan} disabled={savePlanMutation.isPending} className="bg-[#0d2240] hover:bg-[#132d4a] text-white cursor-pointer">
+              Save Plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Override Landlord Dialog */}
+      <Dialog open={Boolean(overrideTarget)} onOpenChange={() => setOverrideTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">Override Subscription: {overrideTarget?.landlordId?.name}</DialogTitle>
+            <DialogDescription className="text-xs">Changes are logged immutably to AdminLog and SubscriptionAuditLog.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-xs py-2">
+            <div>
+              <Label>Action</Label>
+              <select value={overrideForm.action} onChange={(e) => setOverrideForm({ ...overrideForm, action: e.target.value })} className="w-full h-9 rounded-md border px-2">
+                <option value="activate">Activate / Adjust Allowance</option>
+                <option value="suspend">Suspend Subscription</option>
+              </select>
+            </div>
+            <div>
+              <Label>Purchased Unit Limit</Label>
+              <Input type="number" value={overrideForm.purchasedLimit} onChange={(e) => setOverrideForm({ ...overrideForm, purchasedLimit: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label>Expiry Date (Optional)</Label>
+              <Input type="date" value={overrideForm.expiryDate} onChange={(e) => setOverrideForm({ ...overrideForm, expiryDate: e.target.value })} />
+            </div>
+            <div>
+              <Label>Audit Reason</Label>
+              <Input value={overrideForm.reason} onChange={(e) => setOverrideForm({ ...overrideForm, reason: e.target.value })} placeholder="Reason for administrative adjustment..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverrideTarget(null)}>Cancel</Button>
+            <Button
+              disabled={overrideMutation.isPending}
+              onClick={() => overrideMutation.mutate({ landlordId: overrideTarget.landlordId._id, payload: overrideForm })}
+              className="bg-[#0d2240] hover:bg-[#132d4a] text-white cursor-pointer"
+            >
+              Apply Override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

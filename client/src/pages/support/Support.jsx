@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Phone, MapPin, Send, MessageCircle } from "lucide-react";
@@ -11,16 +15,44 @@ import SEO from "@/components/SEO";
 
 export default function Support() {
     const { toast } = useToast();
+    const { user } = useAuth();
+    const queryClient = useQueryClient();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [category, setCategory] = useState("general");
+
+    const { data: myTickets = [] } = useQuery({
+        queryKey: ["my-support-tickets"],
+        queryFn: api.getMySupportTickets,
+        enabled: Boolean(user?.token)
+    });
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const form = e.target;
         setIsSubmitting(true);
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        toast({ title: "Message Sent", description: "We've received your message and will get back to you soon." });
-        setIsSubmitting(false);
-        e.target.reset();
+        try {
+            const res = await api.submitSupportTicket({
+                name: form.name.value,
+                email: form.email.value,
+                subject: form.subject.value,
+                category,
+                message: form.message.value
+            });
+            toast({
+                title: "Support Ticket Created",
+                description: `Ticket ${res.ticket?.ticketNumber || ""} received. Our support team will respond shortly.`
+            });
+            queryClient.invalidateQueries({ queryKey: ["my-support-tickets"] });
+            form.reset();
+        } catch (err) {
+            toast({
+                variant: "destructive",
+                title: "Submission Failed",
+                description: err.message || "Could not submit your support request."
+            });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const faqs = [
@@ -65,23 +97,41 @@ export default function Support() {
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="name">Name</Label>
-                                    <Input id="name" required placeholder="Your name" />
+                                    <Input id="name" name="name" required defaultValue={user?.name || ""} placeholder="Your name" />
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="email">Email</Label>
-                                    <Input id="email" type="email" required placeholder="your@email.com" />
+                                    <Input id="email" name="email" type="email" required defaultValue={user?.email || ""} placeholder="your@email.com" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="subject">Subject</Label>
+                                    <Input id="subject" name="subject" required placeholder="How can we help?" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="category">Category</Label>
+                                    <select
+                                        id="category"
+                                        value={category}
+                                        onChange={(e) => setCategory(e.target.value)}
+                                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                    >
+                                        <option value="general">General Support</option>
+                                        <option value="billing">Billing &amp; Subscriptions</option>
+                                        <option value="payments">Payments / M-Pesa</option>
+                                        <option value="technical">Technical Issue</option>
+                                        <option value="account">Account Access</option>
+                                        <option value="complaint">Complaint</option>
+                                    </select>
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="subject">Subject</Label>
-                                <Input id="subject" required placeholder="How can we help?" />
-                            </div>
-                            <div className="space-y-2">
                                 <Label htmlFor="message">Message</Label>
-                                <Textarea id="message" required placeholder="Describe your issue..." rows={4} />
+                                <Textarea id="message" name="message" required placeholder="Describe your issue..." rows={4} />
                             </div>
                             <Button type="submit" className="w-full" disabled={isSubmitting}>
                                 {isSubmitting ? "Sending..." : (
@@ -147,6 +197,37 @@ export default function Support() {
                     </Card>
                 </div>
             </div>
+
+            {Array.isArray(myTickets) && myTickets.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base">My Recent Support Tickets ({myTickets.length})</CardTitle>
+                        <CardDescription>Track responses and resolution status from MakaziFlow support.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {myTickets.map((t) => (
+                            <div key={t._id} className="border rounded-lg p-3.5 text-sm space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <span className="font-mono text-xs font-bold text-[#00a99d] mr-2">{t.ticketNumber}</span>
+                                        <span className="font-semibold">{t.subject}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
+                                        <Badge className="text-[10px] capitalize bg-[#0d2240] text-white">{String(t.status || "open").replace(/_/g, " ")}</Badge>
+                                    </div>
+                                </div>
+                                {(t.responses || []).length > 0 && (
+                                    <div className="bg-muted/50 rounded p-2.5 text-xs space-y-1">
+                                        <p className="font-semibold text-[#00a99d]">Latest Support Reply:</p>
+                                        <p>{t.responses[t.responses.length - 1].message}</p>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }

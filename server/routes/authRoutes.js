@@ -59,6 +59,7 @@ const clearAuthCookies = (res) => {
 };
 
 const logActivity = require('../utils/logActivity');
+const { logAdminAction } = require('../utils/auditLogger');
 const { seedDemoDataForUser, clearDemoDataForUser } = require('../utils/seedDemoData');
 const { getOtpEmailBody, getEmailTemplate } = require('../utils/emailTemplates');
 
@@ -150,6 +151,22 @@ router.post('/login', authLoginLimiter, async (req, res) => {
     if (!user) {
       await logActivity('System', 'Login Failed', `Failed login attempt from ${reqIp}`, 'auth', 'warning');
       return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    if (user.accountStatus === 'suspended') {
+      return res.status(403).json({
+        code: 'ACCOUNT_SUSPENDED',
+        message: user.suspendedReason
+          ? `Account suspended: ${user.suspendedReason}`
+          : 'Your account has been suspended. Please contact support.'
+      });
+    }
+
+    if (user.accountStatus === 'deactivated') {
+      return res.status(403).json({
+        code: 'ACCOUNT_DEACTIVATED',
+        message: 'This account has been deactivated. Please contact platform support.'
+      });
     }
 
     // 4. Brute Force Protection: Check if account is temporarily locked
@@ -401,10 +418,20 @@ router.post('/verify-login-otp', authOtpLimiter, async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired verification code' });
     }
 
+    if (user.accountStatus === 'suspended' || user.accountStatus === 'deactivated') {
+      return res.status(403).json({
+        message: user.accountStatus === 'suspended'
+          ? (user.suspendedReason ? `Account suspended: ${user.suspendedReason}` : 'Your account is suspended.')
+          : 'This account has been deactivated.'
+      });
+    }
+
     // Clear OTP fields
     user.otp = undefined;
     user.otpExpires = undefined;
     if (!user.isVerified) user.isVerified = true;
+    user.accountStatus = 'active';
+    user.lastLoginAt = new Date();
 
     // 1. Multi-Device Sessions: access token + Multi-device refresh tokens bound to tokenVersion
     const tv = user.tokenVersion || 0;
@@ -433,6 +460,19 @@ router.post('/verify-login-otp', authOtpLimiter, async (req, res) => {
 
     const superEmails = (process.env.SUPERADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isSuperAdmin = Boolean(user.isSuperAdmin || user.role === 'superadmin' || superEmails.includes((user.email || '').toLowerCase()));
+
+    if (isSuperAdmin) {
+      await logAdminAction({
+        req,
+        admin: user,
+        action: 'SUPERADMIN_LOGIN',
+        category: 'auth',
+        targetType: 'User',
+        targetId: String(user._id),
+        details: `Super Admin ${user.email} signed in successfully`,
+        status: 'success'
+      });
+    }
 
     res.json({
       _id: user._id,
@@ -473,6 +513,11 @@ router.post('/refresh', authOtpLimiter, async (req, res) => {
     if (!user) {
       clearAuthCookies(res);
       return res.status(401).json({ message: 'Session expired or user not found' });
+    }
+
+    if (user.accountStatus === 'suspended' || user.accountStatus === 'deactivated') {
+      clearAuthCookies(res);
+      return res.status(403).json({ message: 'Account access has been restricted. Please contact support.' });
     }
 
     if (decoded.tv !== undefined && Number(decoded.tv) !== Number(user.tokenVersion || 0)) {
@@ -609,7 +654,8 @@ router.post('/register', authOtpLimiter, async (req, res) => {
         role: safeRole,
         otp: hashOtp(otp),
         otpExpires,
-        isVerified: false
+        isVerified: false,
+        accountStatus: 'pending_verification'
       });
 
       if (user) {
@@ -689,6 +735,8 @@ router.post('/verify-email', authOtpLimiter, async (req, res) => {
         }
 
         user.isVerified = true;
+        user.accountStatus = 'active';
+        user.lastLoginAt = new Date();
         user.otp = undefined;
         user.otpExpires = undefined;
         const tv = user.tokenVersion || 0;

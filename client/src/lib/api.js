@@ -95,7 +95,7 @@ export async function smartFetch(url, options = {}) {
 }
 
 
-async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
+export async function parseApiResponse(response, defaultErrorMsg = 'Request failed') {
   const contentType = response.headers.get('content-type') || '';
   let data = null;
 
@@ -1185,5 +1185,21 @@ export const api = {
     } catch {
       return { configured: false, rating: null, userRatingCount: 0, reviews: [] };
     }
+  },
+  submitSupportTicket: async (payload) => {
+    const response = await smartFetch(`${API_URL}/support/tickets`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to submit support ticket");
+  },
+  getMySupportTickets: async () => {
+    const response = await smartFetch(`${API_URL}/support/tickets/mine`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return await parseApiResponse(response, "Failed to load your support tickets");
   }
 };

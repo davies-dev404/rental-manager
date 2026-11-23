@@ -46,8 +46,20 @@ const userSchema = new mongoose.Schema({
   passwordChangedAt: { type: Date },
   organizationOwner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   failedLoginAttempts: { type: Number, default: 0 },
-  lockUntil: { type: Date }
+  lockUntil: { type: Date },
+  accountStatus: {
+    type: String,
+    enum: ['active', 'suspended', 'pending_verification', 'deactivated'],
+    default: 'active',
+    index: true
+  },
+  suspendedAt: { type: Date },
+  suspendedReason: { type: String, default: '' },
+  suspendedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  lastLoginAt: { type: Date }
 });
+
+userSchema.index({ role: 1, accountStatus: 1, createdAt: -1 });
 
 // Hash password before saving (bcrypt cost 12)
 userSchema.pre('save', async function() {
