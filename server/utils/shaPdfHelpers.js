@@ -106,13 +106,14 @@ function drawColField(doc, x, y, colWidth, label, value) {
 }
 
 /**
- * Resolves registered landlord M-Pesa settings cleanly:
+ * Resolves registered landlord M-Pesa settings strictly from General Settings:
  * - Till: shows Till Number ONLY (no Account Number)
- * - Paybill: shows Paybill Number + Account Number
+ * - Paybill: shows Paybill Number + Account Number configured by the landlord in General Settings
+ *   (never substituting the tenant's unit number as the Paybill Account Number).
  */
-function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
+function resolveMpesaPaymentDetails(settings = {}) {
   const mpesaType = settings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
-  const shortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
+  const shortcode = String(settings?.integrations?.mpesa?.shortcode || settings?.paybillNumber || '').trim();
   if (mpesaType === 'Till') {
     return {
       mpesaType: 'Till',
@@ -121,7 +122,9 @@ function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
       accountNumber: ''
     };
   }
-  const resolvedAcct = String(accountFallback || settings?.paybillAccount || '').trim();
+  const rawSettingsAcct = String(settings?.paybillAccount || '').trim();
+  const isDefaultHint = /^unit\s+number\b/i.test(rawSettingsAcct);
+  const resolvedAcct = isDefaultHint ? '' : rawSettingsAcct;
   return {
     mpesaType: 'Paybill',
     shortcode,
@@ -133,8 +136,8 @@ function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
 function classifyTextPurpose(raw = '') {
   const s = String(raw || '').toLowerCase();
   if (!s) return '';
-  if (/maint|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest/.test(s)) return 'Maintenance';
-  if (/util|water|elect|power|garbage|sewer|gas|trash|borehole/.test(s)) return 'Utilities';
+  if (/maint|maintain|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest|handyman|electrician|drain|leak|lock|window|door|tile/.test(s)) return 'Maintenance';
+  if (/util|water|elect|power|kplc|garbage|sewer|gas|trash|borehole|generator|wifi|internet|meter/.test(s)) return 'Utilities';
   if (/service\s*charge/.test(s)) return 'Service Charge';
   if (/penalt|late\s*fee|late\s*payment/.test(s)) return 'Late Payment Penalty';
   if (/deposit/.test(s)) return 'Security Deposit';
@@ -145,13 +148,24 @@ function classifyTextPurpose(raw = '') {
 function normalizeCategoryTag(cat = '', desc = '') {
   const c = String(cat || '').toLowerCase().trim();
   if (c === 'rent') return 'Rent';
-  if (c === 'water' || c === 'electricity' || c === 'utilities') return 'Utilities';
-  if (c === 'maintenance') return 'Maintenance';
+  if (c === 'water' || c === 'electricity' || c === 'utilities' || c === 'garbage' || c === 'sewer' || c === 'gas' || c === 'generator') return 'Utilities';
+  if (c === 'maintenance' || c === 'repair') return 'Maintenance';
   if (c === 'service_charge') return 'Service Charge';
   if (c === 'penalty') return 'Late Payment Penalty';
   if (c === 'deposit') return 'Security Deposit';
   if (c === 'subscription') return 'Subscription';
   return classifyTextPurpose(desc) || '';
+}
+
+function formatExplicitPurposeLabel(purposeText = 'Rent', { asInvoice = false } = {}) {
+  const p = String(purposeText || 'Rent').trim();
+  if (!p || /^rent$/i.test(p)) return asInvoice ? 'Rent Invoice' : 'Rent';
+  if (/^maintenance$/i.test(p)) return asInvoice ? 'Invoice for Maintenance' : 'Maintenance';
+  if (/^utilities$/i.test(p)) return asInvoice ? 'Invoice for Utilities' : 'Utilities';
+  if (/^service charge$/i.test(p)) return asInvoice ? 'Invoice for Service Charge' : 'Service Charge';
+  if (/^late payment penalty$/i.test(p)) return asInvoice ? 'Invoice for Late Payment Penalty' : 'Late Payment Penalty';
+  if (/^security deposit$/i.test(p)) return asInvoice ? 'Invoice for Security Deposit' : 'Security Deposit';
+  return asInvoice ? `Invoice for ${p}` : p;
 }
 
 /**
@@ -267,6 +281,8 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
 
   return {
     purposeText,
+    explicitLabel: formatExplicitPurposeLabel(purposeText, { asInvoice: false }),
+    invoiceExplicitLabel: formatExplicitPurposeLabel(purposeText, { asInvoice: true }),
     tags,
     lineItems
   };
@@ -304,6 +320,9 @@ module.exports = {
   drawColHeader,
   drawColField,
   resolveMpesaPaymentDetails,
+  classifyTextPurpose,
+  normalizeCategoryTag,
+  formatExplicitPurposeLabel,
   resolvePaymentPurpose,
   resolveInvoicePurposeLabel
 };

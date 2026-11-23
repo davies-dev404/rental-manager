@@ -642,7 +642,12 @@ router.post('/send-invoice', protect, async (req, res) => {
         // 2. Instant SMS Dispatch (best-effort if phone configured)
         if (recipientPhone) {
             try {
-                const smsMsg = `Invoice #${invRef}: KES ${totalAmt} due on ${cleanDueDate} for Unit ${uNum} (${businessName}). Please remit payment on time. Thank you.`;
+                const smsPurpose = resolveInvoicePurposeLabel({
+                    invoiceType: invoiceType || notes || '',
+                    notes: notes || '',
+                    items: Array.isArray(invoiceItems) ? invoiceItems : []
+                });
+                const smsMsg = `Invoice #${invRef} (${smsPurpose}): KES ${totalAmt} due on ${cleanDueDate} for Unit ${uNum} (${businessName}). Please remit payment on time. Thank you.`;
                 await sendSMS({
                     phone: recipientPhone,
                     message: smsMsg,

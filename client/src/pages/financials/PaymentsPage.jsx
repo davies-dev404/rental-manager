@@ -47,6 +47,7 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
     new Date().toISOString().split("T")[0]
   );
   const [status, setStatus] = useState("confirmed");
+  const [paymentFor, setPaymentFor] = useState("Rent");
   const [hideOptional, setHideOptional] = useState(false);
   const [paymentType, setPaymentType] = useState("other");
   const [description, setDescription] = useState("");
@@ -67,6 +68,7 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
     }
     if (t.property && typeof t.property === "object") return String(t.property._id || t.property.id || "");
     return "";
+
   };
 
   const getTenantPropName = (t) => {
@@ -149,6 +151,16 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
       const propName = selectedProp?.name || getTenantPropName(selectedTenant) || "Property";
       const uNumber = getTenantUnitNumber(selectedTenant) || "Unit";
 
+      const categoryMap = {
+        Rent: "rent",
+        Utilities: "utilities",
+        Maintenance: "maintenance",
+        "Service Charge": "service_charge",
+        "Late Payment Penalty": "penalty",
+        "Security Deposit": "deposit"
+      };
+      const resolvedCategory = categoryMap[paymentFor] || "rent";
+
       const paymentData = {
         _id: "PAY-" + Date.now().toString().slice(-6),
         amount: Number(paidAmount),
@@ -157,6 +169,9 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
         unitId: uNumber,
         property: propName,
         status,
+        type: paymentFor,
+        item: paymentFor,
+        category: resolvedCategory,
         paymentType,
         description,
         transactionId,
@@ -170,9 +185,12 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
           date: paymentDate,
           method: paymentType,
           status: status === "confirmed" ? "paid" : status,
+          type: paymentFor,
+          category: resolvedCategory,
           reference: transactionId || undefined,
           transactionId: transactionId || undefined,
-          description: description || undefined
+          description: description || undefined,
+          notes: description || undefined
         });
         if (res && res._id) {
           paymentData._id = res._id;
@@ -325,6 +343,27 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
               <option value="confirmed">confirmed</option>
               <option value="pending">pending</option>
               <option value="draft">draft</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Row 5: Payment For (Category) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0">
+            Payment For
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={paymentFor}
+              onChange={(e) => setPaymentFor(e.target.value)}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              <option value="Rent">Rent</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Service Charge">Service Charge</option>
+              <option value="Late Payment Penalty">Late Payment Penalty</option>
+              <option value="Security Deposit">Security Deposit</option>
             </select>
           </div>
         </div>
@@ -928,7 +967,7 @@ export default function PaymentsPage() {
               ? { ...cp, status: "paid", paymentType: markPaidMethod, transactionId: markPaidRef.trim() || cp.transactionId }
               : cp
           );
-          try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch {}
+          try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch { }
           return next;
         });
       }
@@ -942,8 +981,8 @@ export default function PaymentsPage() {
         title: "Payment Marked as Paid",
         description: markPaidSendReceipt && isMongoId
           ? (receiptEmailed
-              ? `Updated to Paid and sent PDF receipt for ${markPaidTarget.tenantId} via Email.`
-              : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
+            ? `Updated to Paid and sent PDF receipt for ${markPaidTarget.tenantId} via Email.`
+            : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
           : `Updated payment for ${markPaidTarget.tenantId} to Paid.`
       });
       setMarkPaidTarget(null);

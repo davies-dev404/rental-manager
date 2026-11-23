@@ -7,6 +7,8 @@ const {
   drawColHeader,
   drawColField,
   resolveMpesaPaymentDetails,
+  normalizeCategoryTag,
+  formatExplicitPurposeLabel,
   resolveInvoicePurposeLabel
 } = require('./shaPdfHelpers');
 
@@ -54,6 +56,9 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       const formattedTotal = Number(invoice.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const unitInfo = String(invoice.unitNumber || invoice.unitId?.unitNumber || '').trim();
       const invoicePurpose = resolveInvoicePurposeLabel(invoice);
+      const explicitInvoicePurpose = isSub
+        ? invoicePurpose
+        : formatExplicitPurposeLabel(invoicePurpose, { asInvoice: true });
 
       // 1. TOP GRADIENT BAR
       drawTopGradientBar(doc);
@@ -75,7 +80,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
         .text(docTitle, 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
       yPos += 19;
       doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
-        .text(`INVOICE #${invRef} — ${invoicePurpose.toUpperCase()}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
+        .text(`INVOICE #${invRef} — ${explicitInvoicePurpose.toUpperCase()}`, 36, yPos, { align: 'center', width: 523, characterSpacing: 0.8 });
       yPos += 22;
 
       // 4. THREE-COLUMN SHA METADATA GRID
@@ -112,7 +117,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       drawColHeader(doc, col2X, yPos, 'INVOICE DETAILS');
       let c2Y = yPos + 18;
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice Number:', invRef);
-      c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', invoicePurpose);
+      c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', explicitInvoicePurpose);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Billing Period:', billingPeriod);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Issued Date:', fmtDate(issuedDt));
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Due Date:', fmtDate(dueDt));
@@ -123,8 +128,7 @@ const generateInvoicePDF = (invoice, settings = {}) => {
       let c3Y = yPos + 18;
       c3Y = drawColField(doc, col3X, c3Y, colW, 'Organisation:', businessName);
       if (!isSub) {
-        const acctFallback = invoice.accountNumber || settings?.paybillAccount || (unitInfo ? unitInfo : invRef);
-        const mpesa = resolveMpesaPaymentDetails(settings, acctFallback);
+        const mpesa = resolveMpesaPaymentDetails(settings);
         if (mpesa.mpesaType === 'Till') {
           if (mpesa.shortcode) {
             c3Y = drawColField(doc, col3X, c3Y, colW, 'Till Number:', mpesa.shortcode);
@@ -169,26 +173,30 @@ const generateInvoicePDF = (invoice, settings = {}) => {
 
       doc.rect(36, yPos, 523, 24).fill(royalBlue);
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff')
-        .text('DESCRIPTION', 46, yPos + 8, { width: 255 })
-        .text('VAT %', 310, yPos + 8, { width: 55, align: 'right' })
-        .text('TAX', 375, yPos + 8, { width: 70, align: 'right' })
-        .text(`TOTAL (${currency})`, 455, yPos + 8, { width: 95, align: 'right' });
+        .text('CATEGORY', 46, yPos + 8, { width: 88 })
+        .text('DESCRIPTION', 138, yPos + 8, { width: 172 })
+        .text('VAT %', 315, yPos + 8, { width: 48, align: 'right' })
+        .text('TAX', 368, yPos + 8, { width: 72, align: 'right' })
+        .text(`TOTAL (${currency})`, 445, yPos + 8, { width: 105, align: 'right' });
       yPos += 24;
 
       const items = Array.isArray(invoice.items) ? invoice.items : [];
       items.forEach((it) => {
         const lineTotal = Number(it.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const lineTax = Number(it.taxAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        doc.rect(36, yPos, 523, 24).fill('#ffffff');
+        const itemCategory = normalizeCategoryTag(it.category, it.description) || invoicePurpose || 'Rent';
+        doc.rect(36, yPos, 523, 26).fill('#ffffff');
         doc.strokeColor(borderColor).lineWidth(0.5)
-          .moveTo(36, yPos + 24).lineTo(559, yPos + 24).stroke();
+          .moveTo(36, yPos + 26).lineTo(559, yPos + 26).stroke();
 
-        doc.fontSize(8.5).font('Helvetica').fillColor(darkText)
-          .text(it.description || 'Item', 46, yPos + 8, { width: 255 })
-          .text(`${Number(it.taxRate || 0)}%`, 310, yPos + 8, { width: 55, align: 'right' })
-          .text(lineTax, 375, yPos + 8, { width: 70, align: 'right' })
-          .text(lineTotal, 455, yPos + 8, { width: 95, align: 'right' });
-        yPos += 24;
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(greenAccent)
+          .text(itemCategory, 46, yPos + 9, { width: 88 });
+        doc.fontSize(8).font('Helvetica').fillColor(darkText)
+          .text(it.description || 'Item', 138, yPos + 9, { width: 172 })
+          .text(`${Number(it.taxRate || 0)}%`, 315, yPos + 9, { width: 48, align: 'right' })
+          .text(lineTax, 368, yPos + 9, { width: 72, align: 'right' })
+          .text(lineTotal, 445, yPos + 9, { width: 105, align: 'right' });
+        yPos += 26;
       });
 
       // Totals Summary Block

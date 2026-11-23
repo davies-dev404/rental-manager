@@ -315,12 +315,31 @@ router.post('/batch', protect, admin, async (req, res) => {
   }
 });
 
+const DEFAULT_UTILITY_CATALOG = [
+  { key: 'water', label: 'Water', rate: 150, basis: 'Metered' },
+  { key: 'electricity', label: 'Electricity', rate: 28, basis: 'Metered' },
+  { key: 'garbage', label: 'Garbage', rate: 500, basis: 'Flat Rate' },
+  { key: 'sewer', label: 'Sewer', rate: 300, basis: 'Flat Rate' },
+  { key: 'gas', label: 'Gas', rate: 250, basis: 'Metered' },
+  { key: 'generator', label: 'Generator', rate: 100, basis: 'Metered' },
+  { key: 'service charge', label: 'Service Charge', rate: 1500, basis: 'Flat Rate' },
+  { key: 'security', label: 'Security', rate: 1000, basis: 'Flat Rate' },
+  { key: 'internet / wifi', label: 'Internet / WiFi', rate: 2500, basis: 'Flat Rate' },
+  { key: 'parking', label: 'Parking', rate: 2000, basis: 'Flat Rate' }
+];
+
+function findCatalogEntry(itemName = '') {
+  const norm = String(itemName || '').trim().toLowerCase();
+  return DEFAULT_UTILITY_CATALOG.find((u) => u.key === norm || u.label.toLowerCase() === norm);
+}
+
 function unwrapExcelCell(val) {
   if (val === null || val === undefined) return '';
   if (typeof val === 'object') {
     if (val.result !== undefined) return val.result;
     if (Array.isArray(val.richText)) return val.richText.map((r) => r.text).join('');
     if (val.text !== undefined) return val.text;
+    if (val.formula !== undefined) return '';
   }
   return val;
 }
@@ -330,6 +349,20 @@ async function parseExcelUtilityBuffer(buffer) {
   await workbook.xlsx.load(buffer);
   const sheet = workbook.getWorksheet('Meter Readings') || workbook.worksheets[0];
   if (!sheet || sheet.rowCount < 2) return [];
+
+  // Build rate lookup map from 'Rates & Lists' tab (if present) + defaults
+  const sheetRateLookup = new Map(DEFAULT_UTILITY_CATALOG.map((u) => [u.key, u.rate]));
+  const ratesSheet = workbook.getWorksheet('Rates & Lists');
+  if (ratesSheet && ratesSheet.rowCount >= 2) {
+    for (let r = 2; r <= ratesSheet.rowCount; r++) {
+      const row = ratesSheet.getRow(r);
+      const uName = String(unwrapExcelCell(row.getCell(1).value) || '').trim().toLowerCase();
+      const uRate = Number(unwrapExcelCell(row.getCell(2).value));
+      if (uName && Number.isFinite(uRate) && uRate > 0) {
+        sheetRateLookup.set(uName, uRate);
+      }
+    }
+  }
 
   const headerRow = sheet.getRow(1);
   const headers = [];
@@ -360,6 +393,9 @@ async function parseExcelUtilityBuffer(buffer) {
   const parsed = [];
   for (let r = 2; r <= sheet.rowCount; r++) {
     const row = sheet.getRow(r);
+    const propName = propCol !== -1 ? String(unwrapExcelCell(row.getCell(propCol).value) || '').trim() : '';
+    if (/^(grand\s*)?total$/i.test(propName)) continue;
+
     const unitNumber = String(unwrapExcelCell(row.getCell(unitCol).value) || '').trim();
     if (!unitNumber) continue;
 
@@ -370,14 +406,18 @@ async function parseExcelUtilityBuffer(buffer) {
     if (!hasCurr && !hasTotal) continue;
 
     const prevNum = prevCol !== -1 ? Number(unwrapExcelCell(row.getCell(prevCol).value) || 0) : 0;
-    const rateNum = rateCol !== -1 ? Number(unwrapExcelCell(row.getCell(rateCol).value) || 0) : 0;
-    const propName = propCol !== -1 ? String(unwrapExcelCell(row.getCell(propCol).value) || '').trim() : '';
     const itemName = itemCol !== -1 ? String(unwrapExcelCell(row.getCell(itemCol).value) || '').trim() : '';
+    const itemLower = itemName.toLowerCase();
+    const rawRateVal = rateCol !== -1 ? unwrapExcelCell(row.getCell(rateCol).value) : '';
+    let rateNum = rawRateVal !== '' && rawRateVal !== null && rawRateVal !== undefined ? Number(rawRateVal) : NaN;
+    if (!Number.isFinite(rateNum) || rateNum <= 0) {
+      rateNum = sheetRateLookup.get(itemLower) ?? findCatalogEntry(itemLower)?.rate ?? 0;
+    }
 
     parsed.push({
       ...(propName ? { propertyName: propName } : {}),
       unitNumber,
-      ...(itemName ? { item: itemName.toLowerCase() } : {}),
+      ...(itemName ? { item: itemLower } : {}),
       previous: Number.isFinite(prevNum) ? prevNum : 0,
       ...(hasCurr ? { current: Number(rawCurr) } : {}),
       rate: Number.isFinite(rateNum) ? rateNum : 0,
@@ -396,28 +436,68 @@ router.get('/template', protect, admin, async (req, res) => {
     const requestedPropId = req.query.propertyId && isValidObjectId(String(req.query.propertyId))
       ? String(req.query.propertyId)
       : '';
-    const defaultItem = String(req.query.item || 'water').trim().toLowerCase() || 'water';
-    const rateMap = { water: 150, electricity: 28, garbage: 500, sewer: 300, gas: 250, generator: 100 };
-    const fallbackRate = rateMap[defaultItem] ?? 150;
+    const requestedItemRaw = String(req.query.item || 'water').trim().toLowerCase() || 'water';
+    const matchedCatalog = findCatalogEntry(requestedItemRaw);
+    const defaultItemKey = matchedCatalog ? matchedCatalog.key : requestedItemRaw;
+    const defaultItemLabel = matchedCatalog
+      ? matchedCatalog.label
+      : (requestedItemRaw.charAt(0).toUpperCase() + requestedItemRaw.slice(1));
 
-    const propQuery = requestedPropId ? { _id: requestedPropId, user: userId } : { user: userId };
-    const [properties, units, latestReadings] = await Promise.all([
-      Property.find(propQuery).select('_id name').lean(),
+    const [allUserProperties, units, allLatestReadings] = await Promise.all([
+      Property.find({ user: userId }).select('_id name').sort({ name: 1 }).lean(),
       Unit.find({ user: userId, ...(requestedPropId ? { propertyId: requestedPropId } : {}) })
         .select('_id unitNumber propertyId')
         .sort({ unitNumber: 1 })
         .lean(),
-      UtilityReading.find({ user: userId, item: defaultItem })
+      UtilityReading.find({ user: userId })
         .sort({ date: -1, createdAt: -1 })
-        .limit(500)
+        .limit(1000)
         .lean()
     ]);
 
-    const propById = new Map(properties.map((p) => [String(p._id), p.name]));
+    const filteredProperties = requestedPropId
+      ? allUserProperties.filter((p) => String(p._id) === requestedPropId)
+      : allUserProperties;
+    const propById = new Map(allUserProperties.map((p) => [String(p._id), p.name]));
+
+    // Build varying rates catalog seeded from landlord's latest saved rates per utility type + varied defaults
+    const latestRateByItem = new Map();
+    for (const r of allLatestReadings) {
+      const k = String(r.item || '').trim().toLowerCase();
+      if (k && !latestRateByItem.has(k) && Number(r.rate) > 0) {
+        latestRateByItem.set(k, Number(r.rate));
+      }
+    }
+
+    const utilityCatalog = DEFAULT_UTILITY_CATALOG.map((u) => ({
+      ...u,
+      rate: latestRateByItem.get(u.key) ?? u.rate
+    }));
+    if (!matchedCatalog) {
+      utilityCatalog.unshift({
+        key: defaultItemKey,
+        label: defaultItemLabel,
+        rate: latestRateByItem.get(defaultItemKey) ?? 150,
+        basis: 'Metered'
+      });
+    }
+
+    const rateByLabel = new Map(utilityCatalog.map((u) => [u.label.toLowerCase(), u]));
+    const latestReadingsForDefault = allLatestReadings.filter(
+      (r) => String(r.item || '').trim().toLowerCase() === defaultItemKey
+    );
+
+    const allPropertyNames = Array.from(
+      new Set(allUserProperties.map((p) => String(p.name || '').trim()).filter(Boolean))
+    );
+    if (allPropertyNames.length === 0) {
+      allPropertyNames.push('Example Property');
+    }
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'MakaziFlow';
     workbook.created = new Date();
+    workbook.calcProperties.fullCalcOnLoad = true;
 
     const sheet = workbook.addWorksheet('Meter Readings', {
       views: [{ state: 'frozen', ySplit: 1 }]
@@ -426,10 +506,10 @@ router.get('/template', protect, admin, async (req, res) => {
     sheet.columns = [
       { header: 'Property', key: 'property', width: 22 },
       { header: 'Unit Number', key: 'unitNumber', width: 15 },
-      { header: 'Utility Type', key: 'item', width: 15 },
+      { header: 'Utility Type', key: 'item', width: 18 },
       { header: 'Previous Reading', key: 'previous', width: 18 },
       { header: 'Current Reading', key: 'current', width: 18 },
-      { header: 'Rate (KES)', key: 'rate', width: 14 },
+      { header: 'Rate (KES)', key: 'rate', width: 15 },
       { header: 'Total Override (Optional)', key: 'totalOverride', width: 24 },
       { header: 'Calculated Total (KES)', key: 'calculatedTotal', width: 22 }
     ];
@@ -442,53 +522,206 @@ router.get('/template', protect, admin, async (req, res) => {
       cell.alignment = { vertical: 'middle', horizontal: 'left' };
     });
 
+    // Reference lookup sheet for dropdowns & varying utility rates
+    const lookupSheet = workbook.addWorksheet('Rates & Lists', {
+      views: [{ state: 'frozen', ySplit: 1 }]
+    });
+    lookupSheet.columns = [
+      { header: 'Utility Type', key: 'utilityType', width: 20 },
+      { header: 'Rate (KES)', key: 'rate', width: 16 },
+      { header: 'Billing Basis', key: 'basis', width: 16 },
+      { header: 'Property', key: 'property', width: 24 }
+    ];
+    lookupSheet.getRow(1).height = 22;
+    lookupSheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B1065' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    });
+
+    const maxLookupRows = Math.max(utilityCatalog.length, allPropertyNames.length);
+    for (let i = 0; i < maxLookupRows; i++) {
+      const u = utilityCatalog[i];
+      const prop = allPropertyNames[i];
+      const lr = lookupSheet.addRow({
+        utilityType: u ? u.label : '',
+        rate: u ? u.rate : '',
+        basis: u ? u.basis : '',
+        property: prop || ''
+      });
+      if (u) {
+        lr.getCell('B').numFmt = '#,##0.00';
+        lr.getCell('B').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+      }
+    }
+
+    const utilEndRow = utilityCatalog.length + 1;
+    const propEndRow = allPropertyNames.length + 1;
+    const ratesLookupRange = `'Rates & Lists'!$A$2:$C$${utilEndRow}`;
+    const utilListFormula = `'Rates & Lists'!$A$2:$A$${utilEndRow}`;
+    const propListFormula = `'Rates & Lists'!$D$2:$D$${propEndRow}`;
+
+    const defaultEntry = rateByLabel.get(defaultItemLabel.toLowerCase()) || utilityCatalog[0];
     const rowsToWrite = units.length > 0
       ? units.map((u) => {
-          const propName = propById.get(String(u.propertyId)) || properties[0]?.name || 'Property';
-          const prevReading = latestReadings.find(
+          const propName = propById.get(String(u.propertyId)) || filteredProperties[0]?.name || allPropertyNames[0];
+          const prevReading = latestReadingsForDefault.find(
             (r) => String(r.unitId || '') === String(u._id) || normalizeUnitLookupKey(r.unitNumber) === normalizeUnitLookupKey(u.unitNumber)
           );
           return {
             property: propName,
             unitNumber: u.unitNumber,
-            item: defaultItem,
+            item: defaultItemLabel,
             previous: prevReading ? Number(prevReading.current ?? 0) : 0,
             current: '',
-            rate: prevReading && Number(prevReading.rate) > 0 ? Number(prevReading.rate) : fallbackRate,
+            customRate: prevReading && Number(prevReading.rate) > 0 && Number(prevReading.rate) !== defaultEntry.rate
+              ? Number(prevReading.rate)
+              : null,
             totalOverride: ''
           };
         })
       : [
-          { property: properties[0]?.name || 'Example Property', unitNumber: '1A', item: defaultItem, previous: 120, current: 135, rate: fallbackRate, totalOverride: '' },
-          { property: properties[0]?.name || 'Example Property', unitNumber: '1B', item: defaultItem, previous: 80, current: 92, rate: fallbackRate, totalOverride: '' }
+          { property: allPropertyNames[0], unitNumber: '1A', item: 'Water', previous: 120, current: 135, customRate: null, totalOverride: '' },
+          { property: allPropertyNames[0], unitNumber: '1B', item: 'Electricity', previous: 300, current: 345, customRate: null, totalOverride: '' },
+          { property: allPropertyNames[0], unitNumber: '1C', item: 'Garbage', previous: 0, current: '', customRate: null, totalOverride: 500 }
         ];
+
+    const applyRowValidationsAndFormulas = (excelRow, rowNum, { itemLabel = '', previous = 0, current = '', totalOverride = '', customRate = null } = {}) => {
+      const entry = rateByLabel.get(String(itemLabel || '').toLowerCase());
+      const resolvedRate = customRate !== null ? customRate : (entry ? entry.rate : '');
+      const rateFormula = `IF(C${rowNum}="","",IFERROR(VLOOKUP(C${rowNum},${ratesLookupRange},2,FALSE),0))`;
+      const calcFormula = `IF(C${rowNum}="","",IF(G${rowNum}<>"",G${rowNum},IF(E${rowNum}<>"",MAX(0,E${rowNum}-D${rowNum})*F${rowNum},IF(IFERROR(VLOOKUP(C${rowNum},${ratesLookupRange},3,FALSE),"")="Flat Rate",F${rowNum},0))))`;
+
+      let cachedTotal = '';
+      if (itemLabel) {
+        if (totalOverride !== '' && totalOverride !== null && totalOverride !== undefined) {
+          cachedTotal = Number(totalOverride) || 0;
+        } else if (current !== '' && current !== null && current !== undefined) {
+          cachedTotal = Math.max(0, Number(current) - Number(previous || 0)) * Number(resolvedRate || 0);
+        } else if (entry?.basis === 'Flat Rate') {
+          cachedTotal = Number(resolvedRate || 0);
+        } else {
+          cachedTotal = 0;
+        }
+      }
+
+      excelRow.getCell('A').dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [propListFormula],
+        showErrorMessage: true,
+        errorStyle: 'information',
+        errorTitle: 'Select Property',
+        error: 'Choose a property from the dropdown list.'
+      };
+      excelRow.getCell('C').dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [utilListFormula],
+        showErrorMessage: true,
+        errorStyle: 'information',
+        errorTitle: 'Select Utility Type',
+        error: 'Choose a utility type from the dropdown list (rates update automatically).'
+      };
+
+      // Dynamic Rate formula (varies automatically by selected Utility Type; editable per unit if needed)
+      if (customRate !== null) {
+        excelRow.getCell('F').value = customRate;
+      } else {
+        excelRow.getCell('F').value = { formula: rateFormula, result: resolvedRate };
+      }
+      excelRow.getCell('F').numFmt = '#,##0.00';
+
+      excelRow.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+      excelRow.getCell('G').numFmt = '#,##0.00';
+      excelRow.getCell('H').value = { formula: calcFormula, result: cachedTotal };
+      excelRow.getCell('H').numFmt = '#,##0.00';
+      excelRow.getCell('H').font = { bold: true };
+    };
 
     rowsToWrite.forEach((r, idx) => {
       const rowNum = idx + 2;
       const excelRow = sheet.addRow({
-        ...r,
-        calculatedTotal: { formula: `IF(E${rowNum}="",IF(G${rowNum}="","",G${rowNum}),MAX(0,E${rowNum}-D${rowNum})*F${rowNum})` }
+        property: r.property,
+        unitNumber: r.unitNumber,
+        item: r.item,
+        previous: r.previous,
+        current: r.current,
+        rate: '',
+        totalOverride: r.totalOverride,
+        calculatedTotal: ''
       });
-      excelRow.getCell('E').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
-      excelRow.getCell('H').numFmt = '#,##0.00';
+      applyRowValidationsAndFormulas(excelRow, rowNum, {
+        itemLabel: r.item,
+        previous: r.previous,
+        current: r.current,
+        totalOverride: r.totalOverride,
+        customRate: r.customRate
+      });
     });
+
+    // Add 20 extra ready-to-use rows with Property & Utility Type dropdowns + live Rate & Total formulas
+    const extraRowCount = 20;
+    const firstExtraRow = rowsToWrite.length + 2;
+    for (let i = 0; i < extraRowCount; i++) {
+      const rowNum = firstExtraRow + i;
+      const excelRow = sheet.addRow({
+        property: '',
+        unitNumber: '',
+        item: '',
+        previous: '',
+        current: '',
+        rate: '',
+        totalOverride: '',
+        calculatedTotal: ''
+      });
+      applyRowValidationsAndFormulas(excelRow, rowNum);
+    }
+
+    // Grand Total summary row at the bottom (Column B intentionally blank so upload parser skips it)
+    const lastDataRow = rowsToWrite.length + extraRowCount + 1;
+    const grandTotalInitial = rowsToWrite.reduce((sum, r) => {
+      const entry = rateByLabel.get(String(r.item || '').toLowerCase());
+      const rt = r.customRate !== null ? r.customRate : (entry ? entry.rate : 0);
+      if (r.totalOverride !== '' && r.totalOverride !== null && r.totalOverride !== undefined) return sum + (Number(r.totalOverride) || 0);
+      if (r.current !== '' && r.current !== null && r.current !== undefined) return sum + Math.max(0, Number(r.current) - Number(r.previous || 0)) * Number(rt || 0);
+      if (entry?.basis === 'Flat Rate') return sum + Number(rt || 0);
+      return sum;
+    }, 0);
+    const totalRow = sheet.addRow({
+      property: 'GRAND TOTAL',
+      unitNumber: '',
+      item: '',
+      previous: '',
+      current: '',
+      rate: '',
+      totalOverride: '',
+      calculatedTotal: { formula: `SUM(H2:H${lastDataRow})`, result: grandTotalInitial }
+    });
+    totalRow.height = 22;
+    totalRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FF0B1065' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    });
+    totalRow.getCell('H').numFmt = '#,##0.00';
 
     const guide = workbook.addWorksheet('Instructions');
     guide.columns = [
       { header: 'Step', key: 'step', width: 10 },
-      { header: 'MakaziFlow Bulk Utilities Template Guide', key: 'desc', width: 78 }
+      { header: 'MakaziFlow Bulk Utilities Template Guide', key: 'desc', width: 88 }
     ];
     guide.getRow(1).eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B1065' } };
     });
-    guide.addRow({ step: 1, desc: 'Enter Current Reading in column E for metered utilities (Water, Electricity, Gas, Generator).' });
-    guide.addRow({ step: 2, desc: 'For flat-rate bills (e.g. Garbage, Sewer), leave Current Reading blank and enter the amount in Total Override (Column G).' });
-    guide.addRow({ step: 3, desc: 'Column H automatically previews the total amount in KES. Rows without Current Reading or Total Override are skipped.' });
-    guide.addRow({ step: 4, desc: 'Save the Excel (.xlsx) file and upload it under Utilities -> Bulk Upload Utilities.' });
+    guide.addRow({ step: 1, desc: 'Use the dropdown in Column A (Property) and Column C (Utility Type) to pick the property and utility bill type.' });
+    guide.addRow({ step: 2, desc: 'Column F (Rate KES) automatically varies based on the Utility Type selected (VLOOKUP from the "Rates & Lists" tab). Edit rates on "Rates & Lists" or overwrite a cell in Column F for custom unit rates.' });
+    guide.addRow({ step: 3, desc: 'For metered utilities (Water, Electricity, Gas, Generator), enter Current Reading in Column E — Column H computes MAX(0, Current - Previous) * Rate automatically.' });
+    guide.addRow({ step: 4, desc: 'For flat-rate bills (Garbage, Sewer, Service Charge, Security, Internet / WiFi, Parking), leave Current Reading blank and enter the amount in Total Override (Column G) or keep the default flat rate.' });
+    guide.addRow({ step: 5, desc: 'Save the Excel (.xlsx) file and upload it under Utilities -> Bulk Upload Utilities. Blank rows and the GRAND TOTAL row are automatically skipped.' });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const safePropName = (properties.length === 1 ? properties[0].name : 'MakaziFlow')
+    const safePropName = (filteredProperties.length === 1 ? filteredProperties[0].name : 'MakaziFlow')
       .replace(/[^A-Za-z0-9_-]/g, '_');
 
     res.set({

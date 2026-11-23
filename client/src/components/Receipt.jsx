@@ -60,6 +60,13 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
     return tags.join(' & ');
   };
   const purposeText = resolveUiPurpose();
+  const explicitPurposeDisplay = (() => {
+    if (!invoiceRef) return purposeText;
+    if (/^rent$/i.test(purposeText)) return 'Rent Invoice';
+    if (/^maintenance$/i.test(purposeText)) return 'Invoice for Maintenance';
+    if (/^utilities$/i.test(purposeText)) return 'Invoice for Utilities';
+    return `Invoice for ${purposeText}`;
+  })();
 
   return (
     <div
@@ -88,8 +95,8 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
           </h1>
           <p className="text-xs font-bold tracking-wider text-[#00a99d] uppercase">
             {invoiceRef
-              ? `RECEIPT FOR INVOICE #${invoiceRef} — ${purposeText.toUpperCase()}`
-              : `PAYMENT FOR: ${purposeText.toUpperCase()}`}
+              ? `RECEIPT FOR INVOICE #${invoiceRef} — ${explicitPurposeDisplay.toUpperCase()}`
+              : `PAYMENT FOR: ${explicitPurposeDisplay.toUpperCase()}`}
           </p>
         </div>
 
@@ -118,12 +125,12 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
                 <p className="font-bold text-[#0d2240]">Receipt For:</p>
                 <p className="mb-2 font-semibold text-[#00a99d]">Invoice #{invoiceRef}</p>
                 <p className="font-bold text-[#0d2240]">Invoice For:</p>
-                <p className="mb-2 font-semibold">{purposeText}</p>
+                <p className="mb-2 font-semibold">{explicitPurposeDisplay}</p>
               </>
             ) : (
               <>
                 <p className="font-bold text-[#0d2240]">Payment For:</p>
-                <p className="mb-2 font-semibold">{purposeText}</p>
+                <p className="mb-2 font-semibold">{explicitPurposeDisplay}</p>
               </>
             )}
             <p className="font-bold text-[#0d2240]">Period Covered:</p>
@@ -143,8 +150,9 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
             <p className="mb-2 uppercase">{String(payment.method || 'CASH').replace(/_/g, ' ')}</p>
             {(() => {
               const isTill = businessInfo?.mpesaType === 'Till';
-              const shortcode = businessInfo?.integrations?.mpesa?.shortcode || businessInfo?.paybillNumber || '';
-              const acctNo = payment.accountNumber || businessInfo?.paybillAccount || '';
+              const shortcode = String(businessInfo?.integrations?.mpesa?.shortcode || businessInfo?.paybillNumber || '').trim();
+              const rawSettingsAcct = String(businessInfo?.paybillAccount || '').trim();
+              const acctNo = /^unit\s+number\b/i.test(rawSettingsAcct) ? '' : rawSettingsAcct;
               return (
                 <>
                   {shortcode && (
@@ -169,9 +177,8 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
 
         {/* Full-Width Bold Status Banner */}
         <div
-          className={`w-full py-2.5 text-center font-bold text-sm tracking-widest text-white uppercase ${
-            isPaid ? 'bg-[#00a99d]' : rawStatus === 'PARTIAL' ? 'bg-amber-600' : 'bg-rose-600'
-          }`}
+          className={`w-full py-2.5 text-center font-bold text-sm tracking-widest text-white uppercase ${isPaid ? 'bg-[#00a99d]' : rawStatus === 'PARTIAL' ? 'bg-amber-600' : 'bg-rose-600'
+            }`}
         >
           {isPaid ? 'PAID' : rawStatus}
         </div>
@@ -186,6 +193,7 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
             <thead>
               <tr className="bg-[#0d2240] text-white text-[11px] uppercase">
                 <th className="py-2 px-3 text-left">Billing Period</th>
+                <th className="py-2 px-3 text-left">Category</th>
                 <th className="py-2 px-3 text-left">Description</th>
                 <th className="py-2 px-3 text-right">Total Paid</th>
                 <th className="py-2 px-3 text-right">Date Generated</th>
@@ -194,10 +202,11 @@ const Receipt = React.forwardRef(({ payment, currency = 'KES', businessInfo }, r
             <tbody>
               <tr className="border-b border-slate-200">
                 <td className="py-2.5 px-3">{period}</td>
+                <td className="py-2.5 px-3 font-semibold text-[#00a99d]">{purposeText}</td>
                 <td className="py-2.5 px-3">
                   {invoiceRef
-                    ? `${purposeText} — Invoice #${invoiceRef} (Unit ${unitInfo})`
-                    : `${purposeText} (Unit ${unitInfo})`}
+                    ? `${explicitPurposeDisplay} — Invoice #${invoiceRef} (Unit ${unitInfo})`
+                    : `${explicitPurposeDisplay} (Unit ${unitInfo})`}
                 </td>
                 <td className="py-2.5 px-3 text-right font-semibold">{currency} {amountFormatted}</td>
                 <td className="py-2.5 px-3 text-right">{formattedDateTime}</td>

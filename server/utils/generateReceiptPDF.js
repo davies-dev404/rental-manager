@@ -80,14 +80,17 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
 
       // 3. CENTERED "PAYMENT RECEIPT" / "INVOICE PAYMENT RECEIPT" TITLE
       let yPos = Math.max(96, headerY + 12);
+      const explicitPurposeDisplay = invoiceRef
+        ? (purpose.invoiceExplicitLabel || purpose.purposeText)
+        : (purpose.explicitLabel || purpose.purposeText);
       doc.fontSize(14).font('Helvetica-Bold').fillColor(darkText)
         .text(invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT', 36, yPos, { align: 'center', width: 523, characterSpacing: 1.5 });
       yPos += 19;
       doc.fontSize(9).font('Helvetica-Bold').fillColor(greenAccent)
         .text(
           invoiceRef
-            ? `RECEIPT FOR INVOICE #${invoiceRef} — ${purpose.purposeText.toUpperCase()}`
-            : `PAYMENT FOR: ${purpose.purposeText.toUpperCase()}`,
+            ? `RECEIPT FOR INVOICE #${invoiceRef} — ${explicitPurposeDisplay.toUpperCase()}`
+            : `PAYMENT FOR: ${explicitPurposeDisplay.toUpperCase()}`,
           36,
           yPos,
           { align: 'center', width: 523, characterSpacing: 0.8 }
@@ -118,9 +121,9 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Receipt Number:', receiptRef);
       if (invoiceRef) {
         c2Y = drawColField(doc, col2X, c2Y, colW, 'Receipt For:', `Invoice #${invoiceRef}`);
-        c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', purpose.purposeText);
+        c2Y = drawColField(doc, col2X, c2Y, colW, 'Invoice For:', explicitPurposeDisplay);
       } else {
-        c2Y = drawColField(doc, col2X, c2Y, colW, 'Payment For:', purpose.purposeText);
+        c2Y = drawColField(doc, col2X, c2Y, colW, 'Payment For:', explicitPurposeDisplay);
       }
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Period Covered:', billingPeriod);
       c2Y = drawColField(doc, col2X, c2Y, colW, 'Total Amount:', `${currency}. ${formattedAmount}`);
@@ -132,8 +135,7 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
       c3Y = drawColField(doc, col3X, c3Y, colW, 'Organisation:', businessName);
       c3Y = drawColField(doc, col3X, c3Y, colW, 'Payment Mode:', String(payment.method || 'CASH').replace(/_/g, ' ').toUpperCase());
 
-      const acctFallback = payment.accountNumber || payment.tenantId?.accountNumber || settings?.paybillAccount || '';
-      const mpesa = resolveMpesaPaymentDetails(settings, acctFallback);
+      const mpesa = resolveMpesaPaymentDetails(settings);
       if (mpesa.mpesaType === 'Till') {
         if (mpesa.shortcode) {
           c3Y = drawColField(doc, col3X, c3Y, colW, 'Till Number:', mpesa.shortcode);
@@ -171,28 +173,33 @@ const generateReceiptPDF = (payment, settings, propertyName) => {
 
       doc.rect(36, yPos, 523, 24).fill(royalBlue);
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff')
-        .text('BILLING PERIOD', 46, yPos + 8, { width: 95 })
-        .text('DESCRIPTION', 148, yPos + 8, { width: 170 })
-        .text('TOTAL PAID', 325, yPos + 8, { width: 105, align: 'right' })
-        .text('DATE GENERATED', 440, yPos + 8, { width: 110, align: 'right' });
+        .text('BILLING PERIOD', 46, yPos + 8, { width: 72 })
+        .text('CATEGORY', 122, yPos + 8, { width: 88 })
+        .text('DESCRIPTION', 214, yPos + 8, { width: 158 })
+        .text('TOTAL PAID', 376, yPos + 8, { width: 82, align: 'right' })
+        .text('DATE', 462, yPos + 8, { width: 88, align: 'right' });
       yPos += 24;
 
       const rows = purpose.lineItems.length > 0
         ? purpose.lineItems
-        : [{ desc: `${purpose.purposeText} (Unit ${unitInfo})`, amt: payment.amount }];
+        : [{ desc: `${purpose.purposeText} (Unit ${unitInfo})`, amt: payment.amount, categoryLabel: purpose.purposeText }];
 
       rows.forEach((r) => {
         const rowAmt = Number(r.amt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        doc.rect(36, yPos, 523, 24).fill('#ffffff');
+        const rowCategory = r.categoryLabel || purpose.purposeText || 'Rent';
+        doc.rect(36, yPos, 523, 26).fill('#ffffff');
         doc.strokeColor(borderColor).lineWidth(0.5)
-          .moveTo(36, yPos + 24).lineTo(559, yPos + 24).stroke();
+          .moveTo(36, yPos + 26).lineTo(559, yPos + 26).stroke();
 
-        doc.fontSize(8.5).font('Helvetica').fillColor(darkText)
-          .text(billingPeriod, 46, yPos + 8, { width: 95 })
-          .text(r.desc, 148, yPos + 8, { width: 170 })
-          .text(`${currency} ${rowAmt}`, 325, yPos + 8, { width: 105, align: 'right' })
-          .text(formattedDateTime, 440, yPos + 8, { width: 110, align: 'right' });
-        yPos += 24;
+        doc.fontSize(8).font('Helvetica').fillColor(darkText)
+          .text(billingPeriod, 46, yPos + 9, { width: 72 });
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(greenAccent)
+          .text(rowCategory, 122, yPos + 9, { width: 88 });
+        doc.fontSize(8).font('Helvetica').fillColor(darkText)
+          .text(r.desc, 214, yPos + 9, { width: 158 })
+          .text(`${currency} ${rowAmt}`, 376, yPos + 9, { width: 82, align: 'right' })
+          .text(formattedDateTime.split(' ')[0], 462, yPos + 9, { width: 88, align: 'right' });
+        yPos += 26;
       });
 
       // 7. CLEAN CENTERED FOOTER
