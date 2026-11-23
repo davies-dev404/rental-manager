@@ -106,13 +106,14 @@ function drawColField(doc, x, y, colWidth, label, value) {
 }
 
 /**
- * Resolves registered landlord M-Pesa settings cleanly:
+ * Resolves registered landlord M-Pesa settings strictly from General Settings:
  * - Till: shows Till Number ONLY (no Account Number)
- * - Paybill: shows Paybill Number + Account Number
+ * - Paybill: shows Paybill Number + Account Number configured by the landlord in General Settings
+ *   (never substituting the tenant's unit number as the Paybill Account Number).
  */
-function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
+function resolveMpesaPaymentDetails(settings = {}) {
   const mpesaType = settings?.mpesaType === 'Till' ? 'Till' : 'Paybill';
-  const shortcode = String(settings?.integrations?.mpesa?.shortcode || '').trim();
+  const shortcode = String(settings?.integrations?.mpesa?.shortcode || settings?.paybillNumber || '').trim();
   if (mpesaType === 'Till') {
     return {
       mpesaType: 'Till',
@@ -121,7 +122,9 @@ function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
       accountNumber: ''
     };
   }
-  const resolvedAcct = String(accountFallback || settings?.paybillAccount || '').trim();
+  const rawSettingsAcct = String(settings?.paybillAccount || '').trim();
+  const isDefaultHint = /^unit\s+number\b/i.test(rawSettingsAcct);
+  const resolvedAcct = isDefaultHint ? '' : rawSettingsAcct;
   return {
     mpesaType: 'Paybill',
     shortcode,
@@ -133,25 +136,41 @@ function resolveMpesaPaymentDetails(settings = {}, accountFallback = '') {
 function classifyTextPurpose(raw = '') {
   const s = String(raw || '').toLowerCase();
   if (!s) return '';
-  if (/maint|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest/.test(s)) return 'Maintenance';
-  if (/util|water|elect|power|garbage|sewer|gas|trash|borehole/.test(s)) return 'Utilities';
-  if (/service\s*charge/.test(s)) return 'Service Charge';
-  if (/penalt|late\s*fee|late\s*payment/.test(s)) return 'Late Payment Penalty';
+  if (/maint|mainat|mantain|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest|fumigat|handyman|electrician|drain|leak|lock|window|door|tile|tap|sink|pipe|bulb|socket|switch|toilet|shower|cistern|geyser|heater|fence|wall|floor|ceiling|glass|hinge|broken|damage|replace|welding|masonry|unblock/.test(s)) return 'Maintenance';
+  if (/utilit|\butil\b|water|electr|power|kplc|garbage|trash|refuse|sewer|sewage|\bgas\b|borehole|generator|wifi|wi-fi|internet|meter/.test(s)) return 'Utilities';
+  if (/service\s*charge|estate\s*fee|common\s*area/.test(s)) return 'Service Charge';
+  if (/penalt|late\s*fee|late\s*payment|\bfine\b|surcharge/.test(s)) return 'Late Payment Penalty';
   if (/deposit/.test(s)) return 'Security Deposit';
-  if (/rent/.test(s)) return 'Rent';
+  if (/\brent\b|rental|lease\s*payment/.test(s)) return 'Rent';
   return '';
 }
 
 function normalizeCategoryTag(cat = '', desc = '') {
   const c = String(cat || '').toLowerCase().trim();
-  if (c === 'rent') return 'Rent';
-  if (c === 'water' || c === 'electricity' || c === 'utilities') return 'Utilities';
-  if (c === 'maintenance') return 'Maintenance';
+  if (c === 'maintenance' || c === 'repair') return 'Maintenance';
+  if (c === 'water' || c === 'electricity' || c === 'utilities' || c === 'garbage' || c === 'sewer' || c === 'gas' || c === 'generator') return 'Utilities';
   if (c === 'service_charge') return 'Service Charge';
   if (c === 'penalty') return 'Late Payment Penalty';
   if (c === 'deposit') return 'Security Deposit';
   if (c === 'subscription') return 'Subscription';
-  return classifyTextPurpose(desc) || '';
+  // If category is generic 'rent', 'other', or empty, still inspect description for explicit non-rent signals
+  const descSignal = classifyTextPurpose(desc);
+  if (descSignal && descSignal !== 'Rent' && (c === '' || c === 'other' || c === 'combined')) {
+    return descSignal;
+  }
+  if (c === 'rent') return descSignal || 'Rent';
+  return descSignal || '';
+}
+
+function formatExplicitPurposeLabel(purposeText = 'Rent', { asInvoice = false } = {}) {
+  const p = String(purposeText || 'Rent').trim();
+  if (!p || /^rent$/i.test(p)) return asInvoice ? 'Rent Invoice' : 'Rent';
+  if (/^maintenance$/i.test(p)) return asInvoice ? 'Invoice for Maintenance' : 'Maintenance';
+  if (/^utilities$/i.test(p)) return asInvoice ? 'Invoice for Utilities' : 'Utilities';
+  if (/^service charge$/i.test(p)) return asInvoice ? 'Invoice for Service Charge' : 'Service Charge';
+  if (/^late payment penalty$/i.test(p)) return asInvoice ? 'Invoice for Late Payment Penalty' : 'Late Payment Penalty';
+  if (/^security deposit$/i.test(p)) return asInvoice ? 'Invoice for Security Deposit' : 'Security Deposit';
+  return asInvoice ? `Invoice for ${p}` : p;
 }
 
 /**
@@ -167,13 +186,35 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
   const unitSuffix = unitInfo ? ` (Unit ${unitInfo})` : '';
   const invoiceRef = String(payment.invoiceNumber || invObj?.invoiceNumber || '').trim();
 
+  const rawType = String(payment.type || '').trim();
+  const rawCategory = String(payment.category || '').trim().toLowerCase();
+  const rawNotes = String(payment.notes || invObj?.notes || '').trim();
+
+  // Detect explicit single-purpose non-rent classification (prevents mislabeling Maintenance/Utilities
+  // records whose amount was previously placed in rentAmount by default).
+  const explicitCategoryTag =
+    rawCategory && !['rent', 'combined', 'other'].includes(rawCategory)
+      ? normalizeCategoryTag(rawCategory, '')
+      : '';
+  const textSignalTag = classifyTextPurpose(`${rawType} ${rawNotes}`);
+  const hasOtherSplitBuckets =
+    Number(payment.depositAmount || 0) > 0 ||
+    Number(payment.utilityAmount || 0) > 0 ||
+    (Array.isArray(payment.utilities) && payment.utilities.some((u) => Number(u?.amount) > 0)) ||
+    Number(payment.serviceChargeAmount || 0) > 0 ||
+    Number(payment.penaltyAmount || 0) > 0;
+  const nonRentOverrideTag =
+    !hasOtherSplitBuckets
+      ? (explicitCategoryTag || (textSignalTag && textSignalTag !== 'Rent' ? textSignalTag : ''))
+      : '';
+
   const tags = [];
   const pushTag = (t) => {
     if (t && !tags.includes(t)) tags.push(t);
   };
   const lineItems = [];
 
-  if (Number(payment.rentAmount || 0) > 0) {
+  if (Number(payment.rentAmount || 0) > 0 && !nonRentOverrideTag) {
     pushTag('Rent');
     lineItems.push({ desc: `Rent Payment${unitSuffix}`, amt: Number(payment.rentAmount), categoryLabel: 'Rent' });
   }
@@ -195,8 +236,8 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
     }
   } else if (Number(payment.utilityAmount || 0) > 0) {
     pushTag('Utilities');
-    const utilHint = classifyTextPurpose(`${payment.notes || ''} ${payment.type || ''}`) === 'Utilities' && payment.type && !/^(utilities|utility|combined)$/i.test(String(payment.type).trim())
-      ? `${payment.type}`
+    const utilHint = classifyTextPurpose(`${rawNotes} ${rawType}`) === 'Utilities' && rawType && !/^(utilities|utility|combined|rent)$/i.test(rawType)
+      ? rawType
       : 'Utility Charges';
     lineItems.push({ desc: `Utilities - ${utilHint}${unitSuffix}`, amt: Number(payment.utilityAmount), categoryLabel: 'Utilities' });
   }
@@ -213,7 +254,7 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
   if (lineItems.length === 0 && invItems.length > 0) {
     invItems.forEach((it) => {
       const amt = Number(it.totalAmount ?? it.unitPrice ?? payment.amount ?? 0);
-      const tag = normalizeCategoryTag(it.category, it.description) || classifyTextPurpose(`${payment.type || ''} ${payment.notes || ''}`) || 'Rent';
+      const tag = nonRentOverrideTag || normalizeCategoryTag(it.category, it.description) || classifyTextPurpose(`${rawType} ${rawNotes}`) || 'Rent';
       pushTag(tag);
       const descText = String(it.description || tag).trim();
       lineItems.push({
@@ -230,10 +271,9 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
   }
 
   if (lineItems.length === 0) {
-    const rawType = String(payment.type || '').trim();
-    const rawNotes = String(payment.notes || invObj?.notes || '').trim();
     const detected =
-      normalizeCategoryTag(payment.category, `${rawType} ${rawNotes}`) ||
+      nonRentOverrideTag ||
+      normalizeCategoryTag(rawCategory, `${rawType} ${rawNotes}`) ||
       classifyTextPurpose(`${rawType} ${rawNotes}`);
     const fallbackLabel =
       detected ||
@@ -242,7 +282,7 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
 
     const detail = rawNotes && !rawNotes.toLowerCase().includes(fallbackLabel.toLowerCase())
       ? `${fallbackLabel} — ${rawNotes}`
-      : (rawType && rawType.toLowerCase() !== fallbackLabel.toLowerCase() && !/^(combined|rental payment)$/i.test(rawType)
+      : (rawType && rawType.toLowerCase() !== fallbackLabel.toLowerCase() && !/^(combined|rental payment|rent)$/i.test(rawType)
           ? `${fallbackLabel} (${rawType})`
           : fallbackLabel);
     lineItems.push({
@@ -267,6 +307,8 @@ function resolvePaymentPurpose(payment = {}, invoiceOverride = null) {
 
   return {
     purposeText,
+    explicitLabel: formatExplicitPurposeLabel(purposeText, { asInvoice: false }),
+    invoiceExplicitLabel: formatExplicitPurposeLabel(purposeText, { asInvoice: true }),
     tags,
     lineItems
   };
@@ -282,15 +324,31 @@ function resolveInvoicePurposeLabel(invoice = {}) {
   const pushTag = (t) => {
     if (t && !tags.includes(t)) tags.push(t);
   };
+
+  // Explicit invoice-level non-rent category takes priority
+  const topCat = String(invoice.category || '').trim().toLowerCase();
+  if (topCat && !['rent', 'combined', 'other'].includes(topCat)) {
+    const topTag = normalizeCategoryTag(topCat, '');
+    if (topTag) pushTag(topTag);
+  }
+
   items.forEach((it) => {
     const t = normalizeCategoryTag(it.category, it.description);
     if (t) pushTag(t);
   });
-  if (tags.length === 0) {
-    const hint = classifyTextPurpose(`${invoice.invoiceType || ''} ${invoice.notes || ''}`);
-    if (hint) pushTag(hint);
-    else if (invoice.invoiceType) pushTag(String(invoice.invoiceType).trim());
+
+  // Also inspect invoiceType & notes if items only produced generic 'Rent' or nothing
+  const metaHint = classifyTextPurpose(`${invoice.invoiceType || ''} ${invoice.notes || ''}`);
+  if (metaHint && metaHint !== 'Rent' && (tags.length === 0 || (tags.length === 1 && tags[0] === 'Rent' && topCat !== 'rent'))) {
+    tags.length = 0;
+    pushTag(metaHint);
+  } else if (tags.length === 0) {
+    if (metaHint) pushTag(metaHint);
+    else if (invoice.invoiceType && !/^(rent|combined|rental payment)$/i.test(String(invoice.invoiceType).trim())) {
+      pushTag(String(invoice.invoiceType).trim());
+    }
   }
+
   if (tags.length === 0) return 'Rent';
   if (tags.length === 1) return tags[0];
   if (tags.length === 2) return `${tags[0]} & ${tags[1]}`;
@@ -304,6 +362,9 @@ module.exports = {
   drawColHeader,
   drawColField,
   resolveMpesaPaymentDetails,
+  classifyTextPurpose,
+  normalizeCategoryTag,
+  formatExplicitPurposeLabel,
   resolvePaymentPurpose,
   resolveInvoicePurposeLabel
 };

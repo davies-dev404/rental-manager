@@ -10,7 +10,6 @@ import {
   Plus,
   Download,
   Mail,
-  Trash2,
   ChevronDown,
   ChevronUp,
   Search,
@@ -222,7 +221,7 @@ const buildDeduplicatedInvoices = ({
     }
 
     if (modes.penalties) {
-      const penaltyAmt = Number(t.penalty || 0);
+      const penaltyAmt = Number(t.penalty || 1000);
       if (penaltyAmt > 0 && !hasExistingOpenForItem("penalty")) {
         invoices.push({
           date: invoiceDate,
@@ -243,11 +242,42 @@ const buildDeduplicatedInvoices = ({
   return { matchingTenants, invoices, skippedPaidCount, skippedDuplicateCount };
 };
 
+const INVOICE_CATEGORY_OPTIONS = [
+  { value: "rent", label: "Rent" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "utilities", label: "Utilities" },
+  { value: "service_charge", label: "Service Charge" },
+  { value: "penalty", label: "Late Payment Penalty" },
+  { value: "deposit", label: "Security Deposit" }
+];
+
+const MAINT_REGEX = /maint|mainat|mantain|repair|plumb|paint|clean|renovat|fix|carpentry|roof|gate|lift|pest|fumigat|handyman|electrician|drain|leak|lock|window|door|tile|tap|sink|pipe|bulb|socket|switch|toilet|shower|cistern|geyser|heater|fence|wall|floor|ceiling|glass|hinge|broken|damage|replace|welding|masonry|unblock/i;
+const UTIL_REGEX = /utilit|\butil\b|water|electr|power|kplc|garbage|trash|refuse|sewer|sewage|\bgas\b|borehole|generator|wifi|wi-fi|internet|meter/i;
+
+function detectInvoiceCategoryFromText(text = "") {
+  const s = String(text || "").trim();
+  if (!s) return "";
+  if (MAINT_REGEX.test(s)) return "maintenance";
+  if (UTIL_REGEX.test(s)) return "utilities";
+  if (/service\s*charge|estate\s*fee/i.test(s)) return "service_charge";
+  if (/penalt|late\s*fee|late\s*payment|\bfine\b/i.test(s)) return "penalty";
+  if (/deposit/i.test(s)) return "deposit";
+  if (/\brent\b|rental/i.test(s)) return "rent";
+  return "";
+}
+
+function categoryValueToLabel(cat = "") {
+  const found = INVOICE_CATEGORY_OPTIONS.find((o) => o.value === String(cat || "").toLowerCase());
+  return found ? found.label : "";
+}
+
 // ─── Invoice Form View (MakaziFlow Layout) ───────────────────────────────────
 function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
   const { toast } = useToast();
   const [propertyId, setPropertyId] = useState("");
   const [tenantId, setTenantId] = useState("");
+  const [invoiceCategory, setInvoiceCategory] = useState("rent");
+  const [categoryManuallySet, setCategoryManuallySet] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -266,6 +296,11 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
     const updated = [...items];
     updated[index][field] = value;
     setItems(updated);
+    if (!categoryManuallySet && (field === "name" || field === "description")) {
+      const combinedText = updated.map((it) => `${it.name} ${it.description}`).join(" ");
+      const detected = detectInvoiceCategoryFromText(combinedText);
+      if (detected) setInvoiceCategory(detected);
+    }
   };
 
   const addItemRow = () => {
@@ -315,23 +350,45 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         0
       );
 
-      const primaryLabel = validItems.map((it) => it.name.trim()).filter(Boolean).join(", ") || "Rent";
+      const combinedItemText = validItems.map((it) => `${it.name} ${it.description}`).join(" ");
+      const autoDetectedCat = detectInvoiceCategoryFromText(`${combinedItemText} ${notes}`);
+      const resolvedCategory = categoryManuallySet
+        ? invoiceCategory
+        : (autoDetectedCat || invoiceCategory || "rent");
+      const categoryLabel = categoryValueToLabel(resolvedCategory) || "Rent";
+      const primaryLabel = validItems.map((it) => it.name.trim()).filter(Boolean).join(", ") || categoryLabel;
+
       const sumBucket = (regex) => validItems
-        .filter((it) => regex.test(`${it.name} ${it.description}`.toLowerCase()))
+        .filter((it) => regex.test(`${it.name} ${it.description}`))
         .reduce((s, it) => s + (Number(it.amount) || 0), 0);
-      const utilSum = sumBucket(/util|water|elect|power|garbage|sewer|gas/);
-      const maintSum = sumBucket(/maint|repair|plumb|paint|clean|renovat|roof|pest/);
-      const depSum = sumBucket(/deposit/);
-      const svcSum = sumBucket(/service/);
-      const penSum = sumBucket(/penalt|late/);
-      const explicitlyRentSum = sumBucket(/\brent\b/);
-      const derivedCategory =
-        validItems.length === 1
-          ? (maintSum > 0 ? "maintenance" : utilSum > 0 ? "utilities" : depSum > 0 ? "deposit" : svcSum > 0 ? "service_charge" : penSum > 0 ? "penalty" : "rent")
-          : "combined";
-      const rentSum = explicitlyRentSum > 0
-        ? explicitlyRentSum
-        : (utilSum === 0 && maintSum === 0 && depSum === 0 && svcSum === 0 && penSum === 0 ? totalAmount : 0);
+
+      let rentSum = 0;
+      let utilSum = 0;
+      let depSum = 0;
+      let svcSum = 0;
+      let penSum = 0;
+
+      if (resolvedCategory === "maintenance") {
+        // Maintenance stays out of rentAmount so receipts/invoices explicitly specify Maintenance
+      } else if (resolvedCategory === "utilities") {
+        utilSum = totalAmount;
+      } else if (resolvedCategory === "deposit") {
+        depSum = totalAmount;
+      } else if (resolvedCategory === "service_charge") {
+        svcSum = totalAmount;
+      } else if (resolvedCategory === "penalty") {
+        penSum = totalAmount;
+      } else {
+        utilSum = sumBucket(UTIL_REGEX);
+        const maintSum = sumBucket(MAINT_REGEX);
+        depSum = sumBucket(/deposit/i);
+        svcSum = sumBucket(/service\s*charge/i);
+        penSum = sumBucket(/penalt|late/i);
+        const explicitlyRentSum = sumBucket(/\brent\b/i);
+        rentSum = explicitlyRentSum > 0
+          ? explicitlyRentSum
+          : (utilSum === 0 && maintSum === 0 && depSum === 0 && svcSum === 0 && penSum === 0 ? totalAmount : 0);
+      }
 
       const savedRes = await api.addPayment({
         tenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
@@ -346,7 +403,7 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         method: "invoice",
         status: status === "open" ? "pending" : status,
         type: primaryLabel,
-        category: derivedCategory,
+        category: resolvedCategory,
         notes: notes || validItems.map((it) => it.description || it.name).filter(Boolean).join(" • ")
       });
 
@@ -357,7 +414,8 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
         rawTenantId: selectedTenant?._id || selectedTenant?.id || tenantId,
         unitId: getTenantUnitNumber(selectedTenant) || "Unit",
         property: selectedProp?.name || getTenantPropName(selectedTenant) || "Property",
-        item: validItems[0]?.name || "Rent",
+        item: primaryLabel,
+        category: resolvedCategory,
         items: validItems,
         amount: totalAmount,
         status: status === "open" ? "pending" : status,
@@ -445,6 +503,29 @@ function InvoiceFormView({ properties, tenants, onBack, onAdd }) {
               {filteredTenants.map((t) => (
                 <option key={t._id || t.id} value={t._id || t.id}>
                   {t.name} (Unit {t.unitNumber || t.unit || "—"})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Row 1b: Invoice Category */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-48 sm:text-right text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0">
+            Invoice Category
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={invoiceCategory}
+              onChange={(e) => {
+                setInvoiceCategory(e.target.value);
+                setCategoryManuallySet(true);
+              }}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              {INVOICE_CATEGORY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
                 </option>
               ))}
             </select>
@@ -744,10 +825,10 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-medium text-slate-800 dark:text-slate-100">
-            Generate Rent Invoices
+            Generate Bulk Invoices
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Create rent invoices for multiple tenants at once.
+            Create rent, recurring bills, or penalty invoices for multiple tenants at once.
           </p>
         </div>
         <button
@@ -901,7 +982,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.rent}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, rent: e.target.checked })}
+                    onChange={e => setInvoiceTypes({ ...invoiceTypes, rent: e.target.checked, penalties: e.target.checked ? false : invoiceTypes.penalties })}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Rent</span>
@@ -910,7 +991,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.recurring}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, recurring: e.target.checked })}
+                    onChange={e => setInvoiceTypes({ ...invoiceTypes, recurring: e.target.checked, penalties: e.target.checked ? false : invoiceTypes.penalties })}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Other recurring bills</span>
@@ -919,7 +1000,11 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.penalties}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, penalties: e.target.checked })}
+                    onChange={e => setInvoiceTypes(
+                      e.target.checked
+                        ? { rent: false, recurring: false, penalties: true }
+                        : { ...invoiceTypes, penalties: false }
+                    )}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Penalties</span>
@@ -984,26 +1069,38 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {(eligibleTenants.length > 0 ? eligibleTenants : tenants).slice(0, 15).map((t, idx) => {
-                  const prop = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
-                  return (
-                    <tr key={t._id || idx}>
-                      <td className="py-2.5 px-4 font-medium text-slate-800 dark:text-slate-200">{t.name || "Tenant"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{prop?.name || t.property || "Property"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{t.unitNumber || t.unit || "-"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">
-                        {[
-                          invoiceTypes.rent && "Rent",
-                          invoiceTypes.recurring && "Recurring Bills",
-                          invoiceTypes.penalties && "Penalties"
-                        ].filter(Boolean).join(", ")}
-                      </td>
-                      <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
-                        KES {Number(t.rentAmount || 15000).toLocaleString()}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {eligibleTenants.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 px-4 text-center text-slate-400">
+                      No active tenants found in the selected property(s).
+                    </td>
+                  </tr>
+                ) : (
+                  eligibleTenants.slice(0, 15).map((t, idx) => {
+                    const prop = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
+                    const estAmount =
+                      (invoiceTypes.rent ? getTenantRentAmount(t) : 0) +
+                      (invoiceTypes.recurring ? getTenantUtilitiesAmount(t) : 0) +
+                      (invoiceTypes.penalties ? Number(t.penalty || 1000) : 0);
+                    return (
+                      <tr key={t._id || idx}>
+                        <td className="py-2.5 px-4 font-medium text-slate-800 dark:text-slate-200">{t.name || "Tenant"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{prop?.name || getTenantPropName(t) || "Property"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{getTenantUnitNumber(t) || "-"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">
+                          {[
+                            invoiceTypes.rent && "Rent",
+                            invoiceTypes.recurring && "Recurring Bills",
+                            invoiceTypes.penalties && "Penalties"
+                          ].filter(Boolean).join(", ")}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
+                          KES {Number(estAmount || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -1108,6 +1205,7 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
     const created = [];
     targetTenants.forEach(t => {
       valid.forEach(it => {
+        const detectedCat = detectInvoiceCategoryFromText(`${it.name} ${it.description}`) || "other";
         created.push({
           date: invoiceDate,
           rawTenantId: t._id || t.id,
@@ -1115,7 +1213,8 @@ function BulkInvoicingView({ properties, tenants, onBack, onAddInvoices }) {
           tenantId: t.name || "Tenant",
           unitId: getTenantUnitNumber(t) || "Unit",
           property: getTenantPropName(t) || propName,
-          item: it.name || "General",
+          item: it.name || categoryValueToLabel(detectedCat) || "General",
+          category: detectedCat,
           description: it.description || "",
           status: "pending",
           amount: Number(it.amount || 0),
@@ -2200,10 +2299,29 @@ export default function InvoicesPage() {
     ...payments.map((p) => {
       const rawStatus = String(p.status || "open").toLowerCase();
       const displayStatus = rawStatus === "confirmed" ? "paid" : rawStatus === "pending" ? "open" : rawStatus;
+      const detectedCat =
+        (p.category && !["rent", "other", "combined"].includes(String(p.category).toLowerCase())
+          ? String(p.category).toLowerCase()
+          : detectInvoiceCategoryFromText(`${p.type || ""} ${p.notes || ""}`)) ||
+        (Number(p.utilityAmount || 0) > 0 || (Array.isArray(p.utilities) && p.utilities.length > 0)
+          ? "utilities"
+          : Number(p.serviceChargeAmount || 0) > 0
+          ? "service_charge"
+          : Number(p.penaltyAmount || 0) > 0
+          ? "penalty"
+          : Number(p.depositAmount || 0) > 0
+          ? "deposit"
+          : String(p.category || "rent").toLowerCase());
+      const resolvedItemLabel =
+        p.type && !/^rent$/i.test(String(p.type).trim())
+          ? p.type
+          : categoryValueToLabel(detectedCat) || p.type || "Rent";
       return {
         _id: p._id,
         date: p.date,
         monthCovered: p.monthCovered,
+        invoiceNumber: p.invoiceNumber || "",
+        paymentTransactionId: p.paymentTransactionId || null,
         tenantId:
           typeof p.tenantId === "object"
             ? p.tenantId?.name || "Tenant"
@@ -2214,7 +2332,8 @@ export default function InvoicesPage() {
             ? p.unitId?.unitNumber || "Unit"
             : p.unitId || "Unit",
         property: p.property || p.unitId?.propertyId?.name || "Property",
-        item: p.type || "Rent",
+        item: resolvedItemLabel,
+        category: detectedCat,
         notes: p.notes || "",
         status: displayStatus,
         amount: p.amount || 0
@@ -2243,9 +2362,6 @@ export default function InvoicesPage() {
   const [markPaidRef, setMarkPaidRef] = useState("");
   const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
-  const [deleteTargets, setDeleteTargets] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Pagination
   const [perPage, setPerPage] = useState(10);
@@ -2379,6 +2495,7 @@ export default function InvoicesPage() {
         );
 
         const res = await api.sendInvoice({
+          paymentId: inv._id,
           tenantId: tenant?._id || tenant?.id || inv.rawTenantId,
           tenantName: tenant?.name || inv.tenantId,
           email: tenant?.email,
@@ -2389,6 +2506,7 @@ export default function InvoicesPage() {
           propertyName: inv.property,
           unitNumber: typeof inv.unitId === "object" ? inv.unitId?.unitNumber : inv.unitId,
           invoiceType: inv.item || "Rent",
+          category: inv.category || undefined,
           notes: inv.notes || inv.item
         });
         if (res?.emailSent || res?.smsSent) {
@@ -2504,77 +2622,32 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleDeleteSelected = () => {
-    if (selectedInvoices.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "None Selected",
-        description: "Please select invoice(s) to delete."
-      });
-      return;
-    }
-    const items = allInvoices.filter((inv) => selectedInvoices.includes(inv._id));
-    setDeleteTargets(items.length > 0 ? items : selectedInvoices.map((id) => ({ _id: id })));
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!Array.isArray(deleteTargets) || deleteTargets.length === 0) return;
-    setIsDeleting(true);
-    let deletedCount = 0;
-    let failedCount = 0;
-    let lastError = "";
-    const deletedIds = [];
-
-    for (const item of deleteTargets) {
-      const id = item._id;
-      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
-      if (isMongoId) {
-        try {
-          await api.deletePayment(id);
-          deletedCount++;
-          deletedIds.push(id);
-        } catch (err) {
-          failedCount++;
-          lastError = err.message || "Failed to delete invoice";
-        }
-      } else {
-        deletedCount++;
-        deletedIds.push(id);
+  const handleUpdateInvoiceCategory = async (inv, nextCategory) => {
+    const label = categoryValueToLabel(nextCategory) || "Rent";
+    const id = inv._id;
+    const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
+    if (isMongoId) {
+      try {
+        await api.updatePayment(id, { category: nextCategory, type: label });
+        queryClient.invalidateQueries({ queryKey: ["payments"] });
+        toast({
+          title: "Invoice Category Updated",
+          description: `Invoice #${String(id).slice(-6).toUpperCase()} is now marked as ${label}.`
+        });
+      } catch (err) {
+        toast({
+          variant: "destructive",
+          title: "Update Failed",
+          description: err.message || "Could not update invoice category."
+        });
       }
-    }
-
-    if (deletedIds.length > 0) {
+    } else {
       setCustomInvoices((prev) => {
-        const next = prev.filter((inv) => !deletedIds.includes(inv._id));
+        const next = prev.map((ci) =>
+          ci._id === id ? { ...ci, category: nextCategory, item: label } : ci
+        );
         try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
         return next;
-      });
-      setSelectedInvoices((prev) => prev.filter((id) => !deletedIds.includes(id)));
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-      queryClient.invalidateQueries({ queryKey: ["debtors"] });
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
-    }
-
-    setIsDeleting(false);
-    setDeleteTargets(null);
-
-    if (deletedCount === 0) {
-      toast({
-        variant: "destructive",
-        title: "Delete Failed",
-        description: lastError || "Could not delete selected invoice record(s)."
-      });
-    } else if (failedCount > 0) {
-      toast({
-        variant: "destructive",
-        title: "Partially Deleted",
-        description: `Deleted ${deletedCount} invoice(s), but ${failedCount} failed: ${lastError}`
-      });
-    } else {
-      toast({
-        title: "Invoices Deleted",
-        description: `Removed ${deletedCount} invoice record(s).`
       });
     }
   };
@@ -2591,6 +2664,7 @@ export default function InvoicesPage() {
             (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
         );
         if (tenantObj) {
+          const inferredCat = inv.category || detectInvoiceCategoryFromText(`${inv.item || ""} ${inv.notes || ""} ${inv.description || ""}`) || undefined;
           await api.addPayment({
             tenantId: tenantObj._id || tenantObj.id,
             unitId: inv.unitObjectId || (typeof tenantObj.unitId === "object" ? (tenantObj.unitId?._id || tenantObj.unitId?.id) : tenantObj.unitId),
@@ -2602,6 +2676,7 @@ export default function InvoicesPage() {
             method: "invoice",
             status: inv.status === "partial" ? "partial" : "pending",
             type: inv.item || "Rent",
+            category: inferredCat,
             notes: inv.notes || inv.description || undefined
           });
           savedCount++;
@@ -2970,20 +3045,6 @@ export default function InvoicesPage() {
                   Send Invoices
                 </Button>
                 <Button
-                  variant={selectedInvoices.length > 0 ? "destructive" : "outline"}
-                  size="sm"
-                  onClick={handleDeleteSelected}
-                  className={`h-7 px-2.5 text-[11px] gap-1 cursor-pointer ${
-                    selectedInvoices.length > 0
-                      ? ""
-                      : "text-slate-500 hover:text-rose-600 border-slate-300 dark:border-slate-700"
-                  }`}
-                  title="Delete selected invoice(s)"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  {selectedInvoices.length > 0 ? `Delete (${selectedInvoices.length})` : "Delete"}
-                </Button>
-                <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
@@ -3106,7 +3167,27 @@ export default function InvoicesPage() {
                           {p.tenantId}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                          {p.item}
+                          {!p.paymentTransactionId ? (
+                            <select
+                              value={
+                                INVOICE_CATEGORY_OPTIONS.some((o) => o.value === p.category)
+                                  ? p.category
+                                  : (detectInvoiceCategoryFromText(`${p.item || ""} ${p.notes || ""}`) || "rent")
+                              }
+                              onChange={(e) => handleUpdateInvoiceCategory(p, e.target.value)}
+                              aria-label="Invoice category"
+                              title={p.notes || p.item || "Change invoice category"}
+                              className="h-7 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 text-[11px] font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065] cursor-pointer"
+                            >
+                              {INVOICE_CATEGORY_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span>{p.item}</span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
                           {p.property && p.property !== "Property" ? `${p.property} (${p.unitId})` : p.unitId}
@@ -3150,6 +3231,7 @@ export default function InvoicesPage() {
                                   const invRef = `INV-${String(p._id || Date.now()).slice(-6).toUpperCase()}`;
                                   await api.downloadInvoicePdf(
                                     {
+                                      paymentId: p._id,
                                       invoiceNumber: invRef,
                                       tenantId: tenant?._id || tenant?.id || p.rawTenantId,
                                       tenantName: tenant?.name || p.tenantId || "Valued Tenant",
@@ -3160,7 +3242,8 @@ export default function InvoicesPage() {
                                       dueDate: p.date || new Date().toISOString().split("T")[0],
                                       amount: Number(p.amount || 0),
                                       invoiceType: p.item || "Rent",
-                                      notes: p.notes || p.item || "Rent & Utility Invoice"
+                                      category: p.category || undefined,
+                                      notes: p.notes || p.item || ""
                                     },
                                     `Invoice-${invRef}.pdf`
                                   );
@@ -3205,13 +3288,6 @@ export default function InvoicesPage() {
                                 <Download className="w-3 h-3" /> Receipt
                               </button>
                             )}
-                            <button
-                              onClick={() => setDeleteTargets([p])}
-                              className="text-[11px] text-rose-600 hover:underline cursor-pointer inline-flex items-center gap-1"
-                              title="Delete erroneous invoice"
-                            >
-                              <Trash2 className="w-3 h-3" /> Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -3270,47 +3346,6 @@ export default function InvoicesPage() {
           </div>
         </div>
       </div>
-
-      {/* Delete Erroneous Invoice(s) Confirmation Modal */}
-      {Array.isArray(deleteTargets) && deleteTargets.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                Delete Erroneous Invoice{deleteTargets.length > 1 ? "s" : ""}?
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                {deleteTargets.length === 1
-                  ? `This will permanently remove invoice #${String(deleteTargets[0]._id || "").slice(-6).toUpperCase()} of KES ${Number(deleteTargets[0].amount || 0).toLocaleString()} for ${deleteTargets[0].tenantId || "this tenant"}.`
-                  : `This will permanently remove ${deleteTargets.length} selected invoice record(s) totaling KES ${deleteTargets.reduce((s, x) => s + Number(x.amount || 0), 0).toLocaleString()}.`}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDeleteTargets(null)}
-                disabled={isDeleting}
-                className="text-xs h-8 cursor-pointer"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="text-xs h-8 cursor-pointer"
-              >
-                {isDeleting ? "Deleting..." : `Delete ${deleteTargets.length > 1 ? `(${deleteTargets.length})` : "Invoice"}`}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mark Open/Pending Invoice as Paid Modal */}
       {markPaidTarget && (
@@ -3393,3 +3428,13 @@ export default function InvoicesPage() {
     </div>
   );
 }
+
+export {
+  InvoiceFormView,
+  GenerateBulkInvoicesWizard,
+  RentInvoiceFormView,
+  RecurringBillsInvoiceFormView,
+  RentPenaltyInvoiceFormView,
+  GenerateCustomPenaltyInvoicesView,
+  buildDeduplicatedInvoices
+};

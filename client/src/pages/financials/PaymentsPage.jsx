@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Download,
   Mail,
-  Trash2,
   ChevronDown,
   ChevronUp,
   Search,
@@ -48,6 +47,7 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
     new Date().toISOString().split("T")[0]
   );
   const [status, setStatus] = useState("confirmed");
+  const [paymentFor, setPaymentFor] = useState("Rent");
   const [hideOptional, setHideOptional] = useState(false);
   const [paymentType, setPaymentType] = useState("other");
   const [description, setDescription] = useState("");
@@ -68,6 +68,7 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
     }
     if (t.property && typeof t.property === "object") return String(t.property._id || t.property.id || "");
     return "";
+
   };
 
   const getTenantPropName = (t) => {
@@ -150,6 +151,16 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
       const propName = selectedProp?.name || getTenantPropName(selectedTenant) || "Property";
       const uNumber = getTenantUnitNumber(selectedTenant) || "Unit";
 
+      const categoryMap = {
+        Rent: "rent",
+        Utilities: "utilities",
+        Maintenance: "maintenance",
+        "Service Charge": "service_charge",
+        "Late Payment Penalty": "penalty",
+        "Security Deposit": "deposit"
+      };
+      const resolvedCategory = categoryMap[paymentFor] || "rent";
+
       const paymentData = {
         _id: "PAY-" + Date.now().toString().slice(-6),
         amount: Number(paidAmount),
@@ -158,6 +169,9 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
         unitId: uNumber,
         property: propName,
         status,
+        type: paymentFor,
+        item: paymentFor,
+        category: resolvedCategory,
         paymentType,
         description,
         transactionId,
@@ -171,9 +185,12 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
           date: paymentDate,
           method: paymentType,
           status: status === "confirmed" ? "paid" : status,
+          type: paymentFor,
+          category: resolvedCategory,
           reference: transactionId || undefined,
           transactionId: transactionId || undefined,
-          description: description || undefined
+          description: description || undefined,
+          notes: description || undefined
         });
         if (res && res._id) {
           paymentData._id = res._id;
@@ -326,6 +343,27 @@ function PaymentFormView({ properties, tenants, onBack, onAdd }) {
               <option value="confirmed">confirmed</option>
               <option value="pending">pending</option>
               <option value="draft">draft</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Row 5: Payment For (Category) */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+          <label className="sm:w-52 sm:text-right text-xs font-medium text-slate-700 dark:text-slate-300 shrink-0">
+            Payment For
+          </label>
+          <div className="flex-1 max-w-lg">
+            <select
+              value={paymentFor}
+              onChange={(e) => setPaymentFor(e.target.value)}
+              className="w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-[#0b1065]"
+            >
+              <option value="Rent">Rent</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Service Charge">Service Charge</option>
+              <option value="Late Payment Penalty">Late Payment Penalty</option>
+              <option value="Security Deposit">Security Deposit</option>
             </select>
           </div>
         </div>
@@ -784,9 +822,6 @@ export default function PaymentsPage() {
   const [markPaidSendReceipt, setMarkPaidSendReceipt] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  const [deleteTargets, setDeleteTargets] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
   const [collapseDate, setCollapseDate] = useState(false);
   const [collapseStatus, setCollapseStatus] = useState(false);
   const [collapseProperty, setCollapseProperty] = useState(false);
@@ -932,7 +967,7 @@ export default function PaymentsPage() {
               ? { ...cp, status: "paid", paymentType: markPaidMethod, transactionId: markPaidRef.trim() || cp.transactionId }
               : cp
           );
-          try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch {}
+          try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch { }
           return next;
         });
       }
@@ -946,8 +981,8 @@ export default function PaymentsPage() {
         title: "Payment Marked as Paid",
         description: markPaidSendReceipt && isMongoId
           ? (receiptEmailed
-              ? `Updated to Paid and sent PDF receipt for ${markPaidTarget.tenantId} via Email.`
-              : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
+            ? `Updated to Paid and sent PDF receipt for ${markPaidTarget.tenantId} via Email.`
+            : `Updated to Paid${receiptReason ? ` (Receipt email skipped: ${receiptReason})` : ""}.`)
           : `Updated payment for ${markPaidTarget.tenantId} to Paid.`
       });
       setMarkPaidTarget(null);
@@ -960,81 +995,6 @@ export default function PaymentsPage() {
       });
     } finally {
       setIsUpdatingStatus(false);
-    }
-  };
-
-  const handleDeleteSelected = () => {
-    if (selectedPayments.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "None Selected",
-        description: "Please select payment record(s) to delete."
-      });
-      return;
-    }
-    const items = allPayments.filter((p) => selectedPayments.includes(p._id));
-    setDeleteTargets(items.length > 0 ? items : selectedPayments.map((id) => ({ _id: id })));
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!Array.isArray(deleteTargets) || deleteTargets.length === 0) return;
-    setIsDeleting(true);
-    let deletedCount = 0;
-    let failedCount = 0;
-    let lastError = "";
-    const successfullyDeletedIds = [];
-
-    for (const item of deleteTargets) {
-      const id = item._id;
-      const isMongoId = id && /^[a-f\d]{24}$/i.test(String(id));
-      if (isMongoId) {
-        try {
-          await api.deletePayment(id);
-          deletedCount++;
-          successfullyDeletedIds.push(id);
-        } catch (err) {
-          failedCount++;
-          lastError = err.message || "Failed to delete payment";
-        }
-      } else {
-        deletedCount++;
-        successfullyDeletedIds.push(id);
-      }
-    }
-
-    if (successfullyDeletedIds.length > 0) {
-      setCustomPayments((prev) => {
-        const next = prev.filter((p) => !successfullyDeletedIds.includes(p._id));
-        try { localStorage.setItem(paymentStorageKey, JSON.stringify(next)); } catch {}
-        return next;
-      });
-      setSelectedPayments((prev) => prev.filter((id) => !successfullyDeletedIds.includes(id)));
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["stats"] });
-      queryClient.invalidateQueries({ queryKey: ["debtors"] });
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
-    }
-
-    setIsDeleting(false);
-    setDeleteTargets(null);
-
-    if (deletedCount === 0) {
-      toast({
-        variant: "destructive",
-        title: "Delete Failed",
-        description: lastError || "Could not delete selected payment record(s)."
-      });
-    } else if (failedCount > 0) {
-      toast({
-        variant: "destructive",
-        title: "Partially Deleted",
-        description: `Deleted ${deletedCount} record(s), but ${failedCount} failed: ${lastError}`
-      });
-    } else {
-      toast({
-        title: "Payment Deleted",
-        description: `Removed ${deletedCount} erroneous payment record(s) and updated balances.`
-      });
     }
   };
 
@@ -1276,20 +1236,6 @@ export default function PaymentsPage() {
                   <Mail className="w-3 h-3" /> Send Receipt(s)
                 </Button>
                 <Button
-                  variant={selectedPayments.length > 0 ? "destructive" : "outline"}
-                  size="sm"
-                  onClick={handleDeleteSelected}
-                  className={`h-7 px-2.5 text-[11px] gap-1 cursor-pointer ${
-                    selectedPayments.length > 0
-                      ? ""
-                      : "text-slate-500 hover:text-rose-600 border-slate-300 dark:border-slate-700"
-                  }`}
-                  title="Delete selected erroneous payment(s)"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  {selectedPayments.length > 0 ? `Delete (${selectedPayments.length})` : "Delete"}
-                </Button>
-                <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
@@ -1465,13 +1411,6 @@ export default function PaymentsPage() {
                             >
                               <Download className="w-3 h-3" /> PDF
                             </button>
-                            <button
-                              onClick={() => setDeleteTargets([p])}
-                              className="text-[11px] text-rose-600 hover:underline cursor-pointer inline-flex items-center gap-1"
-                              title="Delete erroneous payment"
-                            >
-                              <Trash2 className="w-3 h-3" /> Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1530,47 +1469,6 @@ export default function PaymentsPage() {
           </div>
         </div>
       </div>
-
-      {/* Delete Erroneous Payment(s) Confirmation Modal */}
-      {Array.isArray(deleteTargets) && deleteTargets.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                Delete Erroneous Payment{deleteTargets.length > 1 ? "s" : ""}?
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                {deleteTargets.length === 1
-                  ? `This will permanently remove payment #${String(deleteTargets[0]._id || "").slice(-6).toUpperCase()} of KES ${Number(deleteTargets[0].amount || 0).toLocaleString()} for ${deleteTargets[0].tenantId || "this tenant"} and recalculate dashboard totals.`
-                  : `This will permanently remove ${deleteTargets.length} selected payment record(s) totaling KES ${deleteTargets.reduce((s, x) => s + Number(x.amount || 0), 0).toLocaleString()} and recalculate dashboard totals.`}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setDeleteTargets(null)}
-                disabled={isDeleting}
-                className="text-xs h-8 cursor-pointer"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="text-xs h-8 cursor-pointer"
-              >
-                {isDeleting ? "Deleting..." : `Delete ${deleteTargets.length > 1 ? `(${deleteTargets.length})` : "Payment"}`}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mark Pending Payment as Paid Modal */}
       {markPaidTarget && (

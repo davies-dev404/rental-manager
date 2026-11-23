@@ -23,341 +23,348 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Copy, Printer } from "lucide-react";
 
 import { AddTenantDialog } from "@/components/dialogs/AddTenantDialog";
+import {
+  InvoiceFormView,
+  GenerateBulkInvoicesWizard,
+  RentInvoiceFormView as SharedRentInvoiceFormView,
+  RecurringBillsInvoiceFormView,
+  RentPenaltyInvoiceFormView
+} from "@/pages/financials/InvoicesPage";
 
 // Helpers for safe tenant date & ID normalization
 const safeDateInput = (val) => {
-    if (!val) return "";
-    const d = new Date(val);
-    return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+  if (!val) return "";
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
 };
 
 const normalizeIdType = (val) => {
-    if (["national_id", "passport", "driving_license"].includes(val)) return val;
-    return "national_id";
+  if (["national_id", "passport", "driving_license"].includes(val)) return val;
+  return "national_id";
 };
 
 // Define schema for Edit Tenant
 const tenantSchema = z.object({
-    name: z.string().trim().min(2, "Name is required"),
-    email: z.string().trim().email("Enter a valid email address").or(z.literal("")).optional(),
-    phone: z.string().trim().min(7, "Phone number is required"),
-    idType: z.enum(["national_id", "passport", "driving_license"]).default("national_id"),
-    nationalId: z.string().trim().optional().default(""),
-    unitId: z.string().optional().default("no_unit"),
-    rentAmount: z.coerce.number().min(0).optional(),
-    leaseStart: z.string().optional().default(""),
+  name: z.string().trim().min(2, "Name is required"),
+  email: z.string().trim().email("Enter a valid email address").or(z.literal("")).optional(),
+  phone: z.string().trim().min(7, "Phone number is required"),
+  idType: z.enum(["national_id", "passport", "driving_license"]).default("national_id"),
+  nationalId: z.string().trim().optional().default(""),
+  unitId: z.string().optional().default("no_unit"),
+  rentAmount: z.coerce.number().min(0).optional(),
+  leaseStart: z.string().optional().default(""),
 });
 
 // --- View Lease Dialog ---
 function ViewLeaseDialog({ tenant, open, onOpenChange }) {
-    const { t } = useTranslation();
-    const { data: settings = {} } = useQuery({
-        queryKey: ["settings"],
-        queryFn: api.getSettings,
-        enabled: open
+  const { t } = useTranslation();
+  const { data: settings = {} } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+    enabled: open
+  });
+  if (!tenant) return null;
+  const unitNum = (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A');
+  const propName = tenant.unitId?.propertyId?.name || tenant.property || 'Property';
+  const landlordOrCompany = settings?.companyName || settings?.orgName || settings?.landlordName || propName;
+  const handleExportLease = () => {
+    exportToPDF({
+      title: `Lease Agreement - ${tenant.name}`,
+      subtitle: `Property: ${propName} • Unit ${unitNum}`,
+      propertyName: propName,
+      company: settings,
+      dateRange: `Lease Start: ${safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}`,
+      summary: [
+        { label: "Tenant", value: tenant.name },
+        { label: "Property", value: propName },
+        { label: "Unit", value: `Unit ${unitNum}` },
+        { label: "Monthly Rent", value: `KES ${Number(tenant.rentAmount || tenant.unitId?.rentAmount || 0).toLocaleString()}` },
+        { label: "Status", value: tenant.status || "active" }
+      ],
+      columns: [
+        { key: "section", label: "Clause" },
+        { key: "details", label: "Agreement Terms" }
+      ],
+      records: [
+        { section: "Parties", details: `Landlord / Manager (${landlordOrCompany}) • Property (${propName}) & Tenant (${tenant.name}, ${tenant.phone || ''})` },
+        { section: t('lease_prop_title'), details: t('lease_prop_text', { unit: unitNum }) },
+        { section: t('lease_term_title'), details: t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' }) },
+        { section: t('lease_rent_title'), details: t('lease_rent_text') },
+        { section: "Verification", details: t('digital_sig_verified') }
+      ]
     });
-    if (!tenant) return null;
-    const unitNum = (tenant.unitId && typeof tenant.unitId === 'object') ? (tenant.unitId.unitNumber || 'N/A') : (tenant.unitId || 'N/A');
-    const propName = tenant.unitId?.propertyId?.name || tenant.property || 'Property';
-    const landlordOrCompany = settings?.companyName || settings?.orgName || settings?.landlordName || propName;
-    const handleExportLease = () => {
-        exportToPDF({
-            title: `Lease Agreement - ${tenant.name}`,
-            subtitle: `Property: ${propName} • Unit ${unitNum}`,
-            propertyName: propName,
-            company: settings,
-            dateRange: `Lease Start: ${safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}`,
-            summary: [
-                { label: "Tenant", value: tenant.name },
-                { label: "Property", value: propName },
-                { label: "Unit", value: `Unit ${unitNum}` },
-                { label: "Monthly Rent", value: `KES ${Number(tenant.rentAmount || tenant.unitId?.rentAmount || 0).toLocaleString()}` },
-                { label: "Status", value: tenant.status || "active" }
-            ],
-            columns: [
-                { key: "section", label: "Clause" },
-                { key: "details", label: "Agreement Terms" }
-            ],
-            records: [
-                { section: "Parties", details: `Landlord / Manager (${landlordOrCompany}) • Property (${propName}) & Tenant (${tenant.name}, ${tenant.phone || ''})` },
-                { section: t('lease_prop_title'), details: t('lease_prop_text', { unit: unitNum }) },
-                { section: t('lease_term_title'), details: t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' }) },
-                { section: t('lease_rent_title'), details: t('lease_rent_text') },
-                { section: "Verification", details: t('digital_sig_verified') }
-            ]
-        });
-    };
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-150 h-[80vh] flex flex-col">
-                <DialogHeader>
-                    <DialogTitle>{t('lease_details')}</DialogTitle>
-                    <DialogDescription>{t('signed')} {safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}</DialogDescription>
-                </DialogHeader>
-                <div className="flex-1 bg-muted/20 border border-border/50 rounded-lg p-8 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                    <div className="text-center mb-6">
-                        <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg uppercase tracking-widest border-b pb-4">{t('lease_agreement')}</h3>
-                    </div>
-                    {`${t('landlord')}: ${propName}\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: unitNum })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
-                </div>
-                <DialogFooter className="gap-2">
-                     <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Printer className="w-4 h-4 mr-2"/> {t('print')}</Button>
-                     <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Download className="w-4 h-4 mr-2"/> {t('download_pdf')}</Button>
-                     <Button type="button" size="sm" onClick={() => onOpenChange(false)}>{t('close')}</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-150 h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{t('lease_details')}</DialogTitle>
+          <DialogDescription>{t('signed')} {safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'N/A'}</DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 bg-muted/20 border border-border/50 rounded-lg p-8 overflow-y-auto font-mono text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          <div className="text-center mb-6">
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 text-lg uppercase tracking-widest border-b pb-4">{t('lease_agreement')}</h3>
+          </div>
+          {`${t('landlord')}: ${propName}\n${t('tenant_label')}: ${tenant.name}\n\n${t('lease_prop_title')}\n${t('lease_prop_text', { unit: unitNum })}\n\n${t('lease_term_title')}\n${t('lease_term_text', { date: safeDateInput(tenant.leaseStart) || tenant.leaseStart || 'Active' })}\n\n${t('lease_rent_title')}\n${t('lease_rent_text')}\n\n${t('digital_sig_verified')}`}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Printer className="w-4 h-4 mr-2" /> {t('print')}</Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleExportLease}><Download className="w-4 h-4 mr-2" /> {t('download_pdf')}</Button>
+          <Button type="button" size="sm" onClick={() => onOpenChange(false)}>{t('close')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // --- Edit Tenant Dialog ---
 function EditTenantDialog({ tenant, open, onOpenChange }) {
-    const { t } = useTranslation();
-    const { toast } = useToast();
-    const queryClient = useQueryClient();
-    const { data: units } = useQuery({ 
-        queryKey: ["units"], 
-        queryFn: () => api.getUnits(),
-        enabled: open
-    });
-    
-    const currentUnitId = (tenant?.unitId && typeof tenant?.unitId === 'object') ? (tenant.unitId._id || tenant.unitId.id) : tenant?.unitId;
-    const availableUnits = units?.filter(u => u.status === 'vacant' || (u._id || u.id) === currentUnitId) || [];
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: units } = useQuery({
+    queryKey: ["units"],
+    queryFn: () => api.getUnits(),
+    enabled: open
+  });
 
-    const form = useForm({
-        resolver: zodResolver(tenantSchema),
-        defaultValues: {
-            name: "",
-            email: "",
-            phone: "",
-            idType: "national_id",
-            nationalId: "",
-            unitId: "no_unit",
-            rentAmount: 0,
-            leaseStart: ""
-        }
-    });
+  const currentUnitId = (tenant?.unitId && typeof tenant?.unitId === 'object') ? (tenant.unitId._id || tenant.unitId.id) : tenant?.unitId;
+  const availableUnits = units?.filter(u => u.status === 'vacant' || (u._id || u.id) === currentUnitId) || [];
 
-    const [editUtilities, setEditUtilities] = useState([]);
-
-    useEffect(() => {
-        if (tenant && open) {
-            const resolvedUnitId = (tenant.unitId && typeof tenant.unitId === 'object')
-                ? (tenant.unitId._id || tenant.unitId.id)
-                : tenant.unitId;
-            form.reset({
-                name: tenant.name || "",
-                email: tenant.email || "",
-                phone: tenant.phone || "",
-                idType: normalizeIdType(tenant.idType),
-                nationalId: tenant.nationalId || "",
-                unitId: resolvedUnitId || "no_unit",
-                rentAmount: tenant.rentAmount ?? tenant.unitId?.rentAmount ?? 0,
-                leaseStart: safeDateInput(tenant.leaseStart)
-            });
-            setEditUtilities(
-                Array.isArray(tenant.utilities)
-                    ? tenant.utilities.map(u => ({
-                        name: u.name || "Utility",
-                        amount: Number(u.amount) || 0,
-                        billingType: u.billingType || "fixed",
-                        isIncluded: Boolean(u.isIncluded)
-                    }))
-                    : []
-            );
-        }
-    }, [tenant, open, form]);
-
-    const mutation = useMutation({
-        mutationFn: api.updateTenant,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tenants"] });
-            queryClient.invalidateQueries({ queryKey: ["units"] });
-            queryClient.invalidateQueries({ queryKey: ["stats"] });
-            queryClient.invalidateQueries({ queryKey: ["debtors"] });
-            onOpenChange(false);
-            toast({ title: t('tenant_updated') || "Tenant Updated", description: t('tenant_updated_desc') || "Tenant details updated successfully." });
-        },
-        onError: (err) => {
-            toast({
-                variant: "destructive",
-                title: t('error') || "Error",
-                description: err?.message || t('tenant_update_failed') || "Failed to update tenant."
-            });
-        }
-    });
-
-    function onSubmit(values) {
-        if (!tenant) return;
-        const payload = {
-            ...values,
-            utilities: editUtilities,
-            id: tenant._id || tenant.id
-        };
-        if (payload.unitId === "no_unit") payload.unitId = "";
-        mutation.mutate(payload);
+  const form = useForm({
+    resolver: zodResolver(tenantSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      idType: "national_id",
+      nationalId: "",
+      unitId: "no_unit",
+      rentAmount: 0,
+      leaseStart: ""
     }
+  });
 
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>{t('edit_tenant')}</DialogTitle>
-                </DialogHeader>
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                        <FormField control={form.control} name="name" render={({ field }) => (<FormItem>
-                            <FormLabel>{t('full_name')}</FormLabel>
-                            <FormControl>
-                                <Input placeholder="John Doe" {...field}/>
-                            </FormControl>
-                            <FormMessage />
-                            </FormItem>)}/>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                             <FormField control={form.control} name="idType" render={({ field }) => (<FormItem>
-                                <FormLabel>{t('id_type')}</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value || "national_id"}>
-                                    <FormControl>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder={t('select_id_type')}/>
-                                    </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                    <SelectItem value="national_id">{t('national_id')}</SelectItem>
-                                    <SelectItem value="passport">{t('passport')}</SelectItem>
-                                    <SelectItem value="driving_license">{t('driving_license')}</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>)}/>
-                            <FormField control={form.control} name="nationalId" render={({ field }) => (<FormItem>
-                                <FormLabel>{t('id_number')}</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="12345678" {...field}/>
-                                </FormControl>
-                                <FormMessage />
-                                </FormItem>)}/>
-                        </div>
+  const [editUtilities, setEditUtilities] = useState([]);
 
-                        <div className="grid grid-cols-2 gap-4">
-                             <FormField control={form.control} name="email" render={({ field }) => (<FormItem>
-                                <FormLabel>{t('email')}</FormLabel>
-                                <FormControl>
-                                    <Input type="email" placeholder="john@example.com" {...field}/>
-                                </FormControl>
-                                <FormMessage />
-                                </FormItem>)}/>
-                            <FormField control={form.control} name="phone" render={({ field }) => (<FormItem>
-                                <FormLabel>{t('phone')}</FormLabel>
-                                <FormControl>
-                                    <Input placeholder="+254..." {...field}/>
-                                </FormControl>
-                                <FormMessage />
-                                </FormItem>)}/>
-                        </div>
-                        
-                        <FormField control={form.control} name="unitId" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>{t('assign_unit')}</FormLabel>
-                                <Select onValueChange={field.onChange} value={field.value || "no_unit"}>
-                                    <FormControl>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder={t('select_unit_placeholder') || "Select a unit"}/>
-                                        </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                        <SelectItem value="no_unit">{t('no_unit_assigned') || "No Unit"}</SelectItem>
-                                        {availableUnits.map(unit => (
-                                            <SelectItem key={unit._id || unit.id} value={unit._id || unit.id}>
-                                                {unit.propertyId?.name ? `${unit.propertyId.name} - ` : ''}Unit {unit.unitNumber} ({unit.type}) - KES {unit.rentAmount}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <FormMessage />
-                            </FormItem>
-                        )}/>
+  useEffect(() => {
+    if (tenant && open) {
+      const resolvedUnitId = (tenant.unitId && typeof tenant.unitId === 'object')
+        ? (tenant.unitId._id || tenant.unitId.id)
+        : tenant.unitId;
+      form.reset({
+        name: tenant.name || "",
+        email: tenant.email || "",
+        phone: tenant.phone || "",
+        idType: normalizeIdType(tenant.idType),
+        nationalId: tenant.nationalId || "",
+        unitId: resolvedUnitId || "no_unit",
+        rentAmount: tenant.rentAmount ?? tenant.unitId?.rentAmount ?? 0,
+        leaseStart: safeDateInput(tenant.leaseStart)
+      });
+      setEditUtilities(
+        Array.isArray(tenant.utilities)
+          ? tenant.utilities.map(u => ({
+            name: u.name || "Utility",
+            amount: Number(u.amount) || 0,
+            billingType: u.billingType || "fixed",
+            isIncluded: Boolean(u.isIncluded)
+          }))
+          : []
+      );
+    }
+  }, [tenant, open, form]);
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <FormField control={form.control} name="rentAmount" render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Monthly Rent (KES)</FormLabel>
-                                    <FormControl>
-                                        <Input type="number" min="0" placeholder="15000" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-                            <FormField control={form.control} name="leaseStart" render={({ field }) => (
-                                <FormItem>
-                                    <FormLabel>Lease Start</FormLabel>
-                                    <FormControl>
-                                        <Input type="date" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )} />
-                        </div>
+  const mutation = useMutation({
+    mutationFn: api.updateTenant,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      onOpenChange(false);
+      toast({ title: t('tenant_updated') || "Tenant Updated", description: t('tenant_updated_desc') || "Tenant details updated successfully." });
+    },
+    onError: (err) => {
+      toast({
+        variant: "destructive",
+        title: t('error') || "Error",
+        description: err?.message || t('tenant_update_failed') || "Failed to update tenant."
+      });
+    }
+  });
 
-                        {/* Edit Utility Bills */}
-                        <div className="space-y-2 p-3 rounded-lg border border-border/60 bg-muted/20">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold">Utility Charges & Fees</span>
-                                <Button 
-                                    type="button" 
-                                    variant="outline" 
-                                    size="sm" 
-                                    className="h-6 text-[11px] px-2"
-                                    onClick={() => setEditUtilities([...editUtilities, { name: "Custom Fee", amount: 0, billingType: "fixed", isIncluded: false }])}
-                                >
-                                    + Add Fee
-                                </Button>
-                            </div>
-                            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                                {editUtilities.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-1.5 text-xs">
-                                        <Input
-                                            className="h-7 text-xs flex-1"
-                                            value={item.name}
-                                            onChange={(e) => {
-                                                const copy = [...editUtilities];
-                                                copy[idx].name = e.target.value;
-                                                setEditUtilities(copy);
-                                            }}
-                                        />
-                                        <Input
-                                            type="number"
-                                            className="h-7 text-xs w-20 font-mono"
-                                            value={item.amount}
-                                            onChange={(e) => {
-                                                const copy = [...editUtilities];
-                                                copy[idx].amount = Number(e.target.value);
-                                                setEditUtilities(copy);
-                                            }}
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
-                                            onClick={() => setEditUtilities(editUtilities.filter((_, i) => i !== idx))}
-                                        >
-                                            ✕
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+  function onSubmit(values) {
+    if (!tenant) return;
+    const payload = {
+      ...values,
+      utilities: editUtilities,
+      id: tenant._id || tenant.id
+    };
+    if (payload.unitId === "no_unit") payload.unitId = "";
+    mutation.mutate(payload);
+  }
 
-                        <Button type="submit" disabled={mutation.isPending} className="w-full">
-                            {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
-                            {t('save_changes')}
-                        </Button>
-                    </form>
-                </Form>
-            </DialogContent>
-        </Dialog>
-    );
+  return (<Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle>{t('edit_tenant')}</DialogTitle>
+      </DialogHeader>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField control={form.control} name="name" render={({ field }) => (<FormItem>
+            <FormLabel>{t('full_name')}</FormLabel>
+            <FormControl>
+              <Input placeholder="John Doe" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>)} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField control={form.control} name="idType" render={({ field }) => (<FormItem>
+              <FormLabel>{t('id_type')}</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value || "national_id"}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('select_id_type')} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="national_id">{t('national_id')}</SelectItem>
+                  <SelectItem value="passport">{t('passport')}</SelectItem>
+                  <SelectItem value="driving_license">{t('driving_license')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>)} />
+            <FormField control={form.control} name="nationalId" render={({ field }) => (<FormItem>
+              <FormLabel>{t('id_number')}</FormLabel>
+              <FormControl>
+                <Input placeholder="12345678" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>)} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField control={form.control} name="email" render={({ field }) => (<FormItem>
+              <FormLabel>{t('email')}</FormLabel>
+              <FormControl>
+                <Input type="email" placeholder="john@example.com" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>)} />
+            <FormField control={form.control} name="phone" render={({ field }) => (<FormItem>
+              <FormLabel>{t('phone')}</FormLabel>
+              <FormControl>
+                <Input placeholder="+254..." {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>)} />
+          </div>
+
+          <FormField control={form.control} name="unitId" render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('assign_unit')}</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value || "no_unit"}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('select_unit_placeholder') || "Select a unit"} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="no_unit">{t('no_unit_assigned') || "No Unit"}</SelectItem>
+                  {availableUnits.map(unit => (
+                    <SelectItem key={unit._id || unit.id} value={unit._id || unit.id}>
+                      {unit.propertyId?.name ? `${unit.propertyId.name} - ` : ''}Unit {unit.unitNumber} ({unit.type}) - KES {unit.rentAmount}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <FormField control={form.control} name="rentAmount" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Monthly Rent (KES)</FormLabel>
+                <FormControl>
+                  <Input type="number" min="0" placeholder="15000" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="leaseStart" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Lease Start</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </div>
+
+          {/* Edit Utility Bills */}
+          <div className="space-y-2 p-3 rounded-lg border border-border/60 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold">Utility Charges & Fees</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-[11px] px-2"
+                onClick={() => setEditUtilities([...editUtilities, { name: "Custom Fee", amount: 0, billingType: "fixed", isIncluded: false }])}
+              >
+                + Add Fee
+              </Button>
+            </div>
+            <div className="space-y-1.5 max-h-36 overflow-y-auto">
+              {editUtilities.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-1.5 text-xs">
+                  <Input
+                    className="h-7 text-xs flex-1"
+                    value={item.name}
+                    onChange={(e) => {
+                      const copy = [...editUtilities];
+                      copy[idx].name = e.target.value;
+                      setEditUtilities(copy);
+                    }}
+                  />
+                  <Input
+                    type="number"
+                    className="h-7 text-xs w-20 font-mono"
+                    value={item.amount}
+                    onChange={(e) => {
+                      const copy = [...editUtilities];
+                      copy[idx].amount = Number(e.target.value);
+                      setEditUtilities(copy);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
+                    onClick={() => setEditUtilities(editUtilities.filter((_, i) => i !== idx))}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Button type="submit" disabled={mutation.isPending} className="w-full">
+            {mutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {t('save_changes')}
+          </Button>
+        </form>
+      </Form>
+    </DialogContent>
+  </Dialog>
+  );
 }
 
 // ─── Sub-View: Tenant Form (MakaziFlow Layout) ───
@@ -2528,952 +2535,1059 @@ function ShiftTenantFormView({ properties = [], tenants = [], units = [], onBack
 }
 
 export default function TenantsPage() {
-    const { t } = useTranslation();
-    const queryClient = useQueryClient();
-    const { toast } = useToast();
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-    // View state sub-pages: 'list' | 'add_tenant' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
-    const [view, setView] = useState(() => {
-      if (typeof window !== "undefined") {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("action") === "add") return "add_tenant";
-      }
-      return "list";
-    });
+  // View state sub-pages: 'list' | 'add_tenant' | 'bulk_add' | 'send_message' | 'add_invoice' | 'rent_invoices' | 'custom_penalty' | 'add_payment' | 'shift_tenant'
+  const [view, setView] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("action") === "add") return "add_tenant";
+    }
+    return "list";
+  });
 
-    const { data: tenants = [], isLoading } = useQuery({
-        queryKey: ["tenants"],
-        queryFn: api.getTenants
-    });
+  const { data: tenants = [], isLoading } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: api.getTenants
+  });
 
-    const { data: properties = [] } = useQuery({
-        queryKey: ["properties"],
-        queryFn: api.getProperties
-    });
+  const { data: properties = [] } = useQuery({
+    queryKey: ["properties"],
+    queryFn: api.getProperties
+  });
 
-    const { data: units = [] } = useQuery({
-        queryKey: ["units"],
-        queryFn: api.getUnits
-    });
+  const { data: units = [] } = useQuery({
+    queryKey: ["units"],
+    queryFn: api.getUnits
+  });
 
-    // Dialog States
-    const [viewLeaseOpen, setViewLeaseOpen] = useState(false);
-    const [selectedTenant, setSelectedTenant] = useState(null);
-    const [editTenantOpen, setEditTenantOpen] = useState(false);
-    const [sendRemindersOpen, setSendRemindersOpen] = useState(false);
-    const [reminderSelectedProperties, setReminderSelectedProperties] = useState([]);
-    const [reminderSelectAll, setReminderSelectAll] = useState(false);
-    const [sendingReminders, setSendingReminders] = useState(false);
+  const { data: payments = [] } = useQuery({
+    queryKey: ["payments"],
+    queryFn: api.getPayments
+  });
 
-    const handleSendRemindersSubmit = async () => {
-      setSendingReminders(true);
+  const existingInvoices = payments.map((p) => {
+    const tenantName = p.tenantId?.name || (typeof p.tenant === "string" ? p.tenant : p.tenant?.name) || "Tenant";
+    const unitNum = p.unitId?.unitNumber || (typeof p.unit === "string" ? p.unit : p.unit?.unitNumber) || "Unit";
+    const propName = p.unitId?.propertyId?.name || (typeof p.property === "string" ? p.property : p.property?.name) || "";
+    return {
+      _id: p._id,
+      rawTenantId: p.tenantId?._id || p.tenantId,
+      unitObjectId: p.unitId?._id || p.unitId,
+      date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
+      monthCovered: p.monthCovered || (p.date ? String(p.date).slice(0, 7) : ""),
+      tenantId: tenantName,
+      unitId: unitNum,
+      property: propName,
+      item: p.type || "Rent",
+      amount: Number(p.amount || 0),
+      status: p.status || "pending"
+    };
+  });
+
+  const handleAddInvoices = async (newInvoices = []) => {
+    let savedCount = 0;
+    for (const inv of newInvoices) {
       try {
-        const res = await api.addReminder({
-          method: "email",
-          type: "rent_due",
-          sendImmediately: true,
-          propertyIds: reminderSelectAll ? [] : reminderSelectedProperties
-        });
-
-        queryClient.invalidateQueries({ queryKey: ["reminders"] });
-        queryClient.invalidateQueries({ queryKey: ["debtors"] });
-        setSendRemindersOpen(false);
-
-        const emailed = res?.emailsSent ?? (res?.emailSent ? 1 : 0);
-        const failed = res?.emailsFailed ?? 0;
-
-        if (res?.count === 0) {
-          toast({
-            title: "No Outstanding Balances",
-            description: res.message || "All matching tenants are fully paid."
+        const tenantObj = tenants.find(
+          (t) =>
+            (t._id || t.id) === inv.rawTenantId ||
+            (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
+        );
+        if (tenantObj) {
+          await api.addPayment({
+            tenantId: tenantObj._id || tenantObj.id,
+            unitId: inv.unitObjectId || (typeof tenantObj.unitId === "object" ? (tenantObj.unitId?._id || tenantObj.unitId?.id) : tenantObj.unitId),
+            amount: Number(inv.amount || 0),
+            rentAmount: Number(inv.rentAmount || 0),
+            utilityAmount: Number(inv.utilityAmount || 0),
+            date: inv.date || new Date().toISOString().split("T")[0],
+            monthCovered: inv.monthCovered,
+            method: "invoice",
+            status: inv.status === "partial" ? "partial" : "pending",
+            type: inv.item || "Rent",
+            notes: inv.notes || inv.description || undefined
           });
-        } else if (failed > 0 && emailed === 0) {
-          toast({
-            variant: "destructive",
-            title: "Reminder Delivery Failed",
-            description: res?.lastError || `Could not deliver email reminders (${failed} failed).`
-          });
-        } else {
-          toast({
-            title: "Email Reminders Dispatched",
-            description: failed > 0
-              ? `Sent ${emailed} balance reminder(s) via Email (${failed} failed or missing email).`
-              : `Successfully sent ${emailed || res?.count || 1} balance reminder(s) via Email.`
-          });
+          savedCount++;
         }
       } catch (err) {
+        console.warn("Save generated invoice warning:", err.message);
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["payments"] });
+    queryClient.invalidateQueries({ queryKey: ["tenants"] });
+    queryClient.invalidateQueries({ queryKey: ["stats"] });
+    queryClient.invalidateQueries({ queryKey: ["debtors"] });
+    return savedCount;
+  };
+
+  // Dialog States
+  const [viewLeaseOpen, setViewLeaseOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [editTenantOpen, setEditTenantOpen] = useState(false);
+  const [sendRemindersOpen, setSendRemindersOpen] = useState(false);
+  const [reminderSelectedProperties, setReminderSelectedProperties] = useState([]);
+  const [reminderSelectAll, setReminderSelectAll] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
+
+  const handleSendRemindersSubmit = async () => {
+    setSendingReminders(true);
+    try {
+      const res = await api.addReminder({
+        method: "email",
+        type: "rent_due",
+        sendImmediately: true,
+        propertyIds: reminderSelectAll ? [] : reminderSelectedProperties
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
+      queryClient.invalidateQueries({ queryKey: ["debtors"] });
+      setSendRemindersOpen(false);
+
+      const emailed = res?.emailsSent ?? (res?.emailSent ? 1 : 0);
+      const failed = res?.emailsFailed ?? 0;
+
+      if (res?.count === 0) {
+        toast({
+          title: "No Outstanding Balances",
+          description: res.message || "All matching tenants are fully paid."
+        });
+      } else if (failed > 0 && emailed === 0) {
         toast({
           variant: "destructive",
-          title: "Reminder Dispatch Failed",
-          description: err.message || "Could not send reminders via Email."
+          title: "Reminder Delivery Failed",
+          description: res?.lastError || `Could not deliver email reminders (${failed} failed).`
         });
-      } finally {
-        setSendingReminders(false);
-      }
-    };
-
-    // Filters State matching Screenshot 2
-    const [propertyFilter, setPropertyFilter] = useState("all");
-    const [minBalance, setMinBalance] = useState("");
-    const [maxBalance, setMaxBalance] = useState("");
-    const [showDeletedTenants, setShowDeletedTenants] = useState(false);
-    const [daysToExpiryFilter, setDaysToExpiryFilter] = useState("");
-    const [searchQuery, setSearchQuery] = useState("");
-    const [selectedTenantIds, setSelectedTenantIds] = useState([]);
-
-    // Collapse Toggles
-    const [collapseFilters, setCollapseFilters] = useState(false);
-    const [collapseSummary, setCollapseSummary] = useState(false);
-    const [collapseTable, setCollapseTable] = useState(false);
-
-    // Pagination
-    const [perPage, setPerPage] = useState(10);
-    const [currentPage, setCurrentPage] = useState(1);
-
-    const handleMoreOption = (action) => {
-      switch (action) {
-        case 'bulk_add':
-          setView('bulk_add');
-          break;
-        case 'show_deleted':
-          setShowDeletedTenants(prev => !prev);
-          toast({ title: showDeletedTenants ? 'Hiding Deleted Tenants' : 'Showing Deleted Tenants', description: showDeletedTenants ? 'Deleted tenants are now hidden from the list.' : 'Deleted tenants are now visible in the list.' });
-          break;
-        case 'send_message':
-          setView('send_message');
-          break;
-        case 'add_invoice':
-          setView('add_invoice');
-          break;
-        case 'bulk_invoices':
-          toast({ title: 'Generate Bulk Invoices', description: 'Generating batch invoices for all occupied units for the current billing cycle.' });
-          break;
-        case 'rent_invoices':
-          setView('rent_invoices');
-          break;
-        case 'recurring_bills':
-          toast({ title: 'Generate Other Recurring Bills Invoices', description: 'Invoices created for utilities, garbage, and service charge fees.' });
-          break;
-        case 'penalty_invoices':
-          toast({ title: 'Generate Penalty Invoices', description: 'Late payment penalties calculated and applied to overdue accounts.' });
-          break;
-        case 'custom_penalty':
-          setView('custom_penalty');
-          break;
-        case 'add_payment':
-          setView('add_payment');
-          break;
-        case 'shift_tenant':
-          setView('shift_tenant');
-          break;
-        default:
-          break;
-      }
-    };
-
-    const deleteMutation = useMutation({
-        mutationFn: api.deleteTenant,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tenants"] });
-            queryClient.invalidateQueries({ queryKey: ["units"] });
-            queryClient.invalidateQueries({ queryKey: ["stats"] });
-            toast({ title: t('tenant_deleted'), description: t('tenant_deleted_desc') });
-        }
-    });
-
-    const terminateMutation = useMutation({
-        mutationFn: api.terminateLease,
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["tenants"] });
-            queryClient.invalidateQueries({ queryKey: ["units"] });
-            queryClient.invalidateQueries({ queryKey: ["stats"] });
-            toast({ title: t('lease_terminated'), description: t('lease_terminated_desc') });
-        }
-    });
-
-    const handleViewLease = (tenant) => {
-        setSelectedTenant(tenant);
-        setViewLeaseOpen(true);
-    };
-
-    const handleEditTenant = (tenant) => {
-        setSelectedTenant(tenant);
-        setEditTenantOpen(true);
-    };
-
-    // Sub-view Routing matching Screenshots
-    if (view === "add_tenant") {
-      return (
-        <TenantFormView
-          properties={properties}
-          units={units}
-          onBack={() => setView("list")}
-          onSuccess={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "bulk_add") {
-      return (
-        <BulkAddTenantsView
-          properties={properties}
-          units={units}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "send_message") {
-      return (
-        <SendMessageFormView
-          properties={properties}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "add_invoice") {
-      return (
-        <TenantInvoiceFormView
-          properties={properties}
-          tenants={tenants}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "rent_invoices") {
-      return (
-        <RentInvoiceFormView
-          properties={properties}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "custom_penalty") {
-      return (
-        <CustomPenaltyInvoicesView
-          properties={properties}
-          tenants={tenants}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "add_payment") {
-      return (
-        <PaymentFormView
-          properties={properties}
-          tenants={tenants}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    if (view === "shift_tenant") {
-      return (
-        <ShiftTenantFormView
-          properties={properties}
-          tenants={tenants}
-          units={units}
-          onBack={() => setView("list")}
-        />
-      );
-    }
-
-    // Filter Logic
-    const filteredTenants = (tenants || []).filter((tenant) => {
-      // Property filter
-      if (propertyFilter !== "all") {
-        const propId = typeof tenant.unitId === 'object' && tenant.unitId?.propertyId
-          ? (typeof tenant.unitId.propertyId === 'object' ? tenant.unitId.propertyId._id || tenant.unitId.propertyId.id : tenant.unitId.propertyId)
-          : null;
-        if (String(propId) !== String(propertyFilter)) return false;
-      }
-
-      // Balance filter
-      const balance = Number(tenant.totalDue || 0);
-      if (minBalance !== "" && balance < Number(minBalance)) return false;
-      if (maxBalance !== "" && balance > Number(maxBalance)) return false;
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const nameMatch = tenant.name?.toLowerCase().includes(q);
-        const phoneMatch = tenant.phone?.toLowerCase().includes(q);
-        const nationalIdMatch = tenant.nationalId?.toLowerCase().includes(q);
-        const unitNumber = typeof tenant.unitId === 'object' ? tenant.unitId?.unitNumber?.toLowerCase() : "";
-        const unitMatch = unitNumber && unitNumber.includes(q);
-        if (!nameMatch && !phoneMatch && !nationalIdMatch && !unitMatch) return false;
-      }
-
-      return true;
-    });
-
-    const totalArrears = (tenants || []).reduce((acc, t) => acc + (Number(t.totalDue) > 0 ? Number(t.totalDue) : 0), 0);
-    const totalTenantsCount = (tenants || []).length;
-
-    // Pagination slice
-    const totalPages = Math.max(1, Math.ceil(filteredTenants.length / perPage));
-    const paginatedTenants = filteredTenants.slice((currentPage - 1) * perPage, currentPage * perPage);
-
-    const toggleSelectAll = (checked) => {
-      if (checked) {
-        setSelectedTenantIds(paginatedTenants.map(t => t._id || t.id));
       } else {
-        setSelectedTenantIds([]);
+        toast({
+          title: "Email Reminders Dispatched",
+          description: failed > 0
+            ? `Sent ${emailed} balance reminder(s) via Email (${failed} failed or missing email).`
+            : `Successfully sent ${emailed || res?.count || 1} balance reminder(s) via Email.`
+        });
       }
-    };
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Reminder Dispatch Failed",
+        description: err.message || "Could not send reminders via Email."
+      });
+    } finally {
+      setSendingReminders(false);
+    }
+  };
 
-    const toggleSelectTenant = (id) => {
-      setSelectedTenantIds(prev =>
-        prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-      );
-    };
+  // Filters State matching Screenshot 2
+  const [propertyFilter, setPropertyFilter] = useState("all");
+  const [minBalance, setMinBalance] = useState("");
+  const [maxBalance, setMaxBalance] = useState("");
+  const [showDeletedTenants, setShowDeletedTenants] = useState(false);
+  const [daysToExpiryFilter, setDaysToExpiryFilter] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTenantIds, setSelectedTenantIds] = useState([]);
 
+  // Collapse Toggles
+  const [collapseFilters, setCollapseFilters] = useState(false);
+  const [collapseSummary, setCollapseSummary] = useState(false);
+  const [collapseTable, setCollapseTable] = useState(false);
+
+  // Pagination
+  const [perPage, setPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const handleMoreOption = (action) => {
+    switch (action) {
+      case 'bulk_add':
+        setView('bulk_add');
+        break;
+      case 'show_deleted':
+        setShowDeletedTenants(prev => !prev);
+        toast({ title: showDeletedTenants ? 'Hiding Deleted Tenants' : 'Showing Deleted Tenants', description: showDeletedTenants ? 'Deleted tenants are now hidden from the list.' : 'Deleted tenants are now visible in the list.' });
+        break;
+      case 'send_message':
+        setView('send_message');
+        break;
+      case 'add_invoice':
+        setView('add_invoice');
+        break;
+      case 'bulk_invoices':
+        setView('bulk_invoices');
+        break;
+      case 'rent_invoices':
+        setView('rent_invoices');
+        break;
+      case 'recurring_bills':
+        setView('recurring_bills');
+        break;
+      case 'penalty_invoices':
+        setView('penalty_invoices');
+        break;
+      case 'custom_penalty':
+        setView('custom_penalty');
+        break;
+      case 'add_payment':
+        setView('add_payment');
+        break;
+      case 'shift_tenant':
+        setView('shift_tenant');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteTenant,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      toast({ title: t('tenant_deleted'), description: t('tenant_deleted_desc') });
+    }
+  });
+
+  const terminateMutation = useMutation({
+    mutationFn: api.terminateLease,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["units"] });
+      queryClient.invalidateQueries({ queryKey: ["stats"] });
+      toast({ title: t('lease_terminated'), description: t('lease_terminated_desc') });
+    }
+  });
+
+  const handleViewLease = (tenant) => {
+    setSelectedTenant(tenant);
+    setViewLeaseOpen(true);
+  };
+
+  const handleEditTenant = (tenant) => {
+    setSelectedTenant(tenant);
+    setEditTenantOpen(true);
+  };
+
+  // Sub-view Routing matching Screenshots
+  if (view === "add_tenant") {
     return (
-      <div className="space-y-4 max-w-7xl mx-auto">
-        {/* Top Actions */}
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            onClick={() => setView("add_tenant")}
-            className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-4 font-semibold gap-1.5 cursor-pointer shadow-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Tenant
-          </Button>
+      <TenantFormView
+        properties={properties}
+        units={units}
+        onBack={() => setView("list")}
+        onSuccess={() => setView("list")}
+      />
+    );
+  }
 
-          {/* Send Reminders button */}
-          <Button
-            variant="outline"
-            className="text-xs h-9 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
-            onClick={() => setSendRemindersOpen(true)}
-          >
-            <Send className="w-3.5 h-3.5" />
-            Send Reminders
-          </Button>
+  if (view === "bulk_add") {
+    return (
+      <BulkAddTenantsView
+        properties={properties}
+        units={units}
+        onBack={() => setView("list")}
+      />
+    );
+  }
 
-          {/* More Options Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                className="text-xs h-9 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
-              >
-                More Options
-                <ChevronDown className="w-3.5 h-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 text-xs py-1">
-              {/* Bulk Add Tenants (New) */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('bulk_add')}
-                className="flex items-center justify-between cursor-pointer py-2 px-3"
-              >
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Bulk Add Tenants</span>
+  if (view === "send_message") {
+    return (
+      <SendMessageFormView
+        properties={properties}
+        onBack={() => setView("list")}
+      />
+    );
+  }
+
+  if (view === "add_invoice") {
+    return (
+      <InvoiceFormView
+        properties={properties}
+        tenants={tenants}
+        onBack={() => setView("list")}
+        onAdd={() => {
+          queryClient.invalidateQueries({ queryKey: ["payments"] });
+          queryClient.invalidateQueries({ queryKey: ["tenants"] });
+          queryClient.invalidateQueries({ queryKey: ["stats"] });
+          queryClient.invalidateQueries({ queryKey: ["debtors"] });
+        }}
+      />
+    );
+  }
+
+  if (view === "bulk_invoices") {
+    return (
+      <GenerateBulkInvoicesWizard
+        properties={properties}
+        tenants={tenants}
+        payments={payments}
+        existingInvoices={existingInvoices}
+        onBack={() => setView("list")}
+        onAddInvoices={handleAddInvoices}
+      />
+    );
+  }
+
+  if (view === "rent_invoices") {
+    return (
+      <SharedRentInvoiceFormView
+        properties={properties}
+        tenants={tenants}
+        payments={payments}
+        existingInvoices={existingInvoices}
+        onBack={() => setView("list")}
+        onAddInvoices={handleAddInvoices}
+      />
+    );
+  }
+
+  if (view === "recurring_bills") {
+    return (
+      <RecurringBillsInvoiceFormView
+        properties={properties}
+        tenants={tenants}
+        payments={payments}
+        existingInvoices={existingInvoices}
+        onBack={() => setView("list")}
+        onAddInvoices={handleAddInvoices}
+      />
+    );
+  }
+
+  if (view === "penalty_invoices") {
+    return (
+      <RentPenaltyInvoiceFormView
+        properties={properties}
+        tenants={tenants}
+        onBack={() => setView("list")}
+        onAddInvoices={handleAddInvoices}
+      />
+    );
+  }
+
+  if (view === "custom_penalty") {
+    return (
+      <CustomPenaltyInvoicesView
+        properties={properties}
+        tenants={tenants}
+        onBack={() => setView("list")}
+      />
+    );
+  }
+
+  if (view === "add_payment") {
+    return (
+      <PaymentFormView
+        properties={properties}
+        tenants={tenants}
+        onBack={() => setView("list")}
+      />
+    );
+  }
+
+  if (view === "shift_tenant") {
+    return (
+      <ShiftTenantFormView
+        properties={properties}
+        tenants={tenants}
+        units={units}
+        onBack={() => setView("list")}
+      />
+    );
+  }
+
+  // Filter Logic
+  const filteredTenants = (tenants || []).filter((tenant) => {
+    // Property filter
+    if (propertyFilter !== "all") {
+      const propId = typeof tenant.unitId === 'object' && tenant.unitId?.propertyId
+        ? (typeof tenant.unitId.propertyId === 'object' ? tenant.unitId.propertyId._id || tenant.unitId.propertyId.id : tenant.unitId.propertyId)
+        : null;
+      if (String(propId) !== String(propertyFilter)) return false;
+    }
+
+    // Balance filter
+    const balance = Number(tenant.totalDue || 0);
+    if (minBalance !== "" && balance < Number(minBalance)) return false;
+    if (maxBalance !== "" && balance > Number(maxBalance)) return false;
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const nameMatch = tenant.name?.toLowerCase().includes(q);
+      const phoneMatch = tenant.phone?.toLowerCase().includes(q);
+      const nationalIdMatch = tenant.nationalId?.toLowerCase().includes(q);
+      const unitNumber = typeof tenant.unitId === 'object' ? tenant.unitId?.unitNumber?.toLowerCase() : "";
+      const unitMatch = unitNumber && unitNumber.includes(q);
+      if (!nameMatch && !phoneMatch && !nationalIdMatch && !unitMatch) return false;
+    }
+
+    return true;
+  });
+
+  const totalArrears = (tenants || []).reduce((acc, t) => acc + (Number(t.totalDue) > 0 ? Number(t.totalDue) : 0), 0);
+  const totalTenantsCount = (tenants || []).length;
+
+  // Pagination slice
+  const totalPages = Math.max(1, Math.ceil(filteredTenants.length / perPage));
+  const paginatedTenants = filteredTenants.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const toggleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedTenantIds(paginatedTenants.map(t => t._id || t.id));
+    } else {
+      setSelectedTenantIds([]);
+    }
+  };
+
+  const toggleSelectTenant = (id) => {
+    setSelectedTenantIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  return (
+    <div className="space-y-4 max-w-7xl mx-auto">
+      {/* Top Actions */}
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          onClick={() => setView("add_tenant")}
+          className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-4 font-semibold gap-1.5 cursor-pointer shadow-xs"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Tenant
+        </Button>
+
+        {/* Send Reminders button */}
+        <Button
+          variant="outline"
+          className="text-xs h-9 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
+          onClick={() => setSendRemindersOpen(true)}
+        >
+          <Send className="w-3.5 h-3.5" />
+          Send Reminders
+        </Button>
+
+        {/* More Options Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="text-xs h-9 px-4 gap-1.5 border-slate-300 dark:border-slate-700 text-[#0b1065] dark:text-blue-400 font-semibold cursor-pointer"
+            >
+              More Options
+              <ChevronDown className="w-3.5 h-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64 text-xs py-1">
+            {/* Bulk Add Tenants (New) */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('bulk_add')}
+              className="flex items-center justify-between cursor-pointer py-2 px-3"
+            >
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+                <span>Bulk Add Tenants</span>
+              </div>
+              <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                New
+              </span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {/* Show Deleted Tenants */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('show_deleted')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <UserX className="w-3.5 h-3.5 text-slate-500" />
+              <span>{showDeletedTenants ? 'Hide Deleted Tenants' : 'Show Deleted Tenants'}</span>
+            </DropdownMenuItem>
+
+            {/* Send Custom Message */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('send_message')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-slate-500" />
+              <span>Send Custom Message</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {/* Add Invoice */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('add_invoice')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              <span>Add Invoice</span>
+            </DropdownMenuItem>
+
+            {/* Generate Bulk Invoices (New) */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('bulk_invoices')}
+              className="flex items-center justify-between cursor-pointer py-2 px-3"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>Generate Bulk Invoices</span>
+              </div>
+              <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                New
+              </span>
+            </DropdownMenuItem>
+
+            {/* Generate Rent Invoices */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('rent_invoices')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              <span>Generate Rent Invoices</span>
+            </DropdownMenuItem>
+
+            {/* Generate Other Recurring Bills Invoices */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('recurring_bills')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              <span>Generate Other Recurring Bills Invoices</span>
+            </DropdownMenuItem>
+
+            {/* Generate Penalty Invoices */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('penalty_invoices')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              <span>Generate Penalty Invoices</span>
+            </DropdownMenuItem>
+
+            {/* Generate Custom Penalty Invoices */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('custom_penalty')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-500" />
+              <span>Generate Custom Penalty Invoices</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {/* Add Payment */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('add_payment')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <DollarSign className="w-3.5 h-3.5 text-slate-500" />
+              <span>Add Payment</span>
+            </DropdownMenuItem>
+
+            {/* Shift Tenant */}
+            <DropdownMenuItem
+              onClick={() => handleMoreOption('shift_tenant')}
+              className="flex items-center gap-2 cursor-pointer py-2 px-3"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500" />
+              <span>Shift Tenant</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Two-column layout matching Screenshot 2 */}
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        {/* LEFT: Filters */}
+        <aside className="w-full md:w-64 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Filters</h4>
+            <button
+              type="button"
+              onClick={() => setCollapseFilters(!collapseFilters)}
+              className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
+            >
+              {collapseFilters ? "+" : "–"}
+            </button>
+          </div>
+
+          {!collapseFilters && (
+            <>
+              {/* Property */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
+                  <span>Property</span>
+                  <span className="text-slate-400">▾</span>
                 </div>
-                <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  New
-                </span>
-              </DropdownMenuItem>
+                <select
+                  value={propertyFilter}
+                  onChange={(e) => {
+                    setPropertyFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full mt-1.5 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="all">All Properties</option>
+                  {properties.map(p => (
+                    <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
-              <DropdownMenuSeparator />
-
-              {/* Show Deleted Tenants */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('show_deleted')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <UserX className="w-3.5 h-3.5 text-slate-500" />
-                <span>{showDeletedTenants ? 'Hide Deleted Tenants' : 'Show Deleted Tenants'}</span>
-              </DropdownMenuItem>
-
-              {/* Send Custom Message */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('send_message')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-slate-500" />
-                <span>Send Custom Message</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator />
-
-              {/* Add Invoice */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('add_invoice')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Add Invoice</span>
-              </DropdownMenuItem>
-
-              {/* Generate Bulk Invoices (New) */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('bulk_invoices')}
-                className="flex items-center justify-between cursor-pointer py-2 px-3"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Generate Bulk Invoices</span>
+              {/* Account Balance */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
+                  <span>Account Balance</span>
+                  <span className="text-slate-400">▾</span>
                 </div>
-                <span className="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  New
-                </span>
-              </DropdownMenuItem>
-
-              {/* Generate Rent Invoices */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('rent_invoices')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Generate Rent Invoices</span>
-              </DropdownMenuItem>
-
-              {/* Generate Other Recurring Bills Invoices */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('recurring_bills')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Generate Other Recurring Bills Invoices</span>
-              </DropdownMenuItem>
-
-              {/* Generate Penalty Invoices */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('penalty_invoices')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Generate Penalty Invoices</span>
-              </DropdownMenuItem>
-
-              {/* Generate Custom Penalty Invoices */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('custom_penalty')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <FileText className="w-3.5 h-3.5 text-slate-500" />
-                <span>Generate Custom Penalty Invoices</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator />
-
-              {/* Add Payment */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('add_payment')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <DollarSign className="w-3.5 h-3.5 text-slate-500" />
-                <span>Add Payment</span>
-              </DropdownMenuItem>
-
-              {/* Shift Tenant */}
-              <DropdownMenuItem
-                onClick={() => handleMoreOption('shift_tenant')}
-                className="flex items-center gap-2 cursor-pointer py-2 px-3"
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500" />
-                <span>Shift Tenant</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Two-column layout matching Screenshot 2 */}
-        <div className="flex flex-col md:flex-row gap-4 items-start">
-          {/* LEFT: Filters */}
-          <aside className="w-full md:w-64 shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-4 shadow-xs">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Filters</h4>
-              <button
-                type="button"
-                onClick={() => setCollapseFilters(!collapseFilters)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
-              >
-                {collapseFilters ? "+" : "–"}
-              </button>
-            </div>
-
-            {!collapseFilters && (
-              <>
-                {/* Property */}
-                <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
-                    <span>Property</span>
-                    <span className="text-slate-400">▾</span>
-                  </div>
-                  <select
-                    value={propertyFilter}
+                <div className="flex gap-2 mt-1.5">
+                  <input
+                    type="number"
+                    placeholder="min"
+                    value={minBalance}
                     onChange={(e) => {
-                      setPropertyFilter(e.target.value);
+                      setMinBalance(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="w-full mt-1.5 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="all">All Properties</option>
-                    {properties.map(p => (
-                      <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                    className="w-1/2 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs focus:outline-none focus:border-blue-500"
+                  />
+                  <input
+                    type="number"
+                    placeholder="max"
+                    value={maxBalance}
+                    onChange={(e) => {
+                      setMaxBalance(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-1/2 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Deleted Tenants */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
+                  <span>Deleted tenants</span>
+                  <span className="text-slate-400">▾</span>
+                </div>
+                <label className="flex items-center gap-2 mt-1.5 text-xs cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showDeletedTenants}
+                    onChange={(e) => setShowDeletedTenants(e.target.checked)}
+                    className="rounded accent-blue-600 w-3.5 h-3.5"
+                  />
+                  <span className="text-slate-600 dark:text-slate-400">show</span>
+                </label>
+              </div>
+
+              {/* Days to Lease Expiry */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
+                  <span>Days to Lease Expiry</span>
+                  <span className="text-slate-400">▾</span>
+                </div>
+                <select
+                  value={daysToExpiryFilter}
+                  onChange={(e) => setDaysToExpiryFilter(e.target.value)}
+                  className="w-full mt-1.5 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">—</option>
+                  <option value="30">30 days</option>
+                  <option value="60">60 days</option>
+                  <option value="90">90 days</option>
+                </select>
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* RIGHT: Summary + Table */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Summary Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+              <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">Summary</h4>
+              <button
+                type="button"
+                onClick={() => setCollapseSummary(!collapseSummary)}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
+              >
+                {collapseSummary ? "+" : "–"}
+              </button>
+            </div>
+            {!collapseSummary && (
+              <div className="px-6 py-5 grid grid-cols-3 gap-4 divide-x divide-slate-100 dark:divide-slate-800">
+                <div className="pr-4 text-center">
+                  <p className="text-xs text-muted-foreground">Total Tenants</p>
+                  <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">{totalTenantsCount}</p>
+                </div>
+                <div className="px-4 text-center">
+                  <p className="text-xs text-muted-foreground">Total Arrears</p>
+                  <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">
+                    {totalArrears.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">(KES)</p>
+                </div>
+                <div className="pl-4 text-center">
+                  <p className="text-xs text-muted-foreground">Expiring Leases</p>
+                  <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">0</p>
+                  <p className="text-[11px] text-muted-foreground">(in 60 days)</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Tenants Table Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+              <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">Tenants</h4>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-[11px] h-7 px-3 gap-1 cursor-pointer"
+                  onClick={async () => {
+                    const res = await generateCSVReport('tenants');
+                    if (res?.success) {
+                      toast({ title: 'Tenants Exported', description: `Downloaded ${res.count} tenant record(s) as CSV.` });
+                    } else {
+                      toast({ variant: 'destructive', title: 'Export Failed', description: res?.message || 'No tenant data available.' });
+                    }
+                  }}
+                >
+                  <Download className="w-3 h-3" /> Export CSV
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-[11px] h-7 px-3 gap-1 cursor-pointer"
+                  onClick={() => setSendRemindersOpen(true)}
+                >
+                  <Send className="w-3 h-3" />
+                  Send Balance Reminders
+                </Button>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type to search..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="h-7 w-36 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-3 pr-7 text-xs focus:outline-none focus:border-blue-500"
+                  />
+                  <Search className="w-3 h-3 text-slate-400 absolute right-2 top-2 pointer-events-none" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCollapseTable(!collapseTable)}
+                  className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
+                >
+                  {collapseTable ? "+" : "–"}
+                </button>
+              </div>
+            </div>
+
+            {!collapseTable && (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+                      <tr>
+                        <th className="py-2.5 px-3 text-left">
+                          <input
+                            type="checkbox"
+                            checked={paginatedTenants.length > 0 && selectedTenantIds.length === paginatedTenants.length}
+                            onChange={(e) => toggleSelectAll(e.target.checked)}
+                            className="rounded w-3.5 h-3.5 accent-blue-600"
+                          />
+                        </th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Tenant Name ⇅</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Property ⇅</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Unit ID/Name ⇅</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Phone Number</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Balance ⇅</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Account Number</th>
+                        <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Options</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                      {isLoading ? (
+                        <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">{t('loading')}</td></tr>
+                      ) : paginatedTenants.length === 0 ? (
+                        <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">{t('no_tenants')}</td></tr>
+                      ) : paginatedTenants.map((tenant) => {
+                        const tid = tenant._id || tenant.id;
+                        const isSelected = selectedTenantIds.includes(tid);
+                        return (
+                          <tr key={tid} className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/30 ${isSelected ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}>
+                            <td className="py-3 px-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectTenant(tid)}
+                                className="rounded w-3.5 h-3.5 accent-blue-600"
+                              />
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-7 w-7 border border-border">
+                                  <AvatarFallback className="bg-primary/10 text-primary font-medium text-[10px]">
+                                    {tenant.name?.substring(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium text-slate-800 dark:text-slate-200">{tenant.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
+                              {typeof tenant.unitId === 'object' ? tenant.unitId?.propertyId?.name || '—' : '—'}
+                            </td>
+                            <td className="py-3 px-3">
+                              <Badge variant="outline" className="font-mono text-[10px]">
+                                {typeof tenant.unitId === 'object' ? tenant.unitId?.unitNumber || 'N/A' : tenant.unitId || 'N/A'}
+                              </Badge>
+                            </td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-400">{tenant.phone}</td>
+                            <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-100">
+                              {tenant.totalDue ? Number(tenant.totalDue).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                            </td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
+                              {tenant.nationalId || '—'}
+                            </td>
+                            <td className="py-3 px-3">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6">
+                                    <MoreHorizontal className="w-3.5 h-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>{t('actions')}</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => handleEditTenant(tenant)}>{t('edit_details')}</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleViewLease(tenant)}>
+                                    <FileText className="w-4 h-4 mr-2" /> {t('view_lease')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <Protect permission={PERMISSIONS.MANAGE_TENANTS}>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
+                                          {t('terminate_lease')}
+                                        </DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
+                                          <AlertDialogDescription>{t('terminate_lease_confirm', { name: tenant.name })}</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => terminateMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">{t('terminate')}</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </Protect>
+                                  <Protect permission={PERMISSIONS.DELETE_DATA}>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">{t('delete_record')}</DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
+                                          <AlertDialogDescription>{t('delete_tenant_confirm')}</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => deleteMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">{t('delete')}</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </Protect>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* Account Balance */}
-                <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
-                    <span>Account Balance</span>
-                    <span className="text-slate-400">▾</span>
-                  </div>
-                  <div className="flex gap-2 mt-1.5">
-                    <input
-                      type="number"
-                      placeholder="min"
-                      value={minBalance}
+                {/* Pagination footer matching Screenshot 2 */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={perPage}
                       onChange={(e) => {
-                        setMinBalance(e.target.value);
+                        setPerPage(Number(e.target.value));
                         setCurrentPage(1);
                       }}
-                      className="w-1/2 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                    <input
-                      type="number"
-                      placeholder="max"
-                      value={maxBalance}
-                      onChange={(e) => {
-                        setMaxBalance(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="w-1/2 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs focus:outline-none focus:border-blue-500"
-                    />
+                      className="h-7 w-14 border border-slate-200 dark:border-slate-700 rounded text-xs px-1.5 bg-white dark:bg-slate-800"
+                    >
+                      {[10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span>
+                      Showing {filteredTenants.length === 0 ? 0 : (currentPage - 1) * perPage + 1} to {Math.min(currentPage * perPage, filteredTenants.length)} of {filteredTenants.length} results
+                    </span>
                   </div>
-                </div>
-
-                {/* Deleted Tenants */}
-                <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
-                    <span>Deleted tenants</span>
-                    <span className="text-slate-400">▾</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1 px-2 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
+                    >
+                      ‹
+                    </button>
+                    <span className="px-2 py-0.5 font-semibold text-slate-800 dark:text-slate-200">{currentPage}</span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                      className="p-1 px-2 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
+                    >
+                      ›
+                    </button>
                   </div>
-                  <label className="flex items-center gap-2 mt-1.5 text-xs cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={showDeletedTenants}
-                      onChange={(e) => setShowDeletedTenants(e.target.checked)}
-                      className="rounded accent-blue-600 w-3.5 h-3.5"
-                    />
-                    <span className="text-slate-600 dark:text-slate-400">show</span>
-                  </label>
-                </div>
-
-                {/* Days to Lease Expiry */}
-                <div>
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300 py-1">
-                    <span>Days to Lease Expiry</span>
-                    <span className="text-slate-400">▾</span>
-                  </div>
-                  <select
-                    value={daysToExpiryFilter}
-                    onChange={(e) => setDaysToExpiryFilter(e.target.value)}
-                    className="w-full mt-1.5 h-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="">—</option>
-                    <option value="30">30 days</option>
-                    <option value="60">60 days</option>
-                    <option value="90">90 days</option>
-                  </select>
                 </div>
               </>
             )}
-          </aside>
-
-          {/* RIGHT: Summary + Table */}
-          <div className="flex-1 min-w-0 space-y-4">
-            {/* Summary Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
-                <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">Summary</h4>
-                <button
-                  type="button"
-                  onClick={() => setCollapseSummary(!collapseSummary)}
-                  className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
-                >
-                  {collapseSummary ? "+" : "–"}
-                </button>
-              </div>
-              {!collapseSummary && (
-                <div className="px-6 py-5 grid grid-cols-3 gap-4 divide-x divide-slate-100 dark:divide-slate-800">
-                  <div className="pr-4 text-center">
-                    <p className="text-xs text-muted-foreground">Total Tenants</p>
-                    <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">{totalTenantsCount}</p>
-                  </div>
-                  <div className="px-4 text-center">
-                    <p className="text-xs text-muted-foreground">Total Arrears</p>
-                    <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">
-                      {totalArrears.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">(KES)</p>
-                  </div>
-                  <div className="pl-4 text-center">
-                    <p className="text-xs text-muted-foreground">Expiring Leases</p>
-                    <p className="text-3xl font-bold text-[#0b1065] dark:text-white mt-2">0</p>
-                    <p className="text-[11px] text-muted-foreground">(in 60 days)</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Tenants Table Card */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
-                <h4 className="text-sm font-semibold text-[#0b1065] dark:text-blue-400">Tenants</h4>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-[11px] h-7 px-3 gap-1 cursor-pointer"
-                    onClick={async () => {
-                      const res = await generateCSVReport('tenants');
-                      if (res?.success) {
-                        toast({ title: 'Tenants Exported', description: `Downloaded ${res.count} tenant record(s) as CSV.` });
-                      } else {
-                        toast({ variant: 'destructive', title: 'Export Failed', description: res?.message || 'No tenant data available.' });
-                      }
-                    }}
-                  >
-                    <Download className="w-3 h-3" /> Export CSV
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-[11px] h-7 px-3 gap-1 cursor-pointer"
-                    onClick={() => setSendRemindersOpen(true)}
-                  >
-                    <Send className="w-3 h-3" />
-                    Send Balance Reminders
-                  </Button>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Type to search..."
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="h-7 w-36 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md pl-3 pr-7 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                    <Search className="w-3 h-3 text-slate-400 absolute right-2 top-2 pointer-events-none" />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setCollapseTable(!collapseTable)}
-                    className="text-slate-400 hover:text-slate-600 text-lg leading-none select-none cursor-pointer"
-                  >
-                    {collapseTable ? "+" : "–"}
-                  </button>
-                </div>
-              </div>
-
-              {!collapseTable && (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                        <tr>
-                          <th className="py-2.5 px-3 text-left">
-                            <input
-                              type="checkbox"
-                              checked={paginatedTenants.length > 0 && selectedTenantIds.length === paginatedTenants.length}
-                              onChange={(e) => toggleSelectAll(e.target.checked)}
-                              className="rounded w-3.5 h-3.5 accent-blue-600"
-                            />
-                          </th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Tenant Name ⇅</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Property ⇅</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Unit ID/Name ⇅</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Phone Number</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Balance ⇅</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Account Number</th>
-                          <th className="py-2.5 px-3 text-left font-semibold text-slate-600">Options</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                        {isLoading ? (
-                          <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">{t('loading')}</td></tr>
-                        ) : paginatedTenants.length === 0 ? (
-                          <tr><td colSpan={8} className="py-10 text-center text-muted-foreground">{t('no_tenants')}</td></tr>
-                        ) : paginatedTenants.map((tenant) => {
-                          const tid = tenant._id || tenant.id;
-                          const isSelected = selectedTenantIds.includes(tid);
-                          return (
-                            <tr key={tid} className={`hover:bg-slate-50/70 dark:hover:bg-slate-800/30 ${isSelected ? "bg-blue-50/40 dark:bg-blue-900/10" : ""}`}>
-                              <td className="py-3 px-3">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleSelectTenant(tid)}
-                                  className="rounded w-3.5 h-3.5 accent-blue-600"
-                                />
-                              </td>
-                              <td className="py-3 px-3">
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-7 w-7 border border-border">
-                                    <AvatarFallback className="bg-primary/10 text-primary font-medium text-[10px]">
-                                      {tenant.name?.substring(0, 2).toUpperCase()}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">{tenant.name}</span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                                {typeof tenant.unitId === 'object' ? tenant.unitId?.propertyId?.name || '—' : '—'}
-                              </td>
-                              <td className="py-3 px-3">
-                                <Badge variant="outline" className="font-mono text-[10px]">
-                                  {typeof tenant.unitId === 'object' ? tenant.unitId?.unitNumber || 'N/A' : tenant.unitId || 'N/A'}
-                                </Badge>
-                              </td>
-                              <td className="py-3 px-3 text-slate-600 dark:text-slate-400">{tenant.phone}</td>
-                              <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-100">
-                                {tenant.totalDue ? Number(tenant.totalDue).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-                              </td>
-                              <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
-                                {tenant.nationalId || '—'}
-                              </td>
-                              <td className="py-3 px-3">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                                      <MoreHorizontal className="w-3.5 h-3.5" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>{t('actions')}</DropdownMenuLabel>
-                                    <DropdownMenuItem onClick={() => handleEditTenant(tenant)}>{t('edit_details')}</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleViewLease(tenant)}>
-                                      <FileText className="w-4 h-4 mr-2" /> {t('view_lease')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <Protect permission={PERMISSIONS.MANAGE_TENANTS}>
-                                      <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">
-                                            {t('terminate_lease')}
-                                          </DropdownMenuItem>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                          <AlertDialogHeader>
-                                            <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
-                                            <AlertDialogDescription>{t('terminate_lease_confirm', { name: tenant.name })}</AlertDialogDescription>
-                                          </AlertDialogHeader>
-                                          <AlertDialogFooter>
-                                            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                            <AlertDialogAction onClick={() => terminateMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">{t('terminate')}</AlertDialogAction>
-                                          </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                      </AlertDialog>
-                                    </Protect>
-                                    <Protect permission={PERMISSIONS.DELETE_DATA}>
-                                      <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-rose-600 focus:text-rose-600 focus:bg-rose-50">{t('delete_record')}</DropdownMenuItem>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                          <AlertDialogHeader>
-                                            <AlertDialogTitle>{t('are_you_sure')}</AlertDialogTitle>
-                                            <AlertDialogDescription>{t('delete_tenant_confirm')}</AlertDialogDescription>
-                                          </AlertDialogHeader>
-                                          <AlertDialogFooter>
-                                            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-                                            <AlertDialogAction onClick={() => deleteMutation.mutate(tenant._id || tenant.id)} className="bg-rose-600 hover:bg-rose-700">{t('delete')}</AlertDialogAction>
-                                          </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                      </AlertDialog>
-                                    </Protect>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pagination footer matching Screenshot 2 */}
-                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={perPage}
-                        onChange={(e) => {
-                          setPerPage(Number(e.target.value));
-                          setCurrentPage(1);
-                        }}
-                        className="h-7 w-14 border border-slate-200 dark:border-slate-700 rounded text-xs px-1.5 bg-white dark:bg-slate-800"
-                      >
-                        {[10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
-                      </select>
-                      <span>
-                        Showing {filteredTenants.length === 0 ? 0 : (currentPage - 1) * perPage + 1} to {Math.min(currentPage * perPage, filteredTenants.length)} of {filteredTenants.length} results
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                        className="p-1 px-2 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
-                      >
-                        ‹
-                      </button>
-                      <span className="px-2 py-0.5 font-semibold text-slate-800 dark:text-slate-200">{currentPage}</span>
-                      <button
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={currentPage >= totalPages}
-                        className="p-1 px-2 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 cursor-pointer"
-                      >
-                        ›
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
           </div>
         </div>
+      </div>
 
-        {/* Send Balance Reminders Modal */}
-        <Dialog open={sendRemindersOpen} onOpenChange={setSendRemindersOpen}>
-          <DialogContent className="max-w-lg p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl">
-            <DialogHeader className="space-y-1">
-              <DialogTitle className="text-base font-bold text-slate-900 dark:text-white">
-                Send Balance Reminders
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                Use this form to send balance reminders to tenants with account balances.
-              </DialogDescription>
-            </DialogHeader>
+      {/* Send Balance Reminders Modal */}
+      <Dialog open={sendRemindersOpen} onOpenChange={setSendRemindersOpen}>
+        <DialogContent className="max-w-lg p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-base font-bold text-slate-900 dark:text-white">
+              Send Balance Reminders
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Use this form to send balance reminders to tenants with account balances.
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="space-y-4 pt-3">
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Select Properties:
-                </label>
+          <div className="space-y-4 pt-3">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Select Properties:
+              </label>
 
-                {/* Multiselect box */}
-                <div className="min-h-10 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-wrap gap-1.5 items-center">
-                  {reminderSelectAll ? (
-                    <span className="text-xs px-2.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 font-medium">
-                      All Properties Selected
-                    </span>
-                  ) : reminderSelectedProperties.length === 0 ? (
-                    <span className="text-xs text-slate-400">Select properties...</span>
-                  ) : (
-                    reminderSelectedProperties.map((pId) => {
-                      const p = properties.find((x) => (x._id || x.id) === pId);
-                      return (
-                        <span
-                          key={pId}
-                          className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-1 font-medium"
+              {/* Multiselect box */}
+              <div className="min-h-10 p-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-wrap gap-1.5 items-center">
+                {reminderSelectAll ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 font-medium">
+                    All Properties Selected
+                  </span>
+                ) : reminderSelectedProperties.length === 0 ? (
+                  <span className="text-xs text-slate-400">Select properties...</span>
+                ) : (
+                  reminderSelectedProperties.map((pId) => {
+                    const p = properties.find((x) => (x._id || x.id) === pId);
+                    return (
+                      <span
+                        key={pId}
+                        className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-1 font-medium"
+                      >
+                        {p?.name || pId}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setReminderSelectedProperties(
+                              reminderSelectedProperties.filter((id) => id !== pId)
+                            )
+                          }
+                          className="hover:text-red-600 leading-none"
                         >
-                          {p?.name || pId}
-                          <button
-                            type="button"
-                            onClick={() =>
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Quick Checkbox picker if not select all */}
+              {!reminderSelectAll && properties.length > 0 && (
+                <div className="max-h-28 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-md p-2 space-y-1 text-xs">
+                  {properties.map((p) => {
+                    const pId = p._id || p.id;
+                    const isChecked = reminderSelectedProperties.includes(pId);
+                    return (
+                      <label
+                        key={pId}
+                        className="flex items-center gap-2 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setReminderSelectedProperties([...reminderSelectedProperties, pId]);
+                            } else {
                               setReminderSelectedProperties(
                                 reminderSelectedProperties.filter((id) => id !== pId)
-                              )
+                              );
                             }
-                            className="hover:text-red-600 leading-none"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })
-                  )}
+                          }}
+                          className="rounded border-slate-300 text-[#0b1065] focus:ring-[#0b1065]"
+                        />
+                        <span>{p.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
+              )}
 
-                {/* Quick Checkbox picker if not select all */}
-                {!reminderSelectAll && properties.length > 0 && (
-                  <div className="max-h-28 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-md p-2 space-y-1 text-xs">
-                    {properties.map((p) => {
-                      const pId = p._id || p.id;
-                      const isChecked = reminderSelectedProperties.includes(pId);
-                      return (
-                        <label
-                          key={pId}
-                          className="flex items-center gap-2 px-2 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setReminderSelectedProperties([...reminderSelectedProperties, pId]);
-                              } else {
-                                setReminderSelectedProperties(
-                                  reminderSelectedProperties.filter((id) => id !== pId)
-                                );
-                              }
-                            }}
-                            className="rounded border-slate-300 text-[#0b1065] focus:ring-[#0b1065]"
-                          />
-                          <span>{p.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Select All Properties checkbox */}
-                <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
-                  <input
-                    type="checkbox"
-                    checked={reminderSelectAll}
-                    onChange={(e) => {
-                      setReminderSelectAll(e.target.checked);
-                      if (e.target.checked) {
-                        setReminderSelectedProperties(properties.map((p) => p._id || p.id));
-                      }
-                    }}
-                    className="rounded border-slate-300 text-[#0b1065] focus:ring-[#0b1065]"
-                  />
-                  <span>Select All Properties</span>
-                </label>
-              </div>
-
-              {/* Submit Action */}
-              <div className="pt-2">
-                <Button
-                  type="button"
-                  disabled={sendingReminders}
-                  onClick={handleSendRemindersSubmit}
-                  className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-6 font-semibold cursor-pointer shadow-xs"
-                >
-                  {sendingReminders ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    "Send Reminders"
-                  )}
-                </Button>
-              </div>
-
-              {/* Note text directly from Screenshot 4 */}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
-                Reminders are sent immediately via Email to tenants with outstanding rent or utility balances.
-              </p>
+              {/* Select All Properties checkbox */}
+              <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={reminderSelectAll}
+                  onChange={(e) => {
+                    setReminderSelectAll(e.target.checked);
+                    if (e.target.checked) {
+                      setReminderSelectedProperties(properties.map((p) => p._id || p.id));
+                    }
+                  }}
+                  className="rounded border-slate-300 text-[#0b1065] focus:ring-[#0b1065]"
+                />
+                <span>Select All Properties</span>
+              </label>
             </div>
-          </DialogContent>
-        </Dialog>
 
-        <ViewLeaseDialog tenant={selectedTenant} open={viewLeaseOpen} onOpenChange={setViewLeaseOpen} />
-        <EditTenantDialog tenant={selectedTenant} open={editTenantOpen} onOpenChange={setEditTenantOpen} />
-      </div>
-    );
+            {/* Submit Action */}
+            <div className="pt-2">
+              <Button
+                type="button"
+                disabled={sendingReminders}
+                onClick={handleSendRemindersSubmit}
+                className="bg-[#0b1065] hover:bg-[#161c8a] text-white text-xs h-9 px-6 font-semibold cursor-pointer shadow-xs"
+              >
+                {sendingReminders ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  "Send Reminders"
+                )}
+              </Button>
+            </div>
+
+            {/* Note text directly from Screenshot 4 */}
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
+              Reminders are sent immediately via Email to tenants with outstanding rent or utility balances.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ViewLeaseDialog tenant={selectedTenant} open={viewLeaseOpen} onOpenChange={setViewLeaseOpen} />
+      <EditTenantDialog tenant={selectedTenant} open={editTenantOpen} onOpenChange={setEditTenantOpen} />
+    </div>
+  );
 }

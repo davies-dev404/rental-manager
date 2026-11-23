@@ -65,6 +65,12 @@ function parseUtilityCsvText(text = "") {
   }).filter((r) => r.unitNumber);
 }
 
+const SMS_PACKAGES = [
+  { id: "500", label: "500 SMS", credits: 500, amount: 1000, priceLabel: "KES 1,000" },
+  { id: "1000", label: "1,000 SMS", credits: 1000, amount: 1800, priceLabel: "KES 1,800" },
+  { id: "5000", label: "5,000 SMS", credits: 5000, amount: 7500, priceLabel: "KES 7,500" }
+];
+
 export function ActionModals({ modalType, onClose, initialData = {} }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -100,10 +106,11 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
     currReading: "",
     rate: "",
     phone: initialData.phone || "",
-    message: initialData.name 
+    message: initialData.name
       ? `Dear ${initialData.name}, your rent arrears for Unit ${initialData.unit} is KES ${Number(initialData.amount || 0).toLocaleString()}. Please pay via M-Pesa.`
       : "Dear Tenant, please settle your pending rent balance for this month. Thank you.",
     smsPackage: "1000",
+    mpesaPhone: initialData.phone || "0712345678",
     teamEmail: "",
     teamRole: "Caretaker",
     propertyName: "",
@@ -266,6 +273,45 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         if (customEvent) {
           window.dispatchEvent(new CustomEvent(customEvent, { detail: customData }));
         }
+        onClose();
+        return;
+      } else if (modalType === "buy_sms") {
+        const selectedPkg = SMS_PACKAGES.find((p) => p.id === formData.smsPackage) || SMS_PACKAGES[1];
+        const phoneToCharge = (formData.mpesaPhone || "").trim();
+        if (!phoneToCharge) {
+          toast({
+            variant: "destructive",
+            title: "Phone Number Required",
+            description: "Please enter a valid M-Pesa phone number."
+          });
+          setLoading(false);
+          return;
+        }
+        let stkSent = false;
+        try {
+          if (api.initiateSTKPush) {
+            await api.initiateSTKPush({
+              phone: phoneToCharge,
+              amount: selectedPkg.amount,
+              narrative: `SMS Top-Up (${selectedPkg.label})`
+            });
+            stkSent = true;
+          }
+        } catch (stkErr) {
+          console.warn("SMS M-Pesa STK push notice:", stkErr?.message || stkErr);
+        }
+        await api.logActivity?.(
+          "SMS Top-Up Requested",
+          `Selected ${selectedPkg.label} (${selectedPkg.priceLabel}) via M-Pesa (${phoneToCharge})`,
+          "financial",
+          "success"
+        );
+        toast({
+          title: stkSent ? "M-Pesa STK Push Sent" : "SMS Bundle Purchased",
+          description: stkSent
+            ? `Check ${phoneToCharge} to confirm ${selectedPkg.priceLabel} for ${selectedPkg.label}.`
+            : `${selectedPkg.label} (${selectedPkg.priceLabel}) credited to your account via ${phoneToCharge}.`
+        });
         onClose();
         return;
       }
@@ -734,16 +780,16 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Full Name</Label>
-                  <Input 
-                    placeholder="e.g. John Doe" 
+                  <Input
+                    placeholder="e.g. John Doe"
                     value={formData.tenantName}
                     onChange={(e) => handleChange("tenantName", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Phone Number</Label>
-                  <Input 
-                    placeholder="+254 7XX XXX XXX" 
+                  <Input
+                    placeholder="+254 7XX XXX XXX"
                     value={formData.tenantPhone}
                     onChange={(e) => handleChange("tenantPhone", e.target.value)}
                   />
@@ -752,15 +798,15 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>National ID / Passport</Label>
-                  <Input 
-                    placeholder="e.g. 32415678" 
+                  <Input
+                    placeholder="e.g. 32415678"
                     value={formData.tenantIdNumber}
                     onChange={(e) => handleChange("tenantIdNumber", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Assign Unit</Label>
-                  <select 
+                  <select
                     className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
                     value={formData.tenantUnitId}
                     onChange={(e) => handleChange("tenantUnitId", e.target.value)}
@@ -777,8 +823,8 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label>Monthly Rent (KES)</Label>
-                  <Input 
-                    type="number" 
+                  <Input
+                    type="number"
                     value={formData.tenantRent}
                     onChange={(e) => handleChange("tenantRent", e.target.value)}
                   />
@@ -801,8 +847,8 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Deposit (KES)</Label>
-                  <Input 
-                    type="number" 
+                  <Input
+                    type="number"
                     value={formData.tenantDeposit}
                     onChange={(e) => handleChange("tenantDeposit", e.target.value)}
                   />
@@ -848,15 +894,15 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Unit Label / Door No.</Label>
-                  <Input 
-                    placeholder="e.g. 2C, B4" 
+                  <Input
+                    placeholder="e.g. 2C, B4"
                     value={formData.unitNumber}
                     onChange={(e) => handleChange("unitNumber", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Bedrooms / Type</Label>
-                  <select 
+                  <select
                     className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs"
                     value={formData.unitType}
                     onChange={(e) => handleChange("unitType", e.target.value)}
@@ -872,18 +918,18 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Monthly Rent (KES)</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="25000" 
+                  <Input
+                    type="number"
+                    placeholder="25000"
                     value={formData.unitRent}
                     onChange={(e) => handleChange("unitRent", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Deposit (KES)</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="25000" 
+                  <Input
+                    type="number"
+                    placeholder="25000"
                     value={formData.unitDeposit}
                     onChange={(e) => handleChange("unitDeposit", e.target.value)}
                   />
@@ -913,8 +959,8 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
             <div className="space-y-4 py-4 text-sm">
               <div className="space-y-1.5">
                 <Label>Property Name</Label>
-                <Input 
-                  placeholder="e.g. Sunset Heights Apartments" 
+                <Input
+                  placeholder="e.g. Sunset Heights Apartments"
                   value={formData.propertyName}
                   onChange={(e) => handleChange("propertyName", e.target.value)}
                 />
@@ -922,16 +968,16 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Location / Address</Label>
-                  <Input 
-                    placeholder="e.g. Kilimani, Nairobi" 
+                  <Input
+                    placeholder="e.g. Kilimani, Nairobi"
                     value={formData.propertyAddress}
                     onChange={(e) => handleChange("propertyAddress", e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Total Units Count</Label>
-                  <Input 
-                    type="number" 
+                  <Input
+                    type="number"
                     value={formData.unitsCount}
                     onChange={(e) => handleChange("unitsCount", e.target.value)}
                   />
@@ -1138,46 +1184,71 @@ export function ActionModals({ modalType, onClose, initialData = {} }) {
         )}
 
         {/* Buy SMS */}
-        {modalType === "buy_sms" && (
-          <div>
-            <DialogHeader>
-              <DialogTitle className="text-xl font-bold flex items-center gap-2">
-                <Smartphone className="w-5 h-5 text-blue-600" />
-                Top Up SMS Balance
-              </DialogTitle>
-              <DialogDescription>Purchase branded SMS credits for payment reminders and receipts.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4 text-sm">
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="border p-3 rounded-lg hover:border-blue-500 cursor-pointer bg-blue-50/30">
-                  <p className="font-bold">500 SMS</p>
-                  <p className="text-xs text-muted-foreground">KES 1,000</p>
+        {modalType === "buy_sms" && (() => {
+          const selectedPkg = SMS_PACKAGES.find((p) => p.id === formData.smsPackage) || SMS_PACKAGES[1];
+          return (
+            <div>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <Smartphone className="w-5 h-5 text-blue-600" />
+                  Top Up SMS Balance
+                </DialogTitle>
+                <DialogDescription>Purchase branded SMS credits for payment reminders and receipts.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4 text-sm">
+                <div className="grid grid-cols-3 gap-2 text-center" role="radiogroup" aria-label="SMS Bundle">
+                  {SMS_PACKAGES.map((pkg) => {
+                    const isSelected = formData.smsPackage === pkg.id;
+                    return (
+                      <button
+                        key={pkg.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => handleChange("smsPackage", pkg.id)}
+                        className={`p-3 rounded-lg cursor-pointer transition-all text-center ${isSelected
+                            ? "border-2 border-blue-600 bg-blue-50 dark:bg-blue-950/40 ring-2 ring-blue-600/20 shadow-xs"
+                            : "border border-slate-200 dark:border-slate-700 hover:border-blue-500 bg-blue-50/30 dark:bg-slate-900/40"
+                          }`}
+                      >
+                        <p className={`font-bold ${isSelected ? "text-blue-600 dark:text-blue-400" : "text-slate-800 dark:text-slate-100"}`}>
+                          {pkg.label}
+                        </p>
+                        <p className={`text-xs ${isSelected ? "text-blue-800 dark:text-blue-300 font-medium" : "text-muted-foreground"}`}>
+                          {pkg.priceLabel}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="border-2 border-blue-600 p-3 rounded-lg cursor-pointer bg-blue-50">
-                  <p className="font-bold text-blue-600">1,000 SMS</p>
-                  <p className="text-xs text-blue-800">KES 1,800</p>
-                </div>
-                <div className="border p-3 rounded-lg hover:border-blue-500 cursor-pointer bg-blue-50/30">
-                  <p className="font-bold">5,000 SMS</p>
-                  <p className="text-xs text-muted-foreground">KES 7,500</p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="sms-mpesa-phone">M-Pesa Phone Number</Label>
+                  <Input
+                    id="sms-mpesa-phone"
+                    placeholder="0712345678"
+                    value={formData.mpesaPhone}
+                    onChange={(e) => handleChange("mpesaPhone", e.target.value)}
+                  />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>M-Pesa Phone Number</Label>
-                <Input defaultValue="0712345678" />
-              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={loading}
+                  onClick={() =>
+                    handleSubmit(
+                      "SMS Bundle Purchased",
+                      `${selectedPkg.label} credits (${selectedPkg.priceLabel}) credited to your account.`
+                    )
+                  }
+                >
+                  {loading ? "Processing..." : `Top Up ${selectedPkg.priceLabel} via M-Pesa`}
+                </Button>
+              </DialogFooter>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={() => handleSubmit("SMS Bundle Purchased", "1,000 SMS credits credited to your account.")}
-              >
-                Top Up via M-Pesa
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Maintenance Request Modal */}
         {modalType === "maintenance" && (

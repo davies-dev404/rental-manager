@@ -8,6 +8,8 @@ const BUSINESS_CONFIG = require('../config/businessConfig');
 const { escapeHtml } = require('../middleware/securityMiddleware');
 const {
   resolveMpesaPaymentDetails,
+  normalizeCategoryTag,
+  formatExplicitPurposeLabel,
   resolvePaymentPurpose,
   resolveInvoicePurposeLabel
 } = require('./shaPdfHelpers');
@@ -268,13 +270,15 @@ const renderShaDocumentEmail = ({
         `;
     };
 
+    const rightAlignStart = (summaryColumns || []).length >= 5 ? 3 : 2;
     const rowsHtml = (summaryRows || []).map((row) => {
         const cells = Array.isArray(row) ? row : [];
         return `
             <tr>
                 ${cells.map((cell, idx) => {
-                    const isRight = idx >= 2;
-                    return `<td style="padding: 10px 10px; font-size: 11.5px; color: #0f172a; border-bottom: 1px solid #e2e8f0; text-align: ${isRight ? 'right' : 'left'}; vertical-align: top;">${escapeHtml(String(cell ?? ''))}</td>`;
+                    const isRight = idx >= rightAlignStart;
+                    const isCatCol = (summaryColumns || []).length >= 5 && idx === 1;
+                    return `<td style="padding: 10px 10px; font-size: 11.5px; color: ${isCatCol ? '#00a99d' : '#0f172a'}; font-weight: ${isCatCol ? '700' : '400'}; border-bottom: 1px solid #e2e8f0; text-align: ${isRight ? 'right' : 'left'}; vertical-align: top;">${escapeHtml(String(cell ?? ''))}</td>`;
                 }).join('')}
             </tr>
         `;
@@ -344,7 +348,7 @@ const renderShaDocumentEmail = ({
                                 <thead>
                                     <tr style="background-color: #0d2240;">
                                         ${(summaryColumns || []).map((col, idx) => `
-                                            <th style="padding: 9px 10px; font-size: 10px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 0.4px; text-align: ${idx >= 2 ? 'right' : 'left'};">${escapeHtml(col)}</th>
+                                            <th style="padding: 9px 10px; font-size: 10px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 0.4px; text-align: ${idx >= rightAlignStart ? 'right' : 'left'};">${escapeHtml(col)}</th>
                                         `).join('')}
                                     </tr>
                                 </thead>
@@ -405,8 +409,7 @@ const getReceiptEmailBody = (payment, tenantName, settings = {}, propertyName = 
         unitNumber: resolvedUnit
     });
 
-    const acctFallback = payment.accountNumber || payment.tenantId?.accountNumber || settings?.paybillAccount || '';
-    const mpesa = resolveMpesaPaymentDetails(settings, acctFallback);
+    const mpesa = resolveMpesaPaymentDetails(settings);
 
     const col1Fields = [
         { label: 'NAME:', value: String(tenantName || payment.tenantId?.name || 'Valued Tenant').toUpperCase() },
@@ -415,14 +418,18 @@ const getReceiptEmailBody = (payment, tenantName, settings = {}, propertyName = 
     if (payment.tenantId?.email) col1Fields.push({ label: 'EMAIL:', value: payment.tenantId.email });
     if (payment.tenantId?.phone) col1Fields.push({ label: 'PHONE:', value: payment.tenantId.phone });
 
+    const explicitPurposeDisplay = invoiceRef
+        ? (purpose.invoiceExplicitLabel || purpose.purposeText)
+        : (purpose.explicitLabel || purpose.purposeText);
+
     const col2Fields = [
         { label: 'Receipt Number:', value: reference },
         ...(invoiceRef
             ? [
-                { label: 'Receipt For:', value: `Invoice #${invoiceRef} (${purpose.purposeText})`, bold: true, color: '#00a99d' },
-                { label: 'Invoice For:', value: purpose.purposeText, bold: true }
+                { label: 'Receipt For:', value: `Invoice #${invoiceRef} (${explicitPurposeDisplay})`, bold: true, color: '#00a99d' },
+                { label: 'Invoice For:', value: explicitPurposeDisplay, bold: true }
               ]
-            : [{ label: 'Payment For:', value: purpose.purposeText, bold: true }]
+            : [{ label: 'Payment For:', value: explicitPurposeDisplay, bold: true }]
         ),
         { label: 'Period Covered:', value: billingPeriod },
         { label: 'Total Amount:', value: `${currency}. ${amountFormatted}`, bold: true },
@@ -451,9 +458,10 @@ const getReceiptEmailBody = (payment, tenantName, settings = {}, propertyName = 
 
     const summaryRows = (purpose.lineItems.length > 0
         ? purpose.lineItems
-        : [{ desc: `${purpose.purposeText}${resolvedUnit ? ` (Unit ${resolvedUnit})` : ''}`, amt: payment.amount }]
+        : [{ desc: `${purpose.purposeText}${resolvedUnit ? ` (Unit ${resolvedUnit})` : ''}`, amt: payment.amount, categoryLabel: purpose.purposeText }]
     ).map((r) => [
         billingPeriod,
+        r.categoryLabel || purpose.purposeText || 'Rent',
         r.desc,
         `${currency} ${Number(r.amt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
         formattedDateTime
@@ -462,8 +470,8 @@ const getReceiptEmailBody = (payment, tenantName, settings = {}, propertyName = 
     return renderShaDocumentEmail({
         docTitle: invoiceRef ? 'INVOICE PAYMENT RECEIPT' : 'PAYMENT RECEIPT',
         docSubtitle: invoiceRef
-            ? `RECEIPT FOR INVOICE #${invoiceRef} — ${purpose.purposeText}`
-            : `PAYMENT FOR: ${purpose.purposeText}`,
+            ? `RECEIPT FOR INVOICE #${invoiceRef} — ${explicitPurposeDisplay}`
+            : `PAYMENT FOR: ${explicitPurposeDisplay}`,
         settings,
         propertyName,
         col1Title: 'TENANT DETAILS',
@@ -475,7 +483,7 @@ const getReceiptEmailBody = (payment, tenantName, settings = {}, propertyName = 
         bannerText,
         bannerColor,
         summaryTitle: 'PAYMENT SUMMARY',
-        summaryColumns: ['BILLING PERIOD', 'DESCRIPTION', 'TOTAL PAID', 'DATE GENERATED'],
+        summaryColumns: ['BILLING PERIOD', 'CATEGORY', 'DESCRIPTION', 'TOTAL PAID', 'DATE GENERATED'],
         summaryRows,
         calloutText: 'A copy of your official PDF receipt is attached to this email for your records.',
         footerRefLabel: 'Ref #',
@@ -490,6 +498,9 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
     const isSub = invoice.invoiceCategory === 'subscription';
     const invRef = String(invoice.invoiceNumber || `INV-${Date.now().toString().slice(-6)}`);
     const purposeText = resolveInvoicePurposeLabel(invoice);
+    const explicitInvoicePurpose = isSub
+        ? purposeText
+        : formatExplicitPurposeLabel(purposeText, { asInvoice: true });
     const currency = settings?.currency || invoice.currency || 'KES';
     const totalFormatted = Number(invoice.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -517,7 +528,7 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
 
     const col2Fields = [
         { label: 'Invoice Number:', value: invRef },
-        { label: 'Invoice For:', value: purposeText, bold: true, color: '#00a99d' },
+        { label: 'Invoice For:', value: explicitInvoicePurpose, bold: true, color: '#00a99d' },
         { label: 'Billing Period:', value: billingPeriod },
         { label: 'Issued Date:', value: fmtDate(issuedDt) },
         { label: 'Due Date:', value: fmtDate(dueDt) },
@@ -526,8 +537,7 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
 
     const col3Fields = [{ label: 'Organisation:', value: businessName }];
     if (!isSub) {
-        const acctFallback = invoice.accountNumber || settings?.paybillAccount || (unitInfo || invRef);
-        const mpesa = resolveMpesaPaymentDetails(settings, acctFallback);
+        const mpesa = resolveMpesaPaymentDetails(settings);
         if (mpesa.mpesaType === 'Till') {
             if (mpesa.shortcode) col3Fields.push({ label: 'Till Number:', value: mpesa.shortcode });
         } else {
@@ -550,6 +560,7 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
 
     const summaryRows = items.map((it) => [
         billingPeriod,
+        normalizeCategoryTag(it.category, it.description) || purposeText || 'Rent',
         it.description || purposeText,
         `${Number(it.taxRate || 0)}%`,
         `${currency} ${Number(it.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -557,7 +568,7 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
 
     return renderShaDocumentEmail({
         docTitle: isSub ? 'SUBSCRIPTION INVOICE' : 'RENTAL INVOICE',
-        docSubtitle: `INVOICE #${invRef} — ${purposeText}`,
+        docSubtitle: `INVOICE #${invRef} — ${explicitInvoicePurpose}`,
         settings,
         propertyName: propName,
         col1Title: 'BILL TO',
@@ -569,7 +580,7 @@ const getInvoiceEmailBody = (invoice, settings = {}) => {
         bannerText,
         bannerColor,
         summaryTitle: 'INVOICE SUMMARY',
-        summaryColumns: ['BILLING PERIOD', 'DESCRIPTION', 'VAT %', `TOTAL (${currency})`],
+        summaryColumns: ['BILLING PERIOD', 'CATEGORY', 'DESCRIPTION', 'VAT %', `TOTAL (${currency})`],
         summaryRows,
         calloutText: settings?.invoiceFootnote || 'A copy of your official PDF invoice is attached. Please remit payment by the due date.',
         footerRefLabel: 'Invoice #',
