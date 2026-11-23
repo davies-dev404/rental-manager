@@ -56,7 +56,8 @@ router.post('/subscriptions/process-expirations', subscriptionController.runExpi
 router.get('/reports/:type/export', reportController.exportReport);
 router.get('/reports/:type', reportController.getReportData);
 
-// Support Management
+// Support Management & Real-Time SSE Stream
+router.get('/support/stream', supportController.streamAdminSupport);
 router.get('/support', supportController.listTickets);
 router.get('/support/:id', validateObjectId('id'), supportController.getTicketDetail);
 router.patch('/support/:id', validateObjectId('id'), supportController.updateTicket);

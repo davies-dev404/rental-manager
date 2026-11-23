@@ -1206,6 +1206,15 @@ export const api = {
     });
     return await parseApiResponse(response, "Failed to load your support tickets");
   },
+  replySupportTicket: async (id, message) => {
+    const response = await smartFetch(`${API_URL}/support/tickets/${id}/reply`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify({ message })
+    });
+    return await parseApiResponse(response, "Failed to send support message");
+  },
   submitLandingContact: async (payload) => {
     const response = await smartFetch(`${API_URL}/public/contact`, {
       method: "POST",

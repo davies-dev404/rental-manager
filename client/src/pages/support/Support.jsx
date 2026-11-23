@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useSupportStream } from "@/hooks/useSupportStream";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Phone, MapPin, Send, MessageCircle } from "lucide-react";
+import { Mail, Phone, MapPin, Send, MessageCircle, CheckCheck } from "lucide-react";
 import SEO from "@/components/SEO";
 
 export default function Support() {
@@ -19,11 +20,56 @@ export default function Support() {
     const queryClient = useQueryClient();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [category, setCategory] = useState("general");
+    const [activeTicketId, setActiveTicketId] = useState(null);
+    const [chatReply, setChatReply] = useState("");
+    const chatEndRef = useRef(null);
+
+    const { isConnected } = useSupportStream({
+        mode: "user",
+        enabled: Boolean(user?.token)
+    });
 
     const { data: myTickets = [] } = useQuery({
         queryKey: ["my-support-tickets"],
         queryFn: api.getMySupportTickets,
         enabled: Boolean(user?.token)
+    });
+
+    useEffect(() => {
+        if (!activeTicketId && Array.isArray(myTickets) && myTickets.length > 0) {
+            setActiveTicketId(myTickets[0]._id);
+        }
+    }, [myTickets, activeTicketId]);
+
+    const activeTicket = Array.isArray(myTickets)
+        ? myTickets.find((t) => String(t._id) === String(activeTicketId)) || myTickets[0] || null
+        : null;
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [activeTicket?.responses?.length, activeTicket?._id]);
+
+    const replyMutation = useMutation({
+        mutationFn: ({ id, message }) => api.replySupportTicket(id, message),
+        onSuccess: (res) => {
+            setChatReply("");
+            if (res?.ticket) {
+                queryClient.setQueryData(["my-support-tickets"], (prev) => {
+                    const list = Array.isArray(prev) ? [...prev] : [];
+                    const idx = list.findIndex((t) => String(t._id) === String(res.ticket._id));
+                    if (idx >= 0) list[idx] = res.ticket;
+                    else list.unshift(res.ticket);
+                    return list;
+                });
+            }
+        },
+        onError: (err) => {
+            toast({
+                variant: "destructive",
+                title: "Message Failed",
+                description: err.message || "Could not send message."
+            });
+        }
     });
 
     const handleSubmit = async (e) => {
@@ -40,8 +86,11 @@ export default function Support() {
             });
             toast({
                 title: "Support Ticket Created",
-                description: `Ticket ${res.ticket?.ticketNumber || ""} received. Our support team will respond shortly.`
+                description: `Ticket ${res.ticket?.ticketNumber || ""} is now open for live chat below.`
             });
+            if (res.ticket?._id) {
+                setActiveTicketId(res.ticket._id);
+            }
             queryClient.invalidateQueries({ queryKey: ["my-support-tickets"] });
             form.reset();
         } catch (err) {
@@ -53,6 +102,12 @@ export default function Support() {
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleSendChatReply = (e) => {
+        if (e) e.preventDefault();
+        if (!activeTicket?._id || !chatReply.trim()) return;
+        replyMutation.mutate({ id: activeTicket._id, message: chatReply.trim() });
     };
 
     const faqs = [
@@ -75,25 +130,178 @@ export default function Support() {
     ];
 
     return (
-        <div className="space-y-8 max-w-5xl mx-auto">
+        <div className="space-y-8 max-w-6xl mx-auto">
             <SEO 
-                title="Customer Support & Help Center"
+                title="Customer Support & Live Help Center"
                 canonicalPath="/support"
-                description="Get in touch with the MakaziFlow support team. Find answers to common questions about rent billing, tenant management, and M-Pesa integration."
+                description="Chat in real time with MakaziFlow support. Find answers to common questions about rent billing, tenant management, and M-Pesa integration."
             />
-            <div>
-                <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">Support Center</h2>
-                <p className="text-muted-foreground mt-1">Need help? Find answers to common questions or get in touch with our team.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                    <h2 className="text-3xl font-heading font-bold tracking-tight text-gray-900 dark:text-white">Support Center</h2>
+                    <p className="text-muted-foreground mt-1">Chat with MakaziFlow Support in real time or open a new support thread.</p>
+                </div>
+                {user?.token && (
+                    <Badge
+                        variant="outline"
+                        className={`text-xs self-start sm:self-auto flex items-center gap-1.5 ${
+                            isConnected
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-slate-100 text-slate-500 border-slate-200"
+                        }`}
+                    >
+                        <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                        {isConnected ? "Live Support Connected" : "Connecting..."}
+                    </Badge>
+                )}
             </div>
 
+            {/* Real-Time WhatsApp-Style Live Support Chat */}
+            {Array.isArray(myTickets) && myTickets.length > 0 && (
+                <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm">
+                    <CardHeader className="bg-[#0d2240] text-white py-3.5 px-5">
+                        <div className="flex items-center justify-between gap-2">
+                            <div>
+                                <CardTitle className="text-base flex items-center gap-2 text-white">
+                                    <MessageCircle className="w-4 h-4 text-[#00d4c8]" />
+                                    Live Support Conversations ({myTickets.length})
+                                </CardTitle>
+                                <CardDescription className="text-xs text-slate-300">
+                                    Messages sync instantaneously with Msimamizi Support — no page refresh required.
+                                </CardDescription>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-3 min-h-[420px]">
+                        {/* Ticket Selector Sidebar */}
+                        <div className="border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 divide-y divide-slate-200 dark:divide-slate-800 max-h-[460px] overflow-y-auto">
+                            {myTickets.map((t) => {
+                                const isSel = activeTicket && String(t._id) === String(activeTicket._id);
+                                const lastReply = (t.responses || [])[t.responses.length - 1];
+                                return (
+                                    <button
+                                        key={t._id}
+                                        type="button"
+                                        onClick={() => setActiveTicketId(t._id)}
+                                        className={`w-full text-left p-3.5 transition cursor-pointer ${
+                                            isSel ? "bg-white dark:bg-slate-800 border-l-4 border-l-[#00a99d]" : "hover:bg-white/70 dark:hover:bg-slate-800/40"
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="font-mono text-[11px] font-bold text-[#00a99d]">{t.ticketNumber}</span>
+                                            <Badge variant="outline" className="text-[9.5px] capitalize">
+                                                {String(t.status || "open").replace(/_/g, " ")}
+                                            </Badge>
+                                        </div>
+                                        <p className="font-semibold text-xs text-slate-900 dark:text-white truncate mt-0.5">{t.subject}</p>
+                                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                            {lastReply ? lastReply.message : t.message || "Conversation opened"}
+                                        </p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Active Chat Thread */}
+                        <div className="md:col-span-2 flex flex-col bg-[#ece5dd] dark:bg-slate-950">
+                            {activeTicket && (
+                                <>
+                                    <div className="bg-white dark:bg-slate-900 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-xs text-slate-900 dark:text-white truncate">{activeTicket.subject}</p>
+                                            <p className="text-[11px] text-slate-500">{activeTicket.ticketNumber} · {activeTicket.category}</p>
+                                        </div>
+                                        <Badge className="text-[10px] capitalize bg-[#0d2240] text-white shrink-0">
+                                            {String(activeTicket.status || "open").replace(/_/g, " ")}
+                                        </Badge>
+                                    </div>
+
+                                    <div className="flex-1 p-4 space-y-2.5 max-h-[340px] overflow-y-auto">
+                                        {activeTicket.message && (
+                                            <div className="flex justify-end">
+                                                <div className="max-w-[82%] bg-[#d9fdd3] dark:bg-emerald-900 text-slate-900 dark:text-white rounded-2xl rounded-tr-xs px-3.5 py-2 shadow-xs text-xs space-y-1">
+                                                    <div className="flex items-center justify-between gap-4 text-[10px] text-slate-500 dark:text-slate-300">
+                                                        <strong>You</strong>
+                                                        <span className="flex items-center gap-1">
+                                                            {activeTicket.createdAt ? new Date(activeTicket.createdAt).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" }) : ""}
+                                                            <CheckCheck className="w-3 h-3 text-[#00a99d]" />
+                                                        </span>
+                                                    </div>
+                                                    <p className="whitespace-pre-wrap">{activeTicket.message}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {(activeTicket.responses || []).map((r, idx) => {
+                                            const isStaff = r.authorRole === "superadmin";
+                                            const tStr = r.createdAt
+                                                ? new Date(r.createdAt).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })
+                                                : "";
+                                            return (
+                                                <div key={r._id || idx} className={`flex ${isStaff ? "justify-start" : "justify-end"}`}>
+                                                    <div
+                                                        className={`max-w-[82%] rounded-2xl px-3.5 py-2 shadow-xs text-xs space-y-1 ${
+                                                            isStaff
+                                                                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs"
+                                                                : "bg-[#d9fdd3] dark:bg-emerald-900 text-slate-900 dark:text-white rounded-tr-xs"
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-4 text-[10px]">
+                                                            <strong className={isStaff ? "text-[#00a99d]" : "text-slate-600 dark:text-slate-300"}>
+                                                                {isStaff ? `${r.authorName} · Support` : "You"}
+                                                            </strong>
+                                                            <span className="text-slate-400 flex items-center gap-1">
+                                                                {tStr}
+                                                                {!isStaff && <CheckCheck className="w-3 h-3 text-[#00a99d]" />}
+                                                            </span>
+                                                        </div>
+                                                        <p className="whitespace-pre-wrap">{r.message}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        <div ref={chatEndRef} />
+                                    </div>
+
+                                    <form onSubmit={handleSendChatReply} className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-2.5 flex items-end gap-2">
+                                        <Textarea
+                                            rows={1}
+                                            value={chatReply}
+                                            onChange={(e) => setChatReply(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter" && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSendChatReply();
+                                                }
+                                            }}
+                                            placeholder="Type a message (Enter to send)..."
+                                            className="text-xs resize-none min-h-10"
+                                        />
+                                        <Button
+                                            type="submit"
+                                            size="sm"
+                                            disabled={replyMutation.isPending || !chatReply.trim()}
+                                            className="bg-[#00a99d] hover:bg-[#008f85] text-white h-10 px-4 text-xs cursor-pointer shrink-0"
+                                        >
+                                            <Send className="w-3.5 h-3.5 mr-1" />
+                                            {replyMutation.isPending ? "..." : "Send"}
+                                        </Button>
+                                    </form>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </Card>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Contact Form */}
+                {/* New Ticket Form */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                             <MessageCircle className="w-5 h-5 text-primary"/> Contact Us
+                             <MessageCircle className="w-5 h-5 text-primary"/> Start a New Support Ticket
                         </CardTitle>
-                        <CardDescription>Send us a message and we'll reply as soon as possible.</CardDescription>
+                        <CardDescription>Send us a message to start a live conversation with our support team.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
@@ -135,7 +343,7 @@ export default function Support() {
                             </div>
                             <Button type="submit" className="w-full" disabled={isSubmitting}>
                                 {isSubmitting ? "Sending..." : (
-                                    <>Send Message <Send className="w-4 h-4 ml-2" /></>
+                                    <>Start Conversation <Send className="w-4 h-4 ml-2" /></>
                                 )}
                             </Button>
                         </form>
@@ -197,37 +405,6 @@ export default function Support() {
                     </Card>
                 </div>
             </div>
-
-            {Array.isArray(myTickets) && myTickets.length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-base">My Recent Support Tickets ({myTickets.length})</CardTitle>
-                        <CardDescription>Track responses and resolution status from MakaziFlow support.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        {myTickets.map((t) => (
-                            <div key={t._id} className="border rounded-lg p-3.5 text-sm space-y-2">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                        <span className="font-mono text-xs font-bold text-[#00a99d] mr-2">{t.ticketNumber}</span>
-                                        <span className="font-semibold">{t.subject}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <Badge variant="outline" className="text-[10px] capitalize">{t.category}</Badge>
-                                        <Badge className="text-[10px] capitalize bg-[#0d2240] text-white">{String(t.status || "open").replace(/_/g, " ")}</Badge>
-                                    </div>
-                                </div>
-                                {(t.responses || []).length > 0 && (
-                                    <div className="bg-muted/50 rounded p-2.5 text-xs space-y-1">
-                                        <p className="font-semibold text-[#00a99d]">Latest Support Reply:</p>
-                                        <p>{t.responses[t.responses.length - 1].message}</p>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </CardContent>
-                </Card>
-            )}
         </div>
     );
 }

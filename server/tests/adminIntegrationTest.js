@@ -607,7 +607,65 @@ async function runTests() {
       mixedPayments.items.some((p) => p.sourceType === 'workspace_ledger' && Number(p.amount) === 35000),
       'Real landlord workspace ledger payments must appear in Admin Payments'
     );
-    console.log('✅ PASS 7: Demo exclusion/purge, cookie isolation, full user profiles, per-property tenant filter, synced reports, and AfriNexTech support verified');
+
+    // Real-time WhatsApp-style SSE streams + two-way user reply
+    const adminStreamAc = new AbortController();
+    const userStreamAc = new AbortController();
+    let adminStreamBuf = '';
+    let userStreamBuf = '';
+    const adminStreamRes = await fetch(`${baseUrl}/api/admin/support/stream`, {
+      headers: { Authorization: `Bearer ${superToken}` },
+      signal: adminStreamAc.signal
+    });
+    const userStreamRes = await fetch(`${baseUrl}/api/support/stream`, {
+      headers: { Authorization: `Bearer ${freshLandlordToken}` },
+      signal: userStreamAc.signal
+    });
+    assert.strictEqual(adminStreamRes.status, 200);
+    assert.strictEqual(userStreamRes.status, 200);
+
+    const pump = async (resStream, onChunk) => {
+      const reader = resStream.body.getReader();
+      const dec = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          onChunk(dec.decode(value, { stream: true }));
+        }
+      } catch {}
+    };
+    const pAdmin = pump(adminStreamRes, (c) => { adminStreamBuf += c; });
+    const pUser = pump(userStreamRes, (c) => { userStreamBuf += c; });
+
+    await new Promise((r) => setTimeout(r, 80));
+    const userReplyRes = await fetch(`${baseUrl}/api/support/tickets/${createdTicket._id}/reply`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${freshLandlordToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'Following up live from subscriber support chat!' })
+    });
+    assert.strictEqual(userReplyRes.status, 200);
+    await fetch(`${baseUrl}/api/admin/support/${createdTicket._id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ responseMessage: 'Live admin reply: checking right now.' })
+    });
+    await fetch(`${baseUrl}/api/admin/support/${createdTicket._id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ responseMessage: 'SUPER_SECRET_INTERNAL_NOTE', isInternalNote: true })
+    });
+
+    await new Promise((r) => setTimeout(r, 150));
+    adminStreamAc.abort();
+    userStreamAc.abort();
+    await Promise.allSettled([pAdmin, pUser]);
+
+    assert.ok(adminStreamBuf.includes('Following up live from subscriber support chat!'), 'Admin SSE stream must receive live user reply');
+    assert.ok(userStreamBuf.includes('Live admin reply: checking right now.'), 'User SSE stream must receive live admin reply');
+    assert.ok(!userStreamBuf.includes('SUPER_SECRET_INTERNAL_NOTE'), 'User SSE stream must NEVER receive internal notes');
+
+    console.log('✅ PASS 7: Demo exclusion/purge, cookie isolation, ODPP tenant counts, synced reports, AfriNexTech support, and real-time SSE chat verified');
 
     console.log('\n🎉 ALL 7 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
   } finally {

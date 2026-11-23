@@ -8,6 +8,7 @@ const SupportTicket = require('../models/SupportTicket');
 const PlatformSetting = require('../models/PlatformSetting');
 const sendEmail = require('../utils/sendEmail');
 const { getLiveMaintenanceStatus } = require('../services/maintenanceService');
+const { publishSupportEvent } = require('../services/supportRealtimeService');
 
 const router = express.Router();
 
@@ -257,6 +258,8 @@ async function handleUnifiedPublicSupport(req, res) {
       status: 'open',
       message: derivedBody
     });
+
+    publishSupportEvent({ type: 'ticket_created', ticket: ticket.toObject() });
 
     // Optional alert to configured platform admin alert email (non-blocking)
     if (process.env.NODE_ENV !== 'test') {

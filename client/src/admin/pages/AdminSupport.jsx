@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
 import { adminHref } from "../utils/msimamiziMode";
+import { useSupportStream } from "@/hooks/useSupportStream";
 import DataTable from "../components/DataTable";
 import StatCard from "../components/StatCard";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,8 @@ export default function AdminSupport() {
   const [category, setCategory] = useState("all");
   const [platform, setPlatform] = useState("all");
   const [page, setPage] = useState(1);
+
+  const { isConnected } = useSupportStream({ mode: "admin" });
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-support", search, status, category, platform, page],
@@ -111,11 +114,24 @@ export default function AdminSupport() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Support Management (AfriNexTech Hub)</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Unified support desk across MakaziFlow and all AfriNexTech platforms. Open any ticket in a dedicated page to assign and reply.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Support Management (AfriNexTech Hub)</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Real-time two-way support desk across MakaziFlow and all AfriNexTech platforms. Messages update live without refreshes.
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={`text-[11px] self-start sm:self-auto flex items-center gap-1.5 ${
+            isConnected
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-slate-100 text-slate-500 border-slate-200"
+          }`}
+        >
+          <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+          {isConnected ? "Live Real-Time Connected" : "Connecting Live..."}
+        </Badge>
       </div>
 
       {/* AfriNexTech Multi-Platform Filter Bar */}

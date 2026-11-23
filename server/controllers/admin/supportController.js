@@ -4,6 +4,12 @@ const User = require('../../models/User');
 const sendEmail = require('../../utils/sendEmail');
 const { escapeRegExp, isValidObjectId } = require('../../middleware/securityMiddleware');
 const { logAdminAction } = require('../../utils/auditLogger');
+const {
+  registerAdminStream,
+  registerUserStream,
+  publishSupportEvent,
+  sanitizeTicketForUser
+} = require('../../services/supportRealtimeService');
 
 const VALID_STATUSES = new Set(['open', 'in_progress', 'pending', 'resolved', 'closed']);
 const VALID_CATEGORIES = new Set(['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request', 'demo_request', 'landing_inquiry']);
@@ -173,6 +179,13 @@ exports.updateTicket = async (req, res) => {
       .populate('userId', 'name email phone role')
       .populate('assignedTo', 'name email')
       .lean();
+
+    publishSupportEvent({
+      type: responseMessage ? 'admin_reply' : 'ticket_updated',
+      ticket: populated,
+      isInternalNote: Boolean(isInternalNote && !status && !priority && assignedTo === undefined)
+    });
+
     res.json({ success: true, ticket: populated });
   } catch (err) {
     res.status(400).json({ message: err.message || 'Failed to update support ticket' });
@@ -181,7 +194,7 @@ exports.updateTicket = async (req, res) => {
 
 exports.submitTicketFromUser = async (req, res) => {
   try {
-    const { name, email, phone, subject, category = 'general', priority = 'medium', message } = req.body || {};
+    const { name, email, phone, subject, category = 'general', priority = 'medium', message, platform = 'makaziflow', platformLabel = 'MakaziFlow' } = req.body || {};
     const finalName = String(name || req.user?.name || '').trim();
     const finalEmail = String(email || req.user?.email || '').trim().toLowerCase();
     const finalSubject = String(subject || '').trim();
@@ -201,14 +214,78 @@ exports.submitTicketFromUser = async (req, res) => {
       subject: finalSubject,
       category: VALID_CATEGORIES.has(String(category)) ? String(category) : 'general',
       priority: VALID_PRIORITIES.has(String(priority)) ? String(priority) : 'medium',
+      platform: String(platform || 'makaziflow').trim().toLowerCase(),
+      platformLabel: String(platformLabel || 'MakaziFlow').trim(),
       status: 'open',
       message: finalMessage
     });
+
+    const populated = await SupportTicket.findById(ticket._id)
+      .populate('userId', 'name email role')
+      .lean();
+    publishSupportEvent({ type: 'ticket_created', ticket: populated || ticket });
 
     res.status(201).json({ success: true, ticket });
   } catch (err) {
     res.status(400).json({ message: err.message || 'Failed to submit support ticket' });
   }
+};
+
+exports.replyFromUser = async (req, res) => {
+  try {
+    const cleanMsg = String(req.body?.message || '').trim();
+    if (!cleanMsg) {
+      return res.status(400).json({ message: 'Message text is required.' });
+    }
+
+    const ticket = await SupportTicket.findById(req.params.id);
+    if (!ticket) {
+      return res.status(404).json({ message: 'Support ticket not found.' });
+    }
+
+    const userEmail = String(req.user?.email || '').trim().toLowerCase();
+    const isOwner =
+      (ticket.userId && String(ticket.userId) === String(req.user._id)) ||
+      (userEmail && ticket.email === userEmail);
+
+    if (!isOwner) {
+      return res.status(403).json({ message: 'Not authorized to reply to this ticket.' });
+    }
+
+    ticket.responses.push({
+      authorId: req.user._id,
+      authorName: req.user.name || ticket.name || 'User',
+      authorRole: req.user.role || 'user',
+      message: cleanMsg,
+      isInternalNote: false,
+      createdAt: new Date()
+    });
+
+    if (ticket.status === 'resolved' || ticket.status === 'pending' || ticket.status === 'closed') {
+      ticket.status = 'open';
+    }
+    ticket.updatedAt = new Date();
+    await ticket.save();
+
+    const populated = await SupportTicket.findById(ticket._id)
+      .populate('userId', 'name email phone role')
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    publishSupportEvent({ type: 'user_reply', ticket: populated });
+
+    res.json({ success: true, ticket: sanitizeTicketForUser(populated) });
+  } catch (err) {
+    res.status(400).json({ message: err.message || 'Failed to send reply.' });
+  }
+};
+
+exports.streamAdminSupport = (req, res) => {
+  registerAdminStream(req, res);
+};
+
+exports.streamUserSupport = (req, res) => {
+  registerUserStream(req, res, [req.user?._id, req.user?.email]);
 };
 
 exports.listMyTickets = async (req, res) => {
@@ -219,17 +296,12 @@ exports.listMyTickets = async (req, res) => {
         ...(req.user.email ? [{ email: String(req.user.email).toLowerCase() }] : [])
       ]
     })
-      .select('ticketNumber subject category priority status responses createdAt updatedAt resolvedAt')
-      .sort({ createdAt: -1 })
+      .select('ticketNumber subject category priority status message responses platform platformLabel createdAt updatedAt resolvedAt')
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(50)
       .lean();
 
-    // Filter internal admin notes before returning to end users
-    const sanitized = tickets.map((t) => ({
-      ...t,
-      responses: (t.responses || []).filter((r) => !r.isInternalNote)
-    }));
-    res.json(sanitized);
+    res.json(tickets.map(sanitizeTicketForUser));
   } catch (err) {
     res.status(500).json({ message: err.message || 'Failed to load your support tickets' });
   }
