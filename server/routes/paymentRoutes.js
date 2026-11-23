@@ -13,7 +13,12 @@ const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const logActivity = require('../utils/logActivity');
 const { getReceiptEmailBody, getInvoiceEmailBody } = require('../utils/emailTemplates');
-const { resolveInvoicePurposeLabel } = require('../utils/shaPdfHelpers');
+const {
+  classifyTextPurpose,
+  normalizeCategoryTag,
+  resolvePaymentPurpose,
+  resolveInvoicePurposeLabel
+} = require('../utils/shaPdfHelpers');
 
 const { sendPaymentReceipt, getPropertyNameForPayment } = require('../utils/sendPaymentReceipt');
 const { getUserBusinessProfile } = require('../utils/getUserBusinessProfile');
@@ -102,23 +107,36 @@ router.post('/', protect, async (req, res) => {
 
     const rawTypeStr = String(req.body.type || '').trim();
     const rawCatStr = String(req.body.category || '').trim().toLowerCase();
-    const typeLower = `${rawTypeStr} ${rawCatStr} ${req.body.notes || ''}`.toLowerCase();
+    const rawNotesStr = String(req.body.notes || req.body.description || '').trim();
+    const detectedPurpose = classifyTextPurpose(`${rawTypeStr} ${rawNotesStr}`);
     const explicitNonRentType = rawTypeStr && !/^(rent|rental payment|combined)$/i.test(rawTypeStr);
+
+    const isExplicitMaint = rawCatStr === 'maintenance' || detectedPurpose === 'Maintenance';
+    const isExplicitUtil = ['water', 'electricity', 'utilities', 'garbage', 'sewer', 'gas'].includes(rawCatStr) || detectedPurpose === 'Utilities';
+    const isExplicitDeposit = rawCatStr === 'deposit' || detectedPurpose === 'Security Deposit';
+    const isExplicitSvc = rawCatStr === 'service_charge' || detectedPurpose === 'Service Charge';
+    const isExplicitPenalty = rawCatStr === 'penalty' || detectedPurpose === 'Late Payment Penalty';
+
+    // Never allow a single-purpose Maintenance/Utilities/Penalty/Deposit/Service Charge invoice
+    // to be mislabeled as Rent via rentAmount
+    if (isExplicitMaint && uAmt === 0 && dAutoAmt === 0 && sAmt === 0 && pAmt === 0) {
+        rAmt = 0;
+    }
 
     // Allocate generic amount cleanly without mislabeling Maintenance/Utilities/Penalty invoices as Rent
     if (amount !== undefined && amount !== null && Number(amount) > 0 && rAmt === 0 && dAutoAmt === 0 && uAmt === 0 && sAmt === 0 && pAmt === 0) {
         const amtNum = Number(amount);
-        if (rawCatStr === 'maintenance' || /maint|repair|plumb|paint|clean|renovat|roof|pest/.test(typeLower)) {
+        if (isExplicitMaint) {
             // Maintenance / repair stays out of rentAmount so receipts/invoices say Maintenance
-        } else if (['water', 'electricity', 'utilities'].includes(rawCatStr) || /util|water|elect|power|garbage|sewer|gas/.test(typeLower)) {
+        } else if (isExplicitUtil) {
             uAmt = amtNum;
-        } else if (rawCatStr === 'deposit' || /deposit/.test(typeLower)) {
+        } else if (isExplicitDeposit) {
             dAutoAmt = amtNum;
-        } else if (rawCatStr === 'service_charge' || /service\s*charge/.test(typeLower)) {
+        } else if (isExplicitSvc) {
             sAmt = amtNum;
-        } else if (rawCatStr === 'penalty' || /penalt|late/.test(typeLower)) {
+        } else if (isExplicitPenalty) {
             pAmt = amtNum;
-        } else if (!explicitNonRentType && rentAmount === undefined) {
+        } else if (!explicitNonRentType && (rentAmount === undefined || Number(rentAmount) === 0)) {
             rAmt = amtNum;
         }
     }
@@ -132,7 +150,7 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ message: "No payment amount provided" });
     }
 
-    let paymentType = rawTypeStr || 'Rent';
+    let paymentType = rawTypeStr || (detectedPurpose || 'Rent');
     const components = [];
     if (rAmt > 0) components.push('Rent');
     if (dAutoAmt > 0) components.push('Deposit');
@@ -140,16 +158,18 @@ router.post('/', protect, async (req, res) => {
     if (sAmt > 0) components.push('Service Charge');
     if (pAmt > 0) components.push('Late Payment Penalty');
     if (components.length > 1) paymentType = 'Combined';
+    else if (isExplicitMaint && (!rawTypeStr || /^rent$/i.test(rawTypeStr))) paymentType = 'Maintenance';
+    else if (isExplicitUtil && (!rawTypeStr || /^rent$/i.test(rawTypeStr))) paymentType = 'Utilities';
     else if (components.length === 1 && !explicitNonRentType) paymentType = components[0];
 
-    let paymentCategory = rawCatStr || 'rent';
-    if (!rawCatStr) {
+    let paymentCategory = rawCatStr || '';
+    if (!paymentCategory || (paymentCategory === 'rent' && (isExplicitMaint || isExplicitUtil || isExplicitDeposit || isExplicitSvc || isExplicitPenalty))) {
         if (components.length > 1) paymentCategory = 'combined';
-        else if (/maint|repair|plumb|paint|clean|renovat|roof|pest/.test(typeLower)) paymentCategory = 'maintenance';
-        else if (uAmt > 0 || /util|water|elect|power|garbage|sewer|gas/.test(typeLower)) paymentCategory = 'utilities';
-        else if (sAmt > 0) paymentCategory = 'service_charge';
-        else if (pAmt > 0) paymentCategory = 'penalty';
-        else if (dAutoAmt > 0) paymentCategory = 'deposit';
+        else if (isExplicitMaint) paymentCategory = 'maintenance';
+        else if (uAmt > 0 || isExplicitUtil) paymentCategory = 'utilities';
+        else if (sAmt > 0 || isExplicitSvc) paymentCategory = 'service_charge';
+        else if (pAmt > 0 || isExplicitPenalty) paymentCategory = 'penalty';
+        else if (dAutoAmt > 0 || isExplicitDeposit) paymentCategory = 'deposit';
         else if (explicitNonRentType) paymentCategory = 'other';
         else paymentCategory = 'rent';
     }
@@ -267,7 +287,7 @@ const updatePaymentHandler = async (req, res) => {
     }
 
     const prevStatus = String(payment.status || '').toLowerCase();
-    const { status, method, reference, transactionId, date, amount, notes, sendReceipt, invoiceNumber, fromInvoice, type } = req.body || {};
+    const { status, method, reference, transactionId, date, amount, notes, sendReceipt, invoiceNumber, fromInvoice, type, category } = req.body || {};
 
     if (status !== undefined) {
       const normalized = String(status).trim().toLowerCase();
@@ -275,6 +295,59 @@ const updatePaymentHandler = async (req, res) => {
     }
     if (method !== undefined && method !== '') payment.method = method;
     if (type !== undefined && String(type).trim()) payment.type = String(type).trim();
+    if (category !== undefined && String(category).trim()) {
+      const normCat = String(category).trim().toLowerCase();
+      const allowedCats = ['rent', 'water', 'electricity', 'utilities', 'maintenance', 'service_charge', 'penalty', 'deposit', 'other', 'combined'];
+      if (allowedCats.includes(normCat)) {
+        payment.category = normCat;
+        const amtForBucket = Number(amount !== undefined ? amount : payment.amount || 0);
+        if (normCat === 'maintenance' || normCat === 'other') {
+          payment.rentAmount = 0;
+          payment.utilityAmount = 0;
+          payment.serviceChargeAmount = 0;
+          payment.penaltyAmount = 0;
+          payment.depositAmount = 0;
+          if (!type || /^rent$/i.test(String(payment.type || ''))) {
+            payment.type = normCat === 'maintenance' ? 'Maintenance' : (payment.type || 'Other');
+          }
+        } else if (['utilities', 'water', 'electricity'].includes(normCat)) {
+          payment.rentAmount = 0;
+          payment.utilityAmount = amtForBucket;
+          payment.serviceChargeAmount = 0;
+          payment.penaltyAmount = 0;
+          payment.depositAmount = 0;
+          if (!type || /^rent$/i.test(String(payment.type || ''))) payment.type = 'Utilities';
+        } else if (normCat === 'service_charge') {
+          payment.rentAmount = 0;
+          payment.utilityAmount = 0;
+          payment.serviceChargeAmount = amtForBucket;
+          payment.penaltyAmount = 0;
+          payment.depositAmount = 0;
+          if (!type || /^rent$/i.test(String(payment.type || ''))) payment.type = 'Service Charge';
+        } else if (normCat === 'penalty') {
+          payment.rentAmount = 0;
+          payment.utilityAmount = 0;
+          payment.serviceChargeAmount = 0;
+          payment.penaltyAmount = amtForBucket;
+          payment.depositAmount = 0;
+          if (!type || /^rent$/i.test(String(payment.type || ''))) payment.type = 'Late Payment Penalty';
+        } else if (normCat === 'deposit') {
+          payment.rentAmount = 0;
+          payment.utilityAmount = 0;
+          payment.serviceChargeAmount = 0;
+          payment.penaltyAmount = 0;
+          payment.depositAmount = amtForBucket;
+          if (!type || /^rent$/i.test(String(payment.type || ''))) payment.type = 'Security Deposit';
+        } else if (normCat === 'rent') {
+          payment.rentAmount = amtForBucket;
+          payment.utilityAmount = 0;
+          payment.serviceChargeAmount = 0;
+          payment.penaltyAmount = 0;
+          payment.depositAmount = 0;
+          if (!type) payment.type = 'Rent';
+        }
+      }
+    }
     if (reference !== undefined) payment.reference = reference;
     else if (transactionId !== undefined) payment.reference = transactionId;
     if (invoiceNumber !== undefined && String(invoiceNumber).trim()) {
@@ -437,6 +510,7 @@ router.get('/:id/pdf', protect, validateObjectId('id'), async (req, res) => {
 router.post('/invoice-pdf', protect, async (req, res) => {
     try {
         const {
+            paymentId,
             invoiceNumber,
             invoiceId,
             tenantId,
@@ -452,11 +526,21 @@ router.post('/invoice-pdf', protect, async (req, res) => {
             vatRate = 0,
             notes,
             type,
-            invoiceType
+            invoiceType,
+            category
         } = req.body || {};
 
-        let tenant = null;
-        if (tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
+        let dbPayment = null;
+        const lookupPayId = paymentId || (invoiceId && isValidObjectId(String(invoiceId)) ? invoiceId : null);
+        if (lookupPayId && isValidObjectId(String(lookupPayId))) {
+            dbPayment = await Payment.findOne({ _id: lookupPayId, user: req.user.id })
+                .populate('tenantId', 'name email phone accountNumber')
+                .populate('unitId', 'unitNumber propertyId')
+                .populate('invoiceId', 'invoiceNumber billingPeriod items notes');
+        }
+
+        let tenant = dbPayment?.tenantId || null;
+        if (!tenant && tenantId && require('mongoose').Types.ObjectId.isValid(tenantId)) {
             tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId');
         }
         if (!tenant && tenantName) {
@@ -464,45 +548,81 @@ router.post('/invoice-pdf', protect, async (req, res) => {
         }
 
         const settings = await getUserBusinessProfile(req.user);
-        const invNum = invoiceNumber || invoiceId || `INV-${Date.now().toString().slice(-6)}`;
+        const invNum = invoiceNumber || dbPayment?.invoiceNumber || (invoiceId && !isValidObjectId(String(invoiceId)) ? invoiceId : '') || `INV-${String(dbPayment?._id || Date.now()).slice(-6).toUpperCase()}`;
         const resolvedName = tenant?.name || tenantName || 'Valued Tenant';
         const resolvedEmail = tenant?.email || email || '';
         const resolvedPhone = tenant?.phone || phone || '';
-        const uNum = unitNumber || tenant?.unitId?.unitNumber || '';
-        const pName = propertyName || settings?.orgName || 'Property Management';
+        const uNum = unitNumber || dbPayment?.unitId?.unitNumber || tenant?.unitId?.unitNumber || '';
 
-        const numericAmt = Number(amount || 0);
+        const numericAmt = Number(amount !== undefined && amount !== null ? amount : (dbPayment?.amount || 0));
         const rate = Number(vatRate || 0);
         const taxAmt = rate > 0 ? Math.round((numericAmt * rate) / (100 + rate)) : 0;
         const subtotalAmt = numericAmt - taxAmt;
-        const rawPurposeHint = String(type || invoiceType || notes || 'Rent & Utilities').trim();
+
+        // Smartly differentiate Rent vs Maintenance vs Utilities vs Penalty/Deposit/Service Charge
+        const mergedNotes = String(notes || dbPayment?.notes || '').trim();
+        const mergedType = String(type || invoiceType || dbPayment?.type || '').trim();
+        const mergedCategory = String(category || dbPayment?.category || '').trim().toLowerCase();
+
+        const resolvedPurpose = dbPayment
+            ? resolvePaymentPurpose({
+                ...(typeof dbPayment.toObject === 'function' ? dbPayment.toObject() : dbPayment),
+                ...(category ? { category: mergedCategory } : {}),
+                ...(type || invoiceType ? { type: mergedType } : {}),
+                ...(notes ? { notes: mergedNotes } : {}),
+                unitNumber: uNum
+              })
+            : resolvePaymentPurpose({
+                amount: numericAmt,
+                type: mergedType,
+                category: mergedCategory,
+                notes: mergedNotes,
+                unitNumber: uNum
+              });
+
+        const categoryTagForItem = (tag = '') => {
+            const t = String(tag || '').toLowerCase();
+            if (t.includes('maint')) return 'maintenance';
+            if (t.includes('util')) return 'utilities';
+            if (t.includes('service')) return 'service_charge';
+            if (t.includes('penalt')) return 'penalty';
+            if (t.includes('deposit')) return 'deposit';
+            if (t.includes('rent')) return 'rent';
+            return mergedCategory || undefined;
+        };
 
         const normalizedItems = Array.isArray(items) && items.length > 0
             ? items.map(it => ({
-                description: it.description || it.itemName || rawPurposeHint,
-                category: it.category || undefined,
+                description: it.description || it.itemName || resolvedPurpose.purposeText,
+                category: it.category || categoryTagForItem(classifyTextPurpose(`${it.description || ''} ${it.itemName || ''}`) || resolvedPurpose.purposeText),
                 taxRate: Number(it.taxRate ?? rate),
                 taxAmount: Number(it.taxAmount ?? 0),
                 totalAmount: Number(it.totalAmount ?? it.amount ?? 0)
             }))
-            : [{
-                description: `${rawPurposeHint}${uNum ? ` - Unit ${uNum}` : ''}`,
-                taxRate: rate,
-                taxAmount: taxAmt,
-                totalAmount: numericAmt
-            }];
+            : resolvedPurpose.lineItems.map((li) => {
+                const lineAmt = Number(li.amt || numericAmt);
+                const lineTax = rate > 0 ? Math.round((lineAmt * rate) / (100 + rate)) : 0;
+                return {
+                    description: li.desc,
+                    category: categoryTagForItem(li.categoryLabel || resolvedPurpose.purposeText),
+                    taxRate: rate,
+                    taxAmount: lineTax,
+                    totalAmount: lineAmt
+                };
+            });
 
         const invoiceObj = {
             invoiceCategory: 'rental',
-            invoiceType: type || invoiceType || '',
-            notes: notes || '',
+            category: categoryTagForItem(resolvedPurpose.purposeText) || mergedCategory || 'rent',
+            invoiceType: resolvedPurpose.purposeText || mergedType,
+            notes: mergedNotes,
             propertyName: propertyName || '',
             unitNumber: uNum,
             accountNumber: tenant?.accountNumber || '',
             invoiceNumber: invNum,
             issuedAt: issuedAt || new Date(),
             createdAt: issuedAt || new Date(),
-            dueDate: dueDate || new Date(),
+            dueDate: dueDate || dbPayment?.date || new Date(),
             customerName: resolvedName,
             customerEmail: resolvedEmail,
             customerPhone: resolvedPhone,
@@ -533,10 +653,19 @@ router.post('/invoice-pdf', protect, async (req, res) => {
 // @access  Private
 router.post('/send-invoice', protect, async (req, res) => {
     try {
-        const { tenantId, invoiceId, amount, dueDate, notes, invoiceType, invoiceItems, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
+        const { paymentId, tenantId, invoiceId, amount, dueDate, notes, invoiceType, category, invoiceItems, propertyName, unitNumber, tenantName: fallbackName, email: fallbackEmail, phone: fallbackPhone } = req.body;
         
-        let tenant = null;
-        if (tenantId && isValidObjectId(String(tenantId))) {
+        let dbPayment = null;
+        const lookupPayId = paymentId || (invoiceId && isValidObjectId(String(invoiceId)) ? invoiceId : null);
+        if (lookupPayId && isValidObjectId(String(lookupPayId))) {
+            dbPayment = await Payment.findOne({ _id: lookupPayId, user: req.user.id })
+                .populate('tenantId', 'name email phone accountNumber')
+                .populate('unitId', 'unitNumber propertyId')
+                .populate('invoiceId', 'invoiceNumber billingPeriod items notes');
+        }
+
+        let tenant = dbPayment?.tenantId || null;
+        if (!tenant && tenantId && isValidObjectId(String(tenantId))) {
             tenant = await Tenant.findOne({ _id: tenantId, user: req.user.id }).populate('unitId');
         }
         if (!tenant && fallbackName) {
@@ -550,10 +679,40 @@ router.post('/send-invoice', protect, async (req, res) => {
         const settings = await getUserBusinessProfile(req.user);
         const resolvedPropName = propertyName || (tenant?.unitId?.propertyId ? (await Property.findById(tenant.unitId.propertyId).select('name').lean())?.name : '') || '';
         const businessName = settings?.companyName || settings?.orgName || resolvedPropName || settings?.landlordName || 'Property Management';
-        const uNum = unitNumber || tenant?.unitId?.unitNumber || tenant?.unit || 'assigned unit';
-        const invRef = invoiceId || `INV-${Date.now().toString().slice(-6)}`;
-        const totalAmt = Number(amount || 0).toLocaleString();
+        const uNum = unitNumber || dbPayment?.unitId?.unitNumber || tenant?.unitId?.unitNumber || tenant?.unit || 'assigned unit';
+        const invRef = (invoiceId && !isValidObjectId(String(invoiceId)) ? invoiceId : '') || dbPayment?.invoiceNumber || `INV-${String(dbPayment?._id || Date.now()).slice(-6).toUpperCase()}`;
+        const totalAmt = Number(amount !== undefined && amount !== null ? amount : (dbPayment?.amount || 0)).toLocaleString();
         const cleanDueDate = dueDate || new Date().toISOString().split('T')[0];
+
+        const mergedNotes = String(notes || dbPayment?.notes || '').trim();
+        const mergedType = String(invoiceType || dbPayment?.type || '').trim();
+        const mergedCategory = String(category || dbPayment?.category || '').trim().toLowerCase();
+        const resolvedPurpose = dbPayment
+            ? resolvePaymentPurpose({
+                ...(typeof dbPayment.toObject === 'function' ? dbPayment.toObject() : dbPayment),
+                ...(category ? { category: mergedCategory } : {}),
+                ...(invoiceType ? { type: mergedType } : {}),
+                ...(notes ? { notes: mergedNotes } : {}),
+                unitNumber: uNum
+              })
+            : resolvePaymentPurpose({
+                amount: Number(amount || 0),
+                type: mergedType,
+                category: mergedCategory,
+                notes: mergedNotes,
+                unitNumber: uNum
+              });
+
+        const categoryTagForItem = (tag = '') => {
+            const t = String(tag || '').toLowerCase();
+            if (t.includes('maint')) return 'maintenance';
+            if (t.includes('util')) return 'utilities';
+            if (t.includes('service')) return 'service_charge';
+            if (t.includes('penalt')) return 'penalty';
+            if (t.includes('deposit')) return 'deposit';
+            if (t.includes('rent')) return 'rent';
+            return mergedCategory || undefined;
+        };
 
         let emailSent = false;
         let smsSent = false;
@@ -563,25 +722,28 @@ router.post('/send-invoice', protect, async (req, res) => {
         // 1. Email Dispatch with Official PDF Attachment (SHA Layout in MakaziFlow Colors)
         if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.endsWith('@makaziflow.com')) {
             try {
-                const numericAmount = Number(amount || 0);
+                const numericAmount = Number(amount !== undefined && amount !== null ? amount : (dbPayment?.amount || 0));
                 const resolvedItemList = Array.isArray(invoiceItems) && invoiceItems.length > 0
                     ? invoiceItems.map((it) => ({
-                        description: it.description || it.name || invoiceType || notes || 'Rental Charge',
+                        description: it.description || it.name || resolvedPurpose.purposeText,
+                        category: it.category || categoryTagForItem(classifyTextPurpose(`${it.description || ''} ${it.name || ''}`) || resolvedPurpose.purposeText),
                         taxRate: Number(it.taxRate || 0),
                         taxAmount: Number(it.taxAmount || 0),
                         totalAmount: Number(it.totalAmount ?? it.amount ?? 0)
                       }))
-                    : [{
-                        description: `${invoiceType || notes || 'Rent & Utilities'} — Unit ${uNum}${notes && invoiceType && !notes.toLowerCase().includes(String(invoiceType).toLowerCase()) ? ` (${notes})` : ''}`,
+                    : resolvedPurpose.lineItems.map((li) => ({
+                        description: li.desc,
+                        category: categoryTagForItem(li.categoryLabel || resolvedPurpose.purposeText),
                         taxRate: 0,
                         taxAmount: 0,
-                        totalAmount: numericAmount
-                      }];
+                        totalAmount: Number(li.amt || numericAmount)
+                      }));
 
                 const invoiceObj = {
                     invoiceCategory: 'rental',
-                    invoiceType: invoiceType || notes || '',
-                    notes: notes || '',
+                    category: categoryTagForItem(resolvedPurpose.purposeText) || mergedCategory || 'rent',
+                    invoiceType: resolvedPurpose.purposeText || mergedType,
+                    notes: mergedNotes,
                     propertyName: resolvedPropName,
                     unitNumber: uNum,
                     accountNumber: tenant?.accountNumber || '',
