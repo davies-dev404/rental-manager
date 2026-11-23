@@ -179,12 +179,12 @@ export default function AdminSupportDetail({ id }) {
         </CardContent>
       </Card>
 
-      {/* WhatsApp-Style Live Chat Area */}
-      <Card className="bg-[#ece5dd] dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
-        <div className="p-4 sm:p-5 space-y-3 h-[420px] overflow-y-auto">
+      {/* Real-Time Live Chat Area */}
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
+        <div className="p-4 sm:p-5 space-y-3 h-[420px] overflow-y-auto bg-white dark:bg-slate-900">
           {/* Initial incoming inquiry bubble */}
           <div className="flex justify-start">
-            <div className="max-w-[82%] bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs px-3.5 py-2.5 shadow-xs text-xs space-y-1">
+            <div className="max-w-[82%] bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-2xl rounded-tl-xs px-3.5 py-2.5 shadow-2xs text-xs space-y-1">
               <div className="flex items-center justify-between gap-4 text-[10.5px] font-bold text-[#00a99d]">
                 <span>{ticket.name}</span>
                 <span className="text-slate-400 font-normal">
@@ -216,10 +216,10 @@ export default function AdminSupportDetail({ id }) {
             return (
               <div key={r._id || i} className={`flex ${isAdminMsg ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-xs text-xs space-y-1 ${
+                  className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-2xs text-xs space-y-1 ${
                     isAdminMsg
-                      ? "bg-[#d9fdd3] dark:bg-emerald-900 text-slate-900 dark:text-white rounded-tr-xs"
-                      : "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-xs"
+                      ? "bg-[#e6f7f5] border border-[#00a99d]/25 dark:bg-emerald-950/70 dark:border-emerald-800 text-slate-900 dark:text-white rounded-tr-xs"
+                      : "bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-tl-xs"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-4 text-[10.5px]">
