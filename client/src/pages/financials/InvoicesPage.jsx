@@ -222,7 +222,7 @@ const buildDeduplicatedInvoices = ({
     }
 
     if (modes.penalties) {
-      const penaltyAmt = Number(t.penalty || 0);
+      const penaltyAmt = Number(t.penalty || 1000);
       if (penaltyAmt > 0 && !hasExistingOpenForItem("penalty")) {
         invoices.push({
           date: invoiceDate,
@@ -744,10 +744,10 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-medium text-slate-800 dark:text-slate-100">
-            Generate Rent Invoices
+            Generate Bulk Invoices
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Create rent invoices for multiple tenants at once.
+            Create rent, recurring bills, or penalty invoices for multiple tenants at once.
           </p>
         </div>
         <button
@@ -901,7 +901,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.rent}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, rent: e.target.checked })}
+                    onChange={e => setInvoiceTypes({ ...invoiceTypes, rent: e.target.checked, penalties: e.target.checked ? false : invoiceTypes.penalties })}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Rent</span>
@@ -910,7 +910,7 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.recurring}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, recurring: e.target.checked })}
+                    onChange={e => setInvoiceTypes({ ...invoiceTypes, recurring: e.target.checked, penalties: e.target.checked ? false : invoiceTypes.penalties })}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Other recurring bills</span>
@@ -919,7 +919,11 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                   <input
                     type="checkbox"
                     checked={invoiceTypes.penalties}
-                    onChange={e => setInvoiceTypes({ ...invoiceTypes, penalties: e.target.checked })}
+                    onChange={e => setInvoiceTypes(
+                      e.target.checked
+                        ? { rent: false, recurring: false, penalties: true }
+                        : { ...invoiceTypes, penalties: false }
+                    )}
                     className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <span>Penalties</span>
@@ -984,26 +988,38 @@ function GenerateBulkInvoicesWizard({ properties, tenants, payments = [], existi
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {(eligibleTenants.length > 0 ? eligibleTenants : tenants).slice(0, 15).map((t, idx) => {
-                  const prop = properties.find(p => (p._id || p.id) === (t.propertyId || t.property));
-                  return (
-                    <tr key={t._id || idx}>
-                      <td className="py-2.5 px-4 font-medium text-slate-800 dark:text-slate-200">{t.name || "Tenant"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{prop?.name || t.property || "Property"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{t.unitNumber || t.unit || "-"}</td>
-                      <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">
-                        {[
-                          invoiceTypes.rent && "Rent",
-                          invoiceTypes.recurring && "Recurring Bills",
-                          invoiceTypes.penalties && "Penalties"
-                        ].filter(Boolean).join(", ")}
-                      </td>
-                      <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
-                        KES {Number(t.rentAmount || 15000).toLocaleString()}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {eligibleTenants.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 px-4 text-center text-slate-400">
+                      No active tenants found in the selected property(s).
+                    </td>
+                  </tr>
+                ) : (
+                  eligibleTenants.slice(0, 15).map((t, idx) => {
+                    const prop = properties.find(p => tenantMatchesProperty(t, p._id || p.id, properties));
+                    const estAmount =
+                      (invoiceTypes.rent ? getTenantRentAmount(t) : 0) +
+                      (invoiceTypes.recurring ? getTenantUtilitiesAmount(t) : 0) +
+                      (invoiceTypes.penalties ? Number(t.penalty || 1000) : 0);
+                    return (
+                      <tr key={t._id || idx}>
+                        <td className="py-2.5 px-4 font-medium text-slate-800 dark:text-slate-200">{t.name || "Tenant"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{prop?.name || getTenantPropName(t) || "Property"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">{getTenantUnitNumber(t) || "-"}</td>
+                        <td className="py-2.5 px-4 text-slate-600 dark:text-slate-400">
+                          {[
+                            invoiceTypes.rent && "Rent",
+                            invoiceTypes.recurring && "Recurring Bills",
+                            invoiceTypes.penalties && "Penalties"
+                          ].filter(Boolean).join(", ")}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-slate-800 dark:text-slate-200">
+                          KES {Number(estAmount || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -3393,3 +3409,12 @@ export default function InvoicesPage() {
     </div>
   );
 }
+
+export {
+  GenerateBulkInvoicesWizard,
+  RentInvoiceFormView,
+  RecurringBillsInvoiceFormView,
+  RentPenaltyInvoiceFormView,
+  GenerateCustomPenaltyInvoicesView,
+  buildDeduplicatedInvoices
+};

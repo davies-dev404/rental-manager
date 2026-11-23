@@ -23,6 +23,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Copy, Printer } from "lucide-react";
 
 import { AddTenantDialog } from "@/components/dialogs/AddTenantDialog";
+import {
+    GenerateBulkInvoicesWizard,
+    RentInvoiceFormView as SharedRentInvoiceFormView,
+    RecurringBillsInvoiceFormView,
+    RentPenaltyInvoiceFormView
+} from "@/pages/financials/InvoicesPage";
 
 // Helpers for safe tenant date & ID normalization
 const safeDateInput = (val) => {
@@ -2556,6 +2562,66 @@ export default function TenantsPage() {
         queryFn: api.getUnits
     });
 
+    const { data: payments = [] } = useQuery({
+        queryKey: ["payments"],
+        queryFn: api.getPayments
+    });
+
+    const existingInvoices = payments.map((p) => {
+        const tenantName = p.tenantId?.name || (typeof p.tenant === "string" ? p.tenant : p.tenant?.name) || "Tenant";
+        const unitNum = p.unitId?.unitNumber || (typeof p.unit === "string" ? p.unit : p.unit?.unitNumber) || "Unit";
+        const propName = p.unitId?.propertyId?.name || (typeof p.property === "string" ? p.property : p.property?.name) || "";
+        return {
+            _id: p._id,
+            rawTenantId: p.tenantId?._id || p.tenantId,
+            unitObjectId: p.unitId?._id || p.unitId,
+            date: p.date ? new Date(p.date).toISOString().split("T")[0] : "",
+            monthCovered: p.monthCovered || (p.date ? String(p.date).slice(0, 7) : ""),
+            tenantId: tenantName,
+            unitId: unitNum,
+            property: propName,
+            item: p.type || "Rent",
+            amount: Number(p.amount || 0),
+            status: p.status || "pending"
+        };
+    });
+
+    const handleAddInvoices = async (newInvoices = []) => {
+        let savedCount = 0;
+        for (const inv of newInvoices) {
+            try {
+                const tenantObj = tenants.find(
+                    (t) =>
+                        (t._id || t.id) === inv.rawTenantId ||
+                        (t.name && String(t.name).toLowerCase() === String(inv.tenantId || "").toLowerCase())
+                );
+                if (tenantObj) {
+                    await api.addPayment({
+                        tenantId: tenantObj._id || tenantObj.id,
+                        unitId: inv.unitObjectId || (typeof tenantObj.unitId === "object" ? (tenantObj.unitId?._id || tenantObj.unitId?.id) : tenantObj.unitId),
+                        amount: Number(inv.amount || 0),
+                        rentAmount: Number(inv.rentAmount || 0),
+                        utilityAmount: Number(inv.utilityAmount || 0),
+                        date: inv.date || new Date().toISOString().split("T")[0],
+                        monthCovered: inv.monthCovered,
+                        method: "invoice",
+                        status: inv.status === "partial" ? "partial" : "pending",
+                        type: inv.item || "Rent",
+                        notes: inv.notes || inv.description || undefined
+                    });
+                    savedCount++;
+                }
+            } catch (err) {
+                console.warn("Save generated invoice warning:", err.message);
+            }
+        }
+        queryClient.invalidateQueries({ queryKey: ["payments"] });
+        queryClient.invalidateQueries({ queryKey: ["tenants"] });
+        queryClient.invalidateQueries({ queryKey: ["stats"] });
+        queryClient.invalidateQueries({ queryKey: ["debtors"] });
+        return savedCount;
+    };
+
     // Dialog States
     const [viewLeaseOpen, setViewLeaseOpen] = useState(false);
     const [selectedTenant, setSelectedTenant] = useState(null);
@@ -2646,16 +2712,16 @@ export default function TenantsPage() {
           setView('add_invoice');
           break;
         case 'bulk_invoices':
-          toast({ title: 'Generate Bulk Invoices', description: 'Generating batch invoices for all occupied units for the current billing cycle.' });
+          setView('bulk_invoices');
           break;
         case 'rent_invoices':
           setView('rent_invoices');
           break;
         case 'recurring_bills':
-          toast({ title: 'Generate Other Recurring Bills Invoices', description: 'Invoices created for utilities, garbage, and service charge fees.' });
+          setView('recurring_bills');
           break;
         case 'penalty_invoices':
-          toast({ title: 'Generate Penalty Invoices', description: 'Late payment penalties calculated and applied to overdue accounts.' });
+          setView('penalty_invoices');
           break;
         case 'custom_penalty':
           setView('custom_penalty');
@@ -2742,11 +2808,52 @@ export default function TenantsPage() {
       );
     }
 
+    if (view === "bulk_invoices") {
+      return (
+        <GenerateBulkInvoicesWizard
+          properties={properties}
+          tenants={tenants}
+          payments={payments}
+          existingInvoices={existingInvoices}
+          onBack={() => setView("list")}
+          onAddInvoices={handleAddInvoices}
+        />
+      );
+    }
+
     if (view === "rent_invoices") {
       return (
-        <RentInvoiceFormView
+        <SharedRentInvoiceFormView
           properties={properties}
+          tenants={tenants}
+          payments={payments}
+          existingInvoices={existingInvoices}
           onBack={() => setView("list")}
+          onAddInvoices={handleAddInvoices}
+        />
+      );
+    }
+
+    if (view === "recurring_bills") {
+      return (
+        <RecurringBillsInvoiceFormView
+          properties={properties}
+          tenants={tenants}
+          payments={payments}
+          existingInvoices={existingInvoices}
+          onBack={() => setView("list")}
+          onAddInvoices={handleAddInvoices}
+        />
+      );
+    }
+
+    if (view === "penalty_invoices") {
+      return (
+        <RentPenaltyInvoiceFormView
+          properties={properties}
+          tenants={tenants}
+          onBack={() => setView("list")}
+          onAddInvoices={handleAddInvoices}
         />
       );
     }
