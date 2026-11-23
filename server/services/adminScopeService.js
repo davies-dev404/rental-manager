@@ -69,7 +69,9 @@ async function getDemoExclusionScope() {
     demoTenantIds,
     userExcludeFilter: {
       ...(demoUserIds.length > 0 ? { _id: { $nin: demoUserIds } } : {}),
-      isDemoMode: { $ne: true }
+      isDemoMode: { $ne: true },
+      role: { $ne: 'superadmin' },
+      isSuperAdmin: { $ne: true }
     },
     propertyExcludeFilter: {
       ...(demoPropertyIds.length > 0 ? { _id: { $nin: demoPropertyIds } } : {}),

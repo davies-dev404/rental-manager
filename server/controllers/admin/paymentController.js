@@ -90,7 +90,6 @@ exports.listPayments = async (req, res) => {
       PaymentTransaction.find(filter)
         .select('-metadata')
         .populate('landlordId', 'name email phone')
-        .populate('tenantId', 'name email phone')
         .populate('subscriptionId', 'planCode planName billingCycle')
         .sort({ createdAt: -1 })
         .limit(200)
@@ -98,7 +97,6 @@ exports.listPayments = async (req, res) => {
       includeWorkspacePayments
         ? Payment.find(ledgerFilter)
             .populate('user', 'name email phone')
-            .populate('tenantId', 'name email phone')
             .populate('unitId', 'unitNumber')
             .sort({ date: -1, createdAt: -1 })
             .limit(200)
@@ -133,11 +131,18 @@ exports.listPayments = async (req, res) => {
     );
 
     const combined = [
-      ...gatewayTxns.map((t) => ({
-        ...t,
-        sourceType: 'gateway',
-        sortAt: new Date(t.paidAt || t.createdAt).getTime()
-      })),
+      ...gatewayTxns.map((t) => {
+        const isSub = ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory);
+        return {
+          ...t,
+          tenantId: undefined,
+          customerName: isSub ? (t.landlordId?.name || t.customerName || 'Subscriber') : `${t.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
+          customerEmail: isSub ? (t.landlordId?.email || t.customerEmail || '') : (t.landlordId?.email || ''),
+          customerPhone: isSub ? (t.landlordId?.phone || t.customerPhone || '') : '',
+          sourceType: 'gateway',
+          sortAt: new Date(t.paidAt || t.createdAt).getTime()
+        };
+      }),
       ...ledgerPayments
         .filter((p) => !p.paymentTransactionId || !gatewayLinkedIds.has(String(p.paymentTransactionId)))
         .map((p) => ({
@@ -152,9 +157,8 @@ exports.listPayments = async (req, res) => {
           paymentCategory: p.category || 'rent',
           paymentMethodDetail: p.unitId?.unitNumber ? `Unit ${p.unitId.unitNumber}` : (p.type || 'Rent'),
           landlordId: p.user || null,
-          tenantId: p.tenantId || null,
-          customerName: p.tenantId?.name || p.user?.name || 'Tenant',
-          customerEmail: p.user?.email || p.tenantId?.email || '',
+          customerName: p.unitId?.unitNumber ? `${p.user?.name || 'Subscriber'} · Unit ${p.unitId.unitNumber}` : (p.user?.name || 'Subscriber Ledger'),
+          customerEmail: p.user?.email || '',
           amount: p.amount || 0,
           amountPaid: p.amount || 0,
           currency: p.currency || 'KES',
@@ -218,19 +222,27 @@ exports.getPaymentDetail = async (req, res) => {
     const txn = await PaymentTransaction.findById(req.params.id)
       .select('-metadata.secret -metadata.apiKey -metadata.token')
       .populate('landlordId', 'name email phone')
-      .populate('tenantId', 'name email phone')
       .populate('subscriptionId', 'planCode planName billingCycle status expiryDate')
       .lean();
     if (!txn) return res.status(404).json({ message: 'Transaction not found' });
 
+    const isSub = ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(txn.paymentCategory);
+    const sanitizedTxn = {
+      ...txn,
+      tenantId: undefined,
+      customerName: isSub ? txn.customerName : `${txn.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
+      customerEmail: isSub ? txn.customerEmail : (txn.landlordId?.email || ''),
+      customerPhone: isSub ? txn.customerPhone : ''
+    };
+
     const [invoice, callbacks, allocations, receipt] = await Promise.all([
-      txn.invoiceId ? Invoice.findById(txn.invoiceId).lean() : null,
+      txn.invoiceId ? Invoice.findById(txn.invoiceId).select('invoiceNumber status totalAmount amountPaid balanceDue billingPeriod createdAt').lean() : null,
       PaymentCallback.find({ transactionId: txn._id }).select('-rawPayload.secret -rawPayload.password').sort({ receivedAt: -1 }).lean(),
       PaymentAllocation.find({ transactionId: txn._id }).lean(),
       PaymentReceipt.findOne({ transactionId: txn._id }).lean()
     ]);
 
-    res.json({ transaction: txn, invoice, callbacks, allocations, receipt });
+    res.json({ transaction: sanitizedTxn, invoice, callbacks, allocations, receipt });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Failed to load transaction details' });
   }
@@ -285,7 +297,6 @@ exports.exportPaymentsCsv = async (req, res) => {
     const filter = buildPaymentFilter({ ...req.query, environment: req.query.environment || 'production' });
     const txns = await PaymentTransaction.find(filter)
       .populate('landlordId', 'name email')
-      .populate('tenantId', 'name email')
       .populate('subscriptionId', 'planName billingCycle')
       .sort({ createdAt: -1 })
       .limit(2500)
@@ -299,7 +310,7 @@ exports.exportPaymentsCsv = async (req, res) => {
 
     const headers = [
       'Timestamp', 'Internal ID', 'Account Ref', 'Provider Ref', 'Environment',
-      'Category', 'Provider', 'Channel', 'Payer Name', 'Payer Email',
+      'Category', 'Provider', 'Channel', 'Subscriber Name', 'Subscriber Email',
       'Currency', 'Amount', 'Amount Paid', 'Status'
     ];
     const rows = txns.map((t) => [
@@ -311,8 +322,8 @@ exports.exportPaymentsCsv = async (req, res) => {
       t.paymentCategory,
       t.provider,
       t.paymentMethodDetail || t.paymentChannel || '',
-      t.tenantId?.name || t.landlordId?.name || t.customerName || '',
-      t.landlordId?.email || t.customerEmail || '',
+      t.landlordId?.name || 'Subscriber',
+      t.landlordId?.email || '',
       t.currency || 'KES',
       t.amount || 0,
       t.amountPaid || 0,

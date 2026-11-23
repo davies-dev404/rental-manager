@@ -240,7 +240,8 @@ async function runTests() {
     const dashRes = await fetch(`${baseUrl}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${superToken}` } });
     assert.strictEqual(dashRes.status, 200);
     const dash = await dashRes.json();
-    assert.strictEqual(dash.metrics.totalUsers, 4);
+    assert.strictEqual(dash.metrics.totalUsers, 3, 'Super Admin must NEVER be counted as a subscriber/user');
+    assert.ok(!dash.feeds.newRegistrations.some((u) => u.role === 'superadmin'), 'Super Admin must never appear in New Registrations');
     assert.strictEqual(dash.metrics.totalProperties, 1);
     assert.strictEqual(dash.metrics.totalUnits, 2);
     assert.strictEqual(dash.metrics.occupiedUnits, 1);
@@ -303,10 +304,8 @@ async function runTests() {
     assert.strictEqual((await flagRes.json()).property.isFlagged, true);
 
     const tenantDetailRes = await fetch(`${baseUrl}/api/admin/tenants/${tenantRec._id}`, { headers: { Authorization: `Bearer ${superToken}` } });
-    assert.strictEqual(tenantDetailRes.status, 200);
-    const tenantDetail = await tenantDetailRes.json();
-    assert.ok(tenantDetail.tenant.nationalId.startsWith('****'), 'Tenant National ID must be masked in admin views');
-    console.log('✅ PASS 4: Property moderation flagging & masked tenant inspection verified');
+    assert.strictEqual(tenantDetailRes.status, 403, 'Individual tenant PII detail must be blocked (403) under ODPP privacy rules');
+    console.log('✅ PASS 4: Property moderation flagging & ODPP tenant PII restriction verified');
 
     // 5. Payments, CSV Export, Subscriptions, Reports (CSV + PDF)
     const csvRes = await fetch(`${baseUrl}/api/admin/payments/export?environment=production`, { headers: { Authorization: `Bearer ${superToken}` } });
@@ -530,19 +529,24 @@ async function runTests() {
     assert.strictEqual(await Property.findById(demoProp._id), null);
     assert.ok(await Property.findById(prop._id), 'Real property must never be removed during demo purge');
 
-    // Full user profile details & landlord revenue summary
+    // Full user profile details & landlord revenue summary (without individual tenant PII)
     const userDetailRes = await fetch(`${baseUrl}/api/admin/users/${landlord._id}`, { headers: { Authorization: `Bearer ${superToken}` } });
     assert.strictEqual(userDetailRes.status, 200);
     const userDetail = await userDetailRes.json();
     assert.strictEqual(userDetail.user.email, 'jane_landlord@test.local');
     assert.strictEqual(userDetail.summary.tenantCount, 1);
     assert.strictEqual(userDetail.summary.revenueGenerated, 60000);
+    assert.strictEqual(userDetail.tenants, undefined, 'Individual tenant list must be excluded under ODPP privacy rules');
 
-    // Tenants filterable per registered property
+    // Aggregated tenant counts per registered property (ODPP compliant)
     const propTenantsRes = await fetch(`${baseUrl}/api/admin/tenants?propertyId=${prop._id}`, { headers: { Authorization: `Bearer ${superToken}` } });
     assert.strictEqual(propTenantsRes.status, 200);
     const propTenantsData = await propTenantsRes.json();
+    assert.strictEqual(propTenantsData.privacyMode, 'odpp_counts_only');
+    assert.strictEqual(propTenantsData.summary.totalRegisteredTenants, 1);
     assert.strictEqual(propTenantsData.items.length, 1);
+    assert.strictEqual(propTenantsData.items[0].registeredTenantsCount, 1);
+    assert.ok(!JSON.stringify(propTenantsData).includes(tenantRec.name), 'Tenant name must NEVER appear in Msimamizi tenant overview');
     assert.ok(propTenantsData.filters.properties.some((p) => String(p._id) === String(prop._id)));
 
     // Synced reports: landlords, properties, revenue

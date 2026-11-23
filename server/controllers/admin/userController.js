@@ -153,8 +153,7 @@ exports.getUserDetail = async (req, res) => {
           ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])
         ]
       })
-        .select('name email phone status unitId rentAmount leaseStart leaseEnd createdAt')
-        .sort({ createdAt: -1 })
+        .select('unitId status')
         .lean(),
       Payment.aggregate([
         {
@@ -176,8 +175,8 @@ exports.getUserDetail = async (req, res) => {
           ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])
         ]
       })
-        .populate('tenantId', 'name phone')
-        .select('amount currency method status category type reference date invoiceNumber')
+        .populate('unitId', 'unitNumber')
+        .select('amount currency method status category type reference date invoiceNumber unitId')
         .sort({ date: -1, createdAt: -1 })
         .limit(25)
         .lean(),
@@ -241,12 +240,12 @@ exports.getUserDetail = async (req, res) => {
         unitCount: units.length,
         occupiedUnits: units.filter((u) => u.status === 'occupied').length,
         tenantCount: tenants.length,
+        activeTenantsCount: tenants.filter((t) => t.status === 'active').length,
         revenueGenerated: totalRevenueGenerated,
         paymentsCount: totalPaymentsCount
       },
       properties: enrichedProperties,
       units,
-      tenants,
       payments: paymentRecords,
       subscriptions,
       entitlement,

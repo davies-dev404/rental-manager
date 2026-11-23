@@ -1,25 +1,17 @@
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
+import { adminHref } from "../utils/msimamiziMode";
 import DataTable from "../components/DataTable";
 import StatCard from "../components/StatCard";
-import ConfirmDialog from "../components/ConfirmDialog";
-import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription
-} from "@/components/ui/dialog";
-import { Search, Download, RotateCcw, Eye, CreditCard, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Search, Download, Eye, CreditCard, CheckCircle2, Clock, AlertCircle } from "lucide-react";
 
 export default function AdminPayments() {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [search, setSearch] = useState("");
   const [environment, setEnvironment] = useState("production");
@@ -29,40 +21,10 @@ export default function AdminPayments() {
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
 
-  const [detailId, setDetailId] = useState(null);
-  const [reverseTarget, setReverseTarget] = useState(null);
-
   const { data, isLoading } = useQuery({
     queryKey: ["admin-payments", search, environment, provider, status, startDate, endDate, page],
     queryFn: () =>
       adminService.getPayments({ search, environment, provider, status, startDate, endDate, page, limit: 20 })
-  });
-
-  const { data: detail } = useQuery({
-    queryKey: ["admin-payment-detail", detailId],
-    queryFn: () => adminService.getPaymentDetail(detailId),
-    enabled: Boolean(detailId)
-  });
-
-  const verifyMutation = useMutation({
-    mutationFn: (id) => adminService.verifyPayment(id),
-    onSuccess: (res) => {
-      toast({ title: "Gateway Verification Checked", description: `Status: ${res?.transaction?.status}` });
-      queryClient.invalidateQueries({ queryKey: ["admin-payments"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
-    },
-    onError: (err) => toast({ variant: "destructive", title: "Verification Error", description: err.message })
-  });
-
-  const reverseMutation = useMutation({
-    mutationFn: ({ id, reason }) => adminService.reversePayment(id, reason),
-    onSuccess: () => {
-      toast({ title: "Transaction Reversed", description: "Payment reversed and linked invoice reopened cleanly." });
-      setReverseTarget(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-payments"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
-    },
-    onError: (err) => toast({ variant: "destructive", title: "Reversal Failed", description: err.message })
   });
 
   const summary = data?.summary || {};
@@ -80,11 +42,11 @@ export default function AdminPayments() {
     },
     {
       key: "user",
-      label: "User / Payer",
+      label: "Subscriber / Channel Detail",
       render: (t) => (
         <div>
           <p className="font-semibold text-slate-800 dark:text-slate-200">{t.landlordId?.name || t.customerName || "—"}</p>
-          <p className="text-[10.5px] text-slate-500">{t.tenantId?.name ? `Tenant: ${t.tenantId.name}` : (t.landlordId?.email || t.customerEmail)}</p>
+          <p className="text-[10.5px] text-slate-500">{t.landlordId?.email || t.customerEmail || "Verified Ledger"}</p>
         </div>
       )
     },
@@ -143,32 +105,9 @@ export default function AdminPayments() {
             Landlord Ledger
           </Badge>
         ) : (
-          <div className="flex items-center justify-end gap-1.5">
-            <Button size="sm" variant="outline" onClick={() => setDetailId(t._id)} className="h-7 px-2 text-[10.5px] cursor-pointer">
-              <Eye className="w-3 h-3 mr-1" /> Details
-            </Button>
-            {t.status === "pending" && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={verifyMutation.isPending}
-                onClick={() => verifyMutation.mutate(t._id)}
-                className="h-7 px-2 text-[10.5px] cursor-pointer"
-              >
-                Verify
-              </Button>
-            )}
-            {t.status === "paid" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setReverseTarget(t)}
-                className="h-7 px-2 text-[10.5px] text-rose-600 border-rose-200 cursor-pointer"
-              >
-                <RotateCcw className="w-3 h-3 mr-1" /> Reverse
-              </Button>
-            )}
-          </div>
+          <Button size="sm" variant="outline" onClick={() => setLocation(adminHref(`/payments/${t._id}`))} className="h-7 px-2.5 text-[10.5px] cursor-pointer">
+            <Eye className="w-3 h-3 mr-1" /> Open Details
+          </Button>
         )
     }
   ];
@@ -234,59 +173,6 @@ export default function AdminPayments() {
         pagination={data?.pagination}
         onPageChange={setPage}
         emptyMessage="No transactions found for the selected filters."
-      />
-
-      {/* Transaction Detail Modal */}
-      <Dialog open={Boolean(detailId)} onOpenChange={() => setDetailId(null)}>
-        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold font-mono">
-              {detail?.transaction?.internalTransactionId || "Transaction Details"}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Account Ref: {detail?.transaction?.accountReference} · Provider Ref: {detail?.transaction?.providerReference || "—"}
-            </DialogDescription>
-          </DialogHeader>
-          {detail?.transaction && (
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg">
-                <div><span className="text-slate-500 block">Amount</span><strong>{detail.transaction.currency} {Number(detail.transaction.amountPaid || detail.transaction.amount).toLocaleString()}</strong></div>
-                <div><span className="text-slate-500 block">Status</span><strong className="uppercase">{detail.transaction.status}</strong></div>
-                <div><span className="text-slate-500 block">Provider / Channel</span><strong>{detail.transaction.provider} ({detail.transaction.paymentChannel})</strong></div>
-                <div><span className="text-slate-500 block">Environment</span><strong className="uppercase">{detail.transaction.gatewayEnvironment}</strong></div>
-              </div>
-              {detail.invoice && (
-                <div className="border rounded-md p-2.5">
-                  <p className="font-bold">Linked Invoice #{detail.invoice.invoiceNumber}</p>
-                  <p className="text-slate-500">Status: {detail.invoice.status} · Total: KES {Number(detail.invoice.totalAmount || 0).toLocaleString()}</p>
-                </div>
-              )}
-              {(detail.callbacks || []).length > 0 && (
-                <div>
-                  <p className="font-bold mb-1">Webhook Callbacks ({detail.callbacks.length})</p>
-                  {detail.callbacks.map((cb) => (
-                    <div key={cb._id} className="border rounded p-2 text-[11px] mb-1">
-                      <strong>{cb.processingStatus}</strong> — {cb.processingMessage} ({new Date(cb.receivedAt).toLocaleString("en-KE")})
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Reversal Confirm Dialog */}
-      <ConfirmDialog
-        open={Boolean(reverseTarget)}
-        onOpenChange={() => setReverseTarget(null)}
-        title={`Reverse Transaction ${reverseTarget?.accountReference}?`}
-        description="Reversing marks the transaction reversed and reopens any settled invoice balance. All reversals are recorded in the Admin Audit Log."
-        confirmLabel="Confirm Authorized Reversal"
-        confirmVariant="destructive"
-        requireReason={true}
-        isPending={reverseMutation.isPending}
-        onConfirm={(reason) => reverseMutation.mutate({ id: reverseTarget._id, reason })}
       />
     </div>
   );

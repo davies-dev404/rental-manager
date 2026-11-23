@@ -116,10 +116,7 @@ export default function AdminDashboard() {
                   size="sm"
                   variant="outline"
                   disabled={clearDemoMutation.isPending}
-                  onClick={() => {
-                    if (!window.confirm("Permanently delete seeded demo properties, units, tenants, and demo payments? Real landlord data (kipsoidavis@gmail.com) will NOT be touched.")) return;
-                    clearDemoMutation.mutate();
-                  }}
+                  onClick={() => clearDemoMutation.mutate()}
                   className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1.5" />
@@ -131,10 +128,7 @@ export default function AdminDashboard() {
                   size="sm"
                   variant="outline"
                   disabled={cleanupTestAccountsMutation.isPending}
-                  onClick={() => {
-                    if (!window.confirm("Remove all other test user accounts and test properties while keeping kipsoidavis@gmail.com and Super Admin(s)?")) return;
-                    cleanupTestAccountsMutation.mutate();
-                  }}
+                  onClick={() => cleanupTestAccountsMutation.mutate()}
                   className="text-xs text-[#0d2240] border-slate-300 hover:bg-slate-100 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-600" />

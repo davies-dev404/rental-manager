@@ -1,70 +1,30 @@
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
+import { adminHref } from "../utils/msimamiziMode";
 import DataTable from "../components/DataTable";
 import StatCard from "../components/StatCard";
-import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter
-} from "@/components/ui/dialog";
 import { Search, LifeBuoy, Clock, CheckCircle2, AlertCircle, MessageSquare, Globe } from "lucide-react";
 
 export default function AdminSupport() {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
   const [platform, setPlatform] = useState("all");
   const [page, setPage] = useState(1);
 
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [replyText, setReplyText] = useState("");
-  const [isInternalNote, setIsInternalNote] = useState(false);
-  const [nextStatus, setNextStatus] = useState("");
-  const [nextPriority, setNextPriority] = useState("");
-  const [nextAssignee, setNextAssignee] = useState("");
-
   const { data, isLoading } = useQuery({
     queryKey: ["admin-support", search, status, category, platform, page],
     queryFn: () => adminService.getSupportTickets({ search, status, category, platform, page, limit: 15 })
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, payload }) => adminService.updateSupportTicket(id, payload),
-    onSuccess: (res) => {
-      toast({ title: "Support Ticket Updated", description: `${res.ticket?.ticketNumber} saved.` });
-      setSelectedTicket(res.ticket);
-      setReplyText("");
-      queryClient.invalidateQueries({ queryKey: ["admin-support"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
-    },
-    onError: (err) => toast({ variant: "destructive", title: "Update Failed", description: err.message })
-  });
-
   const summary = data?.summary || {};
-  const admins = data?.admins || [];
   const platforms = data?.platforms || [];
-
-  const openTicketModal = (t) => {
-    setSelectedTicket(t);
-    setNextStatus(t.status);
-    setNextPriority(t.priority);
-    setNextAssignee(t.assignedTo?._id || "");
-    setReplyText("");
-    setIsInternalNote(false);
-  };
 
   const columns = [
     {
@@ -96,7 +56,7 @@ export default function AdminSupport() {
     },
     {
       key: "category",
-      label: "Category / Priority",
+      label: "Platform / Category / Priority",
       render: (t) => (
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
@@ -142,8 +102,8 @@ export default function AdminSupport() {
       label: "Actions",
       align: "right",
       render: (t) => (
-        <Button size="sm" variant="outline" onClick={() => openTicketModal(t)} className="h-7 px-2.5 text-[11px] cursor-pointer">
-          <MessageSquare className="w-3 h-3 mr-1" /> Manage
+        <Button size="sm" variant="outline" onClick={() => setLocation(adminHref(`/support/${t._id}`))} className="h-7 px-2.5 text-[11px] cursor-pointer">
+          <MessageSquare className="w-3 h-3 mr-1" /> Open Ticket
         </Button>
       )
     }
@@ -154,7 +114,7 @@ export default function AdminSupport() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Support Management (AfriNexTech Hub)</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Unified support desk across MakaziFlow and all AfriNexTech platforms. Categorize requests, assign administrators, and reply directly via email.
+          Unified support desk across MakaziFlow and all AfriNexTech platforms. Open any ticket in a dedicated page to assign and reply.
         </p>
       </div>
 
@@ -241,112 +201,6 @@ export default function AdminSupport() {
         onPageChange={setPage}
         emptyMessage="No support tickets submitted yet."
       />
-
-      {/* Ticket Workspace Modal */}
-      <Dialog open={Boolean(selectedTicket)} onOpenChange={() => setSelectedTicket(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">
-              [{selectedTicket?.ticketNumber}] {selectedTicket?.subject}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              From: {selectedTicket?.name} ({selectedTicket?.email}{selectedTicket?.phone ? ` · ${selectedTicket.phone}` : ""})
-              {selectedTicket?.organizationRole ? ` · Role: ${selectedTicket.organizationRole}` : ""}
-              {selectedTicket?.unitsEstimate ? ` (${selectedTicket.unitsEstimate} units)` : ""} · Submitted{" "}
-              {selectedTicket?.createdAt ? new Date(selectedTicket.createdAt).toLocaleString("en-KE") : "—"}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedTicket && (
-            <div className="space-y-4 text-xs py-1">
-              <div className="bg-slate-50 dark:bg-slate-800/60 border rounded-lg p-3">
-                <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1">Original Message:</p>
-                <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{selectedTicket.message}</p>
-              </div>
-
-              {(selectedTicket.responses || []).length > 0 && (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  <p className="font-bold">Response History:</p>
-                  {selectedTicket.responses.map((r, i) => (
-                    <div key={r._id || i} className={`border rounded-md p-2.5 ${r.isInternalNote ? "bg-amber-50 border-amber-200" : "bg-white dark:bg-slate-900"}`}>
-                      <div className="flex justify-between text-[10.5px] text-slate-500 mb-1">
-                        <strong>{r.authorName} {r.isInternalNote ? "(Internal Note)" : ""}</strong>
-                        <span>{new Date(r.createdAt).toLocaleString("en-KE")}</span>
-                      </div>
-                      <p className="whitespace-pre-wrap">{r.message}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div>
-                  <Label>Status</Label>
-                  <select value={nextStatus} onChange={(e) => setNextStatus(e.target.value)} className="w-full h-8.5 rounded border px-2 text-xs">
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="pending">Pending</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </div>
-                <div>
-                  <Label>Priority</Label>
-                  <select value={nextPriority} onChange={(e) => setNextPriority(e.target.value)} className="w-full h-8.5 rounded border px-2 text-xs">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
-                </div>
-                <div>
-                  <Label>Assign Administrator</Label>
-                  <select value={nextAssignee} onChange={(e) => setNextAssignee(e.target.value)} className="w-full h-8.5 rounded border px-2 text-xs">
-                    <option value="">Unassigned</option>
-                    {admins.map((a) => <option key={a._id} value={a._id}>{a.name} ({a.email})</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Administrator Response / Note</Label>
-                <Textarea
-                  rows={3}
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Write your response or internal troubleshooting note..."
-                />
-                <label className="flex items-center gap-2 text-[11px] text-slate-500 cursor-pointer">
-                  <input type="checkbox" checked={isInternalNote} onChange={(e) => setIsInternalNote(e.target.checked)} />
-                  Save as internal admin-only note (not emailed to user)
-                </label>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedTicket(null)}>Close</Button>
-            <Button
-              disabled={updateMutation.isPending}
-              onClick={() =>
-                updateMutation.mutate({
-                  id: selectedTicket._id,
-                  payload: {
-                    status: nextStatus,
-                    priority: nextPriority,
-                    assignedTo: nextAssignee,
-                    responseMessage: replyText,
-                    isInternalNote
-                  }
-                })
-              }
-              className="bg-[#0d2240] hover:bg-[#132d4a] text-white cursor-pointer"
-            >
-              Save &amp; Update Ticket
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

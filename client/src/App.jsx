@@ -48,12 +48,18 @@ const AdminLogin = lazy(() => import("@/admin/pages/AdminLogin"));
 const AdminLayout = lazy(() => import("@/admin/layouts/AdminLayout"));
 const AdminDashboard = lazy(() => import("@/admin/pages/AdminDashboard"));
 const AdminUsers = lazy(() => import("@/admin/pages/AdminUsers"));
+const AdminUserDetail = lazy(() => import("@/admin/pages/AdminUserDetail"));
 const AdminProperties = lazy(() => import("@/admin/pages/AdminProperties"));
+const AdminPropertyDetail = lazy(() => import("@/admin/pages/AdminPropertyDetail"));
 const AdminTenants = lazy(() => import("@/admin/pages/AdminTenants"));
 const AdminPayments = lazy(() => import("@/admin/pages/AdminPayments"));
+const AdminPaymentDetail = lazy(() => import("@/admin/pages/AdminPaymentDetail"));
 const AdminSubscriptions = lazy(() => import("@/admin/pages/AdminSubscriptions"));
+const AdminSubscriptionPlanForm = lazy(() => import("@/admin/pages/AdminSubscriptionPlanForm"));
+const AdminSubscriptionOverride = lazy(() => import("@/admin/pages/AdminSubscriptionOverride"));
 const AdminReports = lazy(() => import("@/admin/pages/AdminReports"));
 const AdminSupport = lazy(() => import("@/admin/pages/AdminSupport"));
+const AdminSupportDetail = lazy(() => import("@/admin/pages/AdminSupportDetail"));
 const AdminSettings = lazy(() => import("@/admin/pages/AdminSettings"));
 const AdminActivityLogs = lazy(() => import("@/admin/pages/AdminActivityLogs"));
 
@@ -100,12 +106,19 @@ function renderMsimamiziRoutes(prefix = "") {
   return [
     <Route key={`${prefix}-login`} path={p("/login")} component={AdminLoginRoute} />,
     <Route key={`${prefix}-home`} path={p("/")}>{() => <AdminRoute component={AdminDashboard} />}</Route>,
+    <Route key={`${prefix}-user-detail`} path={p("/users/:id")}>{(params) => <AdminRoute component={() => <AdminUserDetail id={params.id} />} />}</Route>,
     <Route key={`${prefix}-users`} path={p("/users")}>{() => <AdminRoute component={AdminUsers} />}</Route>,
+    <Route key={`${prefix}-prop-detail`} path={p("/properties/:id")}>{(params) => <AdminRoute component={() => <AdminPropertyDetail id={params.id} />} />}</Route>,
     <Route key={`${prefix}-props`} path={p("/properties")}>{() => <AdminRoute component={AdminProperties} />}</Route>,
     <Route key={`${prefix}-tenants`} path={p("/tenants")}>{() => <AdminRoute component={AdminTenants} />}</Route>,
+    <Route key={`${prefix}-pay-detail`} path={p("/payments/:id")}>{(params) => <AdminRoute component={() => <AdminPaymentDetail id={params.id} />} />}</Route>,
     <Route key={`${prefix}-payments`} path={p("/payments")}>{() => <AdminRoute component={AdminPayments} />}</Route>,
+    <Route key={`${prefix}-sub-plan-new`} path={p("/subscriptions/plans/new")}>{() => <AdminRoute component={() => <AdminSubscriptionPlanForm mode="create" />} />}</Route>,
+    <Route key={`${prefix}-sub-plan-edit`} path={p("/subscriptions/plans/:id/edit")}>{(params) => <AdminRoute component={() => <AdminSubscriptionPlanForm mode="edit" id={params.id} />} />}</Route>,
+    <Route key={`${prefix}-sub-override`} path={p("/subscriptions/override/:landlordId")}>{(params) => <AdminRoute component={() => <AdminSubscriptionOverride landlordId={params.landlordId} />} />}</Route>,
     <Route key={`${prefix}-subs`} path={p("/subscriptions")}>{() => <AdminRoute component={AdminSubscriptions} />}</Route>,
     <Route key={`${prefix}-reports`} path={p("/reports")}>{() => <AdminRoute component={AdminReports} />}</Route>,
+    <Route key={`${prefix}-support-detail`} path={p("/support/:id")}>{(params) => <AdminRoute component={() => <AdminSupportDetail id={params.id} />} />}</Route>,
     <Route key={`${prefix}-support`} path={p("/support")}>{() => <AdminRoute component={AdminSupport} />}</Route>,
     <Route key={`${prefix}-settings`} path={p("/settings")}>{() => <AdminRoute component={AdminSettings} />}</Route>,
     <Route key={`${prefix}-activity`} path={p("/activity")}>{() => <AdminRoute component={AdminActivityLogs} />}</Route>

@@ -281,61 +281,71 @@ async function generateReportPayload(type, query = {}) {
   }
 
   if (type === 'tenants') {
-    const [tenants, payments] = await Promise.all([
+    const [props, units, tenants] = await Promise.all([
+      Property.find(scope.propertyExcludeFilter)
+        .populate('user', 'name email companyName')
+        .sort({ createdAt: -1 })
+        .limit(1000)
+        .lean(),
+      Unit.find(scope.unitExcludeFilter).select('_id propertyId status').lean(),
       Tenant.find({
         ...scope.tenantExcludeFilter,
         ...(hasExplicitDates ? { createdAt: dateFilter } : {})
       })
-        .populate('user', 'name email')
-        .populate({ path: 'unitId', select: 'unitNumber propertyId', populate: { path: 'propertyId', select: 'name' } })
-        .sort({ createdAt: -1 })
-        .limit(1000)
-        .lean(),
-      Payment.find({
-        ...scope.paymentExcludeFilter,
-        status: { $in: SETTLED_PAYMENT_STATUSES },
-        ...(applyDateFilter ? { date: dateFilter } : {})
-      })
-        .select('tenantId amount')
+        .select('unitId status')
         .lean()
     ]);
 
-    const revByTenant = new Map();
-    payments.forEach((p) => {
-      const k = String(p.tenantId);
-      revByTenant.set(k, (revByTenant.get(k) || 0) + Number(p.amount || 0));
+    const unitToProp = new Map(units.map((u) => [String(u._id), String(u.propertyId)]));
+    const statsByProp = new Map();
+    const ensure = (k) => {
+      if (!statsByProp.has(k)) {
+        statsByProp.set(k, { units: 0, occupied: 0, totalTenants: 0, activeTenants: 0, pastTenants: 0 });
+      }
+      return statsByProp.get(k);
+    };
+
+    units.forEach((u) => {
+      const b = ensure(String(u.propertyId));
+      b.units += 1;
+      if (u.status === 'occupied') b.occupied += 1;
+    });
+    tenants.forEach((t) => {
+      const pId = t.unitId ? unitToProp.get(String(t.unitId)) : null;
+      if (!pId) return;
+      const b = ensure(pId);
+      b.totalTenants += 1;
+      if (t.status === 'active') b.activeTenants += 1;
+      else b.pastTenants += 1;
     });
 
-    const propertySet = new Set();
-    let totalCollectedKES = 0;
-    const rows = tenants.map((t) => {
-      const propName = t.unitId?.propertyId?.name;
-      if (propName) propertySet.add(propName);
-      const collected = revByTenant.get(String(t._id)) || 0;
-      totalCollectedKES += collected;
+    const rows = props.map((p) => {
+      const b = statsByProp.get(String(p._id)) || { units: 0, occupied: 0, totalTenants: 0, activeTenants: 0, pastTenants: 0 };
+      const occ = b.units > 0 ? `${Math.round((b.occupied / b.units) * 100)}%` : '0%';
       return [
-        t.name,
-        t.phone || '—',
-        t.user?.email || '—',
-        propName ? `${propName} (${t.unitId.unitNumber})` : (t.unitId?.unitNumber || 'Unassigned'),
-        Number(t.rentAmount || 0).toLocaleString(),
-        collected.toLocaleString(),
-        t.status,
-        new Date(t.createdAt).toISOString().slice(0, 10)
+        p.name,
+        p.location,
+        p.user?.companyName || p.user?.name || '—',
+        p.user?.email || '—',
+        b.units,
+        b.totalTenants,
+        b.activeTenants,
+        b.pastTenants,
+        occ
       ];
     });
 
     return {
       type,
       period,
-      title: 'Synced Tenant Growth & Revenue Report',
+      title: 'ODPP-Compliant Tenant Count Summary Report',
       summary: {
-        totalTenants: tenants.length,
-        activeTenants: tenants.filter((t) => t.status === 'active').length,
-        propertiesCovered: propertySet.size,
-        totalCollectedKES
+        totalRegisteredTenants: tenants.length,
+        activeTenancies: tenants.filter((t) => t.status === 'active').length,
+        pastTenancies: tenants.filter((t) => t.status !== 'active').length,
+        propertiesCovered: props.length
       },
-      columns: ['Tenant', 'Phone', 'Landlord', 'Property / Unit', 'Monthly Rent (KES)', 'Revenue Collected (KES)', 'Status', 'Created'],
+      columns: ['Property', 'Location', 'Landlord', 'Email', 'Units', 'Registered Tenants', 'Active', 'Past', 'Occupancy'],
       rows
     };
   }
@@ -436,13 +446,13 @@ async function generateReportPayload(type, query = {}) {
         paidCount: txns.filter((t) => t.status === 'paid').length,
         totalPaidKES: txns.filter((t) => t.status === 'paid').reduce((s, t) => s + Number(t.amountPaid || t.amount || 0), 0)
       },
-      columns: ['Date', 'Reference', 'Category', 'Provider', 'Payer', 'Amount (KES)', 'Status'],
+      columns: ['Date', 'Reference', 'Category', 'Provider', 'Subscriber', 'Amount (KES)', 'Status'],
       rows: txns.map((t) => [
         new Date(t.createdAt).toISOString().slice(0, 10),
         t.providerReference || t.accountReference,
         t.paymentCategory,
         t.provider,
-        t.landlordId?.email || t.customerEmail || t.customerName || '—',
+        t.landlordId?.email || t.landlordId?.name || 'Subscriber',
         Number(t.amountPaid || t.amount || 0).toLocaleString(),
         t.status
       ])

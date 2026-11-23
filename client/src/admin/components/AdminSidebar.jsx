@@ -76,9 +76,7 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
       {/* Brand Header */}
       <div className="px-4 py-5 border-b border-[#1a3a5c]/80 flex flex-col items-center justify-center text-center">
         <Link href={adminHref("/")} onClick={onClose} className="cursor-pointer flex flex-col items-center gap-2">
-          <div className="bg-white/95 px-3.5 py-1.5 rounded-xl shadow-xs flex items-center justify-center">
-            <DwelloLogo className="justify-center" />
-          </div>
+          <DwelloLogo className="justify-center" />
           <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-3 py-0.5 rounded-full bg-[#00a99d]/20 text-[#00d4c8] border border-[#00a99d]/30">
             MSIMAMIZI
           </span>

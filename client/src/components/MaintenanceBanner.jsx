@@ -27,8 +27,9 @@ export default function MaintenanceBanner({ variant = "app" }) {
   const { data } = useQuery({
     queryKey: ["public-maintenance-status"],
     queryFn: api.getMaintenanceStatus,
-    staleTime: 25_000,
-    refetchInterval: 45_000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchInterval: 15_000,
     refetchOnWindowFocus: true
   });
 
@@ -48,14 +49,14 @@ export default function MaintenanceBanner({ variant = "app" }) {
   const windowText = data.scheduled && data.startAt ? formatWindow(data.startAt, data.endAt) : "";
 
   const bgClasses = isActive
-    ? "bg-gradient-to-r from-rose-700 via-red-700 to-rose-800 border-rose-500/40"
-    : "bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 border-amber-400/40";
+    ? "bg-rose-700 bg-linear-to-r from-rose-700 via-red-700 to-rose-800 border-rose-500/40"
+    : "bg-amber-600 bg-linear-to-r from-amber-600 via-orange-600 to-amber-700 border-amber-400/40";
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className={`${bgClasses} text-white text-xs px-4 py-2 border-b shadow-xs shrink-0 w-full z-40 ${
+      className={`${bgClasses} text-white text-xs px-4 py-2.5 border-b shadow-sm shrink-0 w-full z-50 ${
         variant === "public" ? "font-sans" : ""
       }`}
     >
@@ -74,13 +75,13 @@ export default function MaintenanceBanner({ variant = "app" }) {
               </>
             )}
           </span>
-          <p className="text-white/95 font-medium text-[11px] sm:text-xs leading-snug">
+          <p className="text-white font-semibold text-xs leading-snug">
             {data.message || "MakaziFlow is undergoing scheduled system maintenance."}
           </p>
         </div>
 
         {windowText && (
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold bg-black/20 px-2.5 py-1 rounded-md border border-white/15 shrink-0 self-start sm:self-auto">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold bg-black/25 px-2.5 py-1 rounded-md border border-white/15 shrink-0 self-start sm:self-auto">
             <Wrench className="w-3 h-3 text-white/90" />
             <span>{windowText}</span>
           </div>

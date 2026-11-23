@@ -224,13 +224,12 @@ exports.getOverviewDashboard = async (req, res) => {
         .lean(),
       PaymentTransaction.find(prodMatch)
         .populate('landlordId', 'name email')
-        .populate('tenantId', 'name')
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
       Payment.find({ ...scope.paymentExcludeFilter })
         .populate('user', 'name email')
-        .populate('tenantId', 'name')
+        .populate('unitId', 'unitNumber')
         .sort({ date: -1, createdAt: -1 })
         .limit(8)
         .lean(),
@@ -362,10 +361,21 @@ exports.getOverviewDashboard = async (req, res) => {
     const landlordRevTotal = landlordRevAgg[0]?.total || 0;
     const landlordRevCount = landlordRevAgg[0]?.count || 0;
 
-    // Combine gateway PaymentTransaction + landlord workspace Payment for live Recent Transactions feed
+    // Combine gateway PaymentTransaction + landlord workspace Payment for live Recent Transactions feed (ODPP redacted)
     const mergedRecentTransactions = [
       ...recentTransactions.map((t) => ({
-        ...t,
+        _id: t._id,
+        accountReference: t.accountReference,
+        landlordId: t.landlordId || null,
+        customerName: ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory)
+          ? (t.landlordId?.name || t.customerName || 'Subscriber')
+          : `${t.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
+        provider: t.provider,
+        amount: t.amount,
+        amountPaid: t.amountPaid,
+        currency: t.currency || 'KES',
+        status: t.status,
+        paymentCategory: t.paymentCategory,
         source: 'gateway',
         displayTime: t.paidAt || t.createdAt
       })),
@@ -373,8 +383,9 @@ exports.getOverviewDashboard = async (req, res) => {
         _id: `pay_${p._id}`,
         accountReference: p.reference || p.invoiceNumber || p.type || 'Rent Payment',
         landlordId: p.user || null,
-        tenantId: p.tenantId || null,
-        customerName: p.tenantId?.name || p.user?.name || 'Tenant',
+        customerName: p.unitId?.unitNumber
+          ? `${p.user?.name || 'Landlord'} · Unit ${p.unitId.unitNumber}`
+          : (p.user?.name || 'Landlord Ledger'),
         provider: p.method || 'M-Pesa / Manual',
         amount: p.amount,
         amountPaid: p.amount,

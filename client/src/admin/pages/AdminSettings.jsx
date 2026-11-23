@@ -375,24 +375,31 @@ export default function AdminSettings() {
                   )}
                 </div>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={broadcastMutation.isPending}
-                onClick={() => {
-                  if (!window.confirm("Send the current maintenance notice email to all active landlords and tenants now?")) return;
-                  broadcastMutation.mutate();
-                }}
-                className="text-xs cursor-pointer shrink-0"
-              >
-                {broadcastMutation.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5 mr-1.5 text-[#00a99d]" />
-                )}
-                Email Users Now
-              </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saveMutation.isPending}
+                  onClick={handleSaveSettings}
+                  className="bg-[#0d2240] hover:bg-[#132d4a] text-white text-xs cursor-pointer shrink-0"
+                >
+                  <Save className="w-3.5 h-3.5 mr-1.5" />
+                  {saveMutation.isPending ? "Applying..." : "Apply Maintenance"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={broadcastMutation.isPending}
+                  onClick={() => broadcastMutation.mutate()}
+                  className="text-xs cursor-pointer shrink-0"
+                >
+                  {broadcastMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 mr-1.5 text-[#00a99d]" />
+                  )}
+                  Email Users Now
+                </Button>
             </div>
           </CardContent>
         </Card>

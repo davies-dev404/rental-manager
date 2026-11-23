@@ -154,6 +154,10 @@ exports.getPropertyDetail = async (req, res) => {
       .select('unitNumber type rentAmount status bedrooms bathrooms size createdAt')
       .sort({ unitNumber: 1 })
       .lean();
+    const tenantCount = await Tenant.countDocuments({
+      unitId: { $in: units.map((u) => u._id) },
+      isDemo: { $ne: true }
+    });
 
     const totalUnits = units.length;
     const occupiedUnits = units.filter((u) => u.status === 'occupied').length;
@@ -173,6 +177,7 @@ exports.getPropertyDetail = async (req, res) => {
         occupiedUnits,
         vacantUnits,
         maintenanceUnits,
+        tenantCount,
         occupancyRate
       }
     });

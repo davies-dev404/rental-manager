@@ -27,6 +27,12 @@ const contactLimiter = rateLimit({
  */
 router.get('/maintenance-status', async (req, res) => {
   try {
+    if (mongoose.connection.readyState === 2) {
+      await Promise.race([
+        mongoose.connection.asPromise().catch(() => {}),
+        new Promise((r) => setTimeout(r, 2000))
+      ]);
+    }
     const status = await getLiveMaintenanceStatus();
     return res.json(status);
   } catch (error) {

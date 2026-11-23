@@ -1,20 +1,14 @@
 import React, { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
+import { adminHref } from "../utils/msimamiziMode";
 import DataTable from "../components/DataTable";
-import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription
-} from "@/components/ui/dialog";
-import { Search, Eye, ShieldCheck, Ban, UserCheck, Trash2 } from "lucide-react";
+import { Search, Eye, Trash2 } from "lucide-react";
 
 const STATUS_BADGE = {
   active: "bg-[#00a99d]/15 text-[#00a99d] border-[#00a99d]/30",
@@ -24,6 +18,7 @@ const STATUS_BADGE = {
 };
 
 export default function AdminUsers() {
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -31,34 +26,11 @@ export default function AdminUsers() {
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
-
-  const [detailUserId, setDetailUserId] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-users", search, role, status, page],
     queryFn: () => adminService.getUsers({ search, role, status, page, limit: 15 })
-  });
-
-  const { data: userDetail, isLoading: detailLoading } = useQuery({
-    queryKey: ["admin-user-detail", detailUserId],
-    queryFn: () => adminService.getUserDetail(detailUserId),
-    enabled: Boolean(detailUserId)
-  });
-
-  const statusMutation = useMutation({
-    mutationFn: ({ id, payload }) => adminService.updateUserStatus(id, payload),
-    onSuccess: (res) => {
-      toast({
-        title: "Account Status Updated",
-        description: `${res.user?.email} is now ${(res.user?.accountStatus || "").replace(/_/g, " ")}.`
-      });
-      setConfirmAction(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-user-detail"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
-    },
-    onError: (err) => toast({ variant: "destructive", title: "Action Failed", description: err.message })
   });
 
   const cleanupTestsMutation = useMutation({
@@ -68,6 +40,7 @@ export default function AdminUsers() {
         title: "Test Accounts Cleaned",
         description: `Removed ${res.deletedUsers || 0} old test account(s) & ${res.deletedProperties || 0} test properties. Active landlord: kipsoidavis@gmail.com.`
       });
+      setConfirmCleanup(false);
       queryClient.invalidateQueries();
     },
     onError: (err) => toast({ variant: "destructive", title: "Cleanup Failed", description: err.message })
@@ -76,10 +49,12 @@ export default function AdminUsers() {
   const columns = [
     {
       key: "name",
-      label: "User",
+      label: "Subscriber",
       render: (u) => (
         <div>
-          <p className="font-bold text-slate-900 dark:text-white">{u.name}</p>
+          <p className="font-bold text-slate-900 dark:text-white">
+            {u.name} {u.companyName ? <span className="font-normal text-slate-500">· {u.companyName}</span> : ""}
+          </p>
           <p className="text-[11px] text-slate-500">{u.email} {u.phone ? `· ${u.phone}` : ""}</p>
         </div>
       )
@@ -116,9 +91,14 @@ export default function AdminUsers() {
       key: "portfolio",
       label: "Portfolio",
       render: (u) => (
-        <span className="text-slate-600 dark:text-slate-300">
-          {u.propertyCount || 0} props · {u.unitCount || 0} units
-        </span>
+        <div>
+          <span className="text-slate-600 dark:text-slate-300 block">
+            {u.propertyCount || 0} props · {u.unitCount || 0} units · {u.tenantCount || 0} tenants
+          </span>
+          <span className="text-[10.5px] font-semibold text-[#00a99d]">
+            KES {Number(u.revenueGenerated || 0).toLocaleString()} collected
+          </span>
+        </div>
       )
     },
     {
@@ -130,35 +110,12 @@ export default function AdminUsers() {
     },
     {
       key: "actions",
-      label: "Actions",
+      label: "Manage",
       align: "right",
       render: (u) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => setDetailUserId(u._id)} className="h-7 px-2 text-[11px] cursor-pointer">
-            <Eye className="w-3 h-3 mr-1" /> View
-          </Button>
-          {u.accountStatus !== "suspended" && u.role !== "superadmin" && !u.isSuperAdmin ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setConfirmAction({ user: u, nextStatus: "suspended" })}
-              className="h-7 px-2 text-[11px] text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
-            >
-              <Ban className="w-3 h-3 mr-1" /> Suspend
-            </Button>
-          ) : (
-            u.role !== "superadmin" && !u.isSuperAdmin && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setConfirmAction({ user: u, nextStatus: "active" })}
-                className="h-7 px-2 text-[11px] text-[#00a99d] border-[#00a99d]/30 cursor-pointer"
-              >
-                <UserCheck className="w-3 h-3 mr-1" /> Reactivate
-              </Button>
-            )
-          )}
-        </div>
+        <Button size="sm" variant="outline" onClick={() => setLocation(adminHref(`/users/${u._id}`))} className="h-7 px-2.5 text-[11px] cursor-pointer">
+          <Eye className="w-3 h-3 mr-1" /> View Profile
+        </Button>
       )
     }
   ];
@@ -167,27 +124,44 @@ export default function AdminUsers() {
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">User Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Subscriber &amp; User Management</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Search registered users, inspect full business &amp; portfolio profiles, and enforce account activation or suspension safeguards.
+            Monitor registered MakaziFlow landlords &amp; users, inspect full business profiles, and manage account status.
           </p>
         </div>
-        {(data?.items?.length || 0) > 2 && (
+        {(data?.items?.length || 0) > 1 && !confirmCleanup && (
           <Button
             size="sm"
             variant="outline"
-            disabled={cleanupTestsMutation.isPending}
-            onClick={() => {
-              if (!window.confirm("Remove all other test accounts & their sample properties while keeping kipsoidavis@gmail.com and Super Admin(s)?")) return;
-              cleanupTestsMutation.mutate();
-            }}
+            onClick={() => setConfirmCleanup(true)}
             className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-            {cleanupTestsMutation.isPending ? "Cleaning..." : "Keep Only kipsoidavis@gmail.com"}
+            Keep Only kipsoidavis@gmail.com
           </Button>
         )}
       </div>
+
+      {confirmCleanup && (
+        <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <p className="text-rose-900 dark:text-rose-200 font-medium">
+            Remove all other test user accounts and test properties permanently while keeping <strong>kipsoidavis@gmail.com</strong>?
+          </p>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              disabled={cleanupTestsMutation.isPending}
+              onClick={() => cleanupTestsMutation.mutate()}
+              className="bg-rose-600 hover:bg-rose-700 text-white text-xs cursor-pointer"
+            >
+              {cleanupTestsMutation.isPending ? "Cleaning..." : "Confirm Purge"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setConfirmCleanup(false)} className="text-xs cursor-pointer">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Filters Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -205,13 +179,12 @@ export default function AdminUsers() {
           onChange={(e) => { setRole(e.target.value); setPage(1); }}
           className="h-8.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs"
         >
-          <option value="all">All Roles</option>
+          <option value="all">All Subscriber Roles</option>
           <option value="admin">Admin / Landlord</option>
           <option value="landlord">Landlord</option>
           <option value="manager">Property Manager</option>
           <option value="caretaker">Caretaker</option>
           <option value="tenant">Tenant</option>
-          <option value="superadmin">Super Admin</option>
         </select>
         <select
           value={status}
@@ -232,228 +205,7 @@ export default function AdminUsers() {
         isLoading={isLoading}
         pagination={data?.pagination}
         onPageChange={setPage}
-        emptyMessage="No users match the selected filters."
-      />
-
-      {/* User Detail Dialog */}
-      <Dialog open={Boolean(detailUserId)} onOpenChange={() => setDetailUserId(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#00a99d]" />
-              {userDetail?.user?.name || "User Details"}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              {userDetail?.user?.email} · Role: {userDetail?.user?.role}
-            </DialogDescription>
-          </DialogHeader>
-
-          {detailLoading ? (
-            <p className="text-xs text-slate-500 py-6 text-center">Loading profile...</p>
-          ) : userDetail?.user && (
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg">
-                <div>
-                  <span className="text-slate-500 block">Status</span>
-                  <strong className="capitalize">{String(userDetail.user.accountStatus).replace(/_/g, " ")}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Properties</span>
-                  <strong>{userDetail.summary?.propertyCount || 0}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Units</span>
-                  <strong>{userDetail.summary?.occupiedUnits || 0} / {userDetail.summary?.unitCount || 0}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Tenants</span>
-                  <strong>{userDetail.summary?.tenantCount || 0}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Revenue Generated</span>
-                  <strong className="text-[#00a99d]">KES {Number(userDetail.summary?.revenueGenerated || 0).toLocaleString()}</strong>
-                </div>
-              </div>
-
-              {/* Complete Registered Profile Details */}
-              <div className="border rounded-lg p-3 bg-white dark:bg-slate-900 space-y-2">
-                <h4 className="font-bold text-slate-800 dark:text-slate-200">Full Registered Account Details</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Full Name</span>
-                    <strong className="text-slate-900 dark:text-white">{userDetail.user.name || "—"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Email Address</span>
-                    <strong className="break-all">{userDetail.user.email || "—"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Phone Number</span>
-                    <strong>{userDetail.user.phone || "Not provided"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Company / Agency</span>
-                    <strong>{userDetail.user.companyName || "Individual Landlord"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Physical Address</span>
-                    <strong>{userDetail.user.address || "Not provided"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">KRA PIN</span>
-                    <strong>{userDetail.user.kraPin || "Not provided"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Role / Onboarding Role</span>
-                    <strong className="capitalize">{userDetail.user.role} ({userDetail.user.onboardingRole || "landlord"})</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Auth Provider / Verified</span>
-                    <strong className="capitalize">
-                      {userDetail.user.authProvider || "local"} · {userDetail.user.isVerified ? "Verified" : "Unverified"}
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Onboarding &amp; Declared Units</span>
-                    <strong>
-                      {userDetail.user.hasCompletedOnboarding ? "Completed" : "Pending"} ({userDetail.user.unitsCount || 0} units declared)
-                    </strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Registered On</span>
-                    <strong>{userDetail.user.createdAt ? new Date(userDetail.user.createdAt).toLocaleString("en-KE") : "—"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Last Login</span>
-                    <strong>{userDetail.user.lastLoginAt ? new Date(userDetail.user.lastLoginAt).toLocaleString("en-KE") : "Never / Pre-tracking"}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10.5px]">Subscription / Tier</span>
-                    <strong>
-                      {userDetail.entitlement?.planName || userDetail.subscriptions?.[0]?.planName || userDetail.user.subscriptionTier || "Starter"} ({userDetail.entitlement?.status || userDetail.subscriptions?.[0]?.status || "trial"})
-                    </strong>
-                  </div>
-                  {userDetail.businessSettings && (
-                    <>
-                      <div>
-                        <span className="text-slate-500 block text-[10.5px]">M-Pesa Mode / Type</span>
-                        <strong>{userDetail.businessSettings.mpesaType || "Paybill"} {userDetail.businessSettings.paybillAccount ? `(${userDetail.businessSettings.paybillAccount})` : ""}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-500 block text-[10.5px]">Abbreviation / Account Type</span>
-                        <strong>{userDetail.businessSettings.abbreviatedName || "—"} · {userDetail.businessSettings.accountType || "Property Management"}</strong>
-                      </div>
-                    </>
-                  )}
-                </div>
-                {userDetail.user.suspendedReason && (
-                  <p className="text-[11px] text-rose-600 pt-1">
-                    <strong>Suspension Reason:</strong> {userDetail.user.suspendedReason}
-                  </p>
-                )}
-              </div>
-
-              {userDetail.user.role !== "superadmin" && !userDetail.user.isSuperAdmin && (
-                <div className="flex flex-wrap gap-2">
-                  {userDetail.user.accountStatus !== "active" && (
-                    <Button size="sm" onClick={() => setConfirmAction({ user: userDetail.user, nextStatus: "active" })} className="bg-[#00a99d] hover:bg-[#008f85] text-white text-xs cursor-pointer">
-                      Activate Account
-                    </Button>
-                  )}
-                  {userDetail.user.accountStatus !== "suspended" && (
-                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ user: userDetail.user, nextStatus: "suspended" })} className="text-rose-600 border-rose-200 text-xs cursor-pointer">
-                      Suspend Account
-                    </Button>
-                  )}
-                  {userDetail.user.accountStatus !== "deactivated" && (
-                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ user: userDetail.user, nextStatus: "deactivated" })} className="text-slate-600 text-xs cursor-pointer">
-                      Deactivate
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5">Registered Properties ({userDetail.properties?.length || 0})</h4>
-                {(userDetail.properties || []).length === 0 ? (
-                  <p className="text-slate-400">No properties registered under this user.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {userDetail.properties.map((p) => (
-                      <div key={p._id} className="border rounded-md p-2 flex flex-wrap justify-between items-center gap-2">
-                        <div>
-                          <p><strong>{p.name}</strong> · {p.location}</p>
-                          <p className="text-[10.5px] text-slate-500">
-                            {p.occupiedUnits || 0}/{p.unitCount || 0} units occupied · {p.tenantCount || 0} tenant(s) · KES {Number(p.revenueGenerated || 0).toLocaleString()} generated
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-[10px]">{p.type || "Apartment"}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5">Registered Tenants ({userDetail.tenants?.length || 0})</h4>
-                {(userDetail.tenants || []).length === 0 ? (
-                  <p className="text-slate-400">No tenants registered under this landlord.</p>
-                ) : (
-                  <div className="space-y-1 max-h-36 overflow-y-auto">
-                    {userDetail.tenants.map((t) => (
-                      <div key={t._id} className="border rounded-md px-2.5 py-1.5 flex justify-between items-center">
-                        <span><strong>{t.name}</strong> · {t.phone}</span>
-                        <span className="text-slate-600">KES {Number(t.rentAmount || 0).toLocaleString()} ({t.status})</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5">Recent Activity ({userDetail.activityLogs?.length || 0})</h4>
-                {(userDetail.activityLogs || []).length === 0 ? (
-                  <p className="text-slate-400">No recent user activity.</p>
-                ) : (
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {userDetail.activityLogs.slice(0, 10).map((a) => (
-                      <div key={a._id} className="border-b border-slate-100 py-1 flex justify-between">
-                        <span><strong>{a.action}</strong> — {a.description}</span>
-                        <span className="text-slate-400 shrink-0 ml-2">{new Date(a.timestamp).toLocaleDateString("en-KE")}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Confirmation Dialog */}
-      <ConfirmDialog
-        open={Boolean(confirmAction)}
-        onOpenChange={() => setConfirmAction(null)}
-        title={
-          confirmAction?.nextStatus === "active"
-            ? `Activate ${confirmAction?.user?.name}?`
-            : `${confirmAction?.nextStatus === "suspended" ? "Suspend" : "Deactivate"} ${confirmAction?.user?.name}?`
-        }
-        description={
-          confirmAction?.nextStatus === "active"
-            ? "This restores full login access for the user immediately."
-            : "This revokes active sessions and prevents the user from signing in until reactivated."
-        }
-        confirmLabel={confirmAction?.nextStatus === "active" ? "Confirm Activation" : "Confirm Restriction"}
-        confirmVariant={confirmAction?.nextStatus === "active" ? "default" : "destructive"}
-        requireReason={confirmAction?.nextStatus !== "active"}
-        isPending={statusMutation.isPending}
-        onConfirm={(reason) =>
-          statusMutation.mutate({
-            id: confirmAction.user._id,
-            payload: { accountStatus: confirmAction.nextStatus, reason }
-          })
-        }
+        emptyMessage="No subscribers match the selected filters."
       />
     </div>
   );
