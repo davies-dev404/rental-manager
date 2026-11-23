@@ -66,11 +66,10 @@ export default function LoginPage() {
     }
   }, [location]);
 
-  // Redirect to appropriate workspace if user is already authenticated
+  // Redirect to dashboard if user is already authenticated
   useEffect(() => {
     if (user && !authLoading) {
-      const isSuper = Boolean(user.isSuperAdmin || user.role === "superadmin");
-      setLocation(isSuper ? "/admin" : "/dashboard");
+      setLocation("/dashboard");
     }
   }, [user, authLoading, setLocation]);
 

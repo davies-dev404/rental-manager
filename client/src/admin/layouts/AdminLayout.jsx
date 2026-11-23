@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link, Redirect, useLocation } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { ShieldAlert, Loader2 } from "lucide-react";
 import AdminSidebar from "../components/AdminSidebar";
 import AdminNavbar from "../components/AdminNavbar";
 import { useAdminAuth } from "../hooks/useAdminAuth";
+import { adminHref } from "../utils/msimamiziMode";
 
 export default function AdminLayout({ children }) {
   const { user, isLoading, isAuthenticated, isSuperAdmin, logout } = useAdminAuth();
@@ -31,7 +32,7 @@ export default function AdminLayout({ children }) {
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    return <Redirect to={adminHref("/login")} />;
   }
 
   if (!isSuperAdmin) {
@@ -43,13 +44,14 @@ export default function AdminLayout({ children }) {
           </div>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white">Access Denied</h1>
           <p className="text-xs text-slate-500">
-            This administration area is restricted to authorized MakaziFlow Super Administrators only.
+            Msimamizi is restricted exclusively to authorized MakaziFlow Super Administrators.
           </p>
-          <Link href="/dashboard">
-            <Button className="bg-[#0d2240] hover:bg-[#132d4a] text-white text-xs cursor-pointer">
-              Return to Dashboard
-            </Button>
-          </Link>
+          <Button
+            onClick={logout}
+            className="bg-[#0d2240] hover:bg-[#132d4a] text-white text-xs cursor-pointer"
+          >
+            Sign Out &amp; Switch Account
+          </Button>
         </div>
       </div>
     );

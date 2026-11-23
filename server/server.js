@@ -21,6 +21,7 @@ app.set('trust proxy', 1);
 
 const ALLOWED_CORS_ORIGINS = new Set([
   'http://localhost:5173',
+  'http://msimamizi.localhost:5173',
   'http://localhost:5000',
   'http://127.0.0.1:5173',
   'https://rental-manager-gold.vercel.app',
@@ -28,6 +29,7 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'https://afrinextech.co.ke',
   'https://www.afrinextech.co.ke',
   'https://makaziflow.afrinextech.co.ke',
+  'https://msimamizi.afrinextech.co.ke',
 ]);
 
 const corsOptions = {
@@ -101,6 +103,7 @@ app.use(
           "https://dnstest.dev",
           "https://static.cloudflareinsights.com",
           "https://makaziflow.afrinextech.co.ke",
+          "https://msimamizi.afrinextech.co.ke",
           "https://afrinextech.co.ke",
           "https://rental-manager-1-7jmg.onrender.com",
           "https://rental-manager-gold.vercel.app",
@@ -326,6 +329,7 @@ app.use('/api/activity-logs', require('./routes/activityLogRoutes'));
 app.use('/api/mpesa', require('./routes/mpesaRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/v2/payments', require('./routes/v2PaymentRoutes'));
+app.use('/api/admin/auth', require('./routes/adminAuthRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/super-admin', require('./routes/superAdminRoutes'));
 app.use('/api/support', require('./routes/supportRoutes'));

@@ -1,6 +1,7 @@
 import React from "react";
 import { useLocation } from "wouter";
 import { ADMIN_NAV_ITEMS } from "./AdminSidebar";
+import { adminHref } from "../utils/msimamiziMode";
 import { Menu, Power, ShieldCheck } from "lucide-react";
 
 export default function AdminNavbar({
@@ -11,11 +12,12 @@ export default function AdminNavbar({
 }) {
   const [location] = useLocation();
   const activeItem =
-    ADMIN_NAV_ITEMS.find((i) =>
-      i.href === "/admin"
-        ? location === "/admin" || location === "/super-admin"
-        : location === i.href || location.startsWith(`${i.href}/`)
-    ) || ADMIN_NAV_ITEMS[0];
+    ADMIN_NAV_ITEMS.find((i) => {
+      const targetHref = adminHref(i.path);
+      return i.path === "/"
+        ? location === targetHref || location === `${targetHref}/`
+        : location === targetHref || location.startsWith(`${targetHref}/`);
+    }) || ADMIN_NAV_ITEMS[0];
 
   const HeaderIcon = activeItem.icon || ShieldCheck;
 

@@ -5,12 +5,13 @@ const RENDER_PROD_API = 'https://rental-manager-1-7jmg.onrender.com/api';
 
 const getApiUrl = () => {
   if (typeof window !== 'undefined') {
-    // In local development, use Vite proxy to local server
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    const host = window.location.hostname;
+    // In local development (including msimamizi.localhost), use Vite proxy to local server
+    if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
       return '/api';
     }
-    // On live production domain (makaziflow.afrinextech.co.ke or any external domain),
-    // always connect directly to the live Render backend where MongoDB Atlas is connected.
+    // On live production domain (makaziflow.afrinextech.co.ke, msimamizi.afrinextech.co.ke),
+    // connect directly to the live Render backend.
     return RENDER_PROD_API;
   }
   return import.meta.env.VITE_API_URL || RENDER_PROD_API;

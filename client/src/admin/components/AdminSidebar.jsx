@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import DwelloLogo from "@/components/DwelloLogo";
+import { adminHref } from "../utils/msimamiziMode";
 import {
   LayoutGrid,
   Users,
@@ -13,30 +14,31 @@ import {
   LifeBuoy,
   Settings,
   ShieldAlert,
-  ArrowLeft
+  ShieldCheck
 } from "lucide-react";
 
 export const ADMIN_NAV_ITEMS = [
-  { id: "overview", label: "Overview", href: "/admin", icon: LayoutGrid },
-  { id: "users", label: "Users", href: "/admin/users", icon: Users },
-  { id: "properties", label: "Properties", href: "/admin/properties", icon: Building2 },
-  { id: "tenants", label: "Tenants", href: "/admin/tenants", icon: UserCheck },
-  { id: "payments", label: "Payments", href: "/admin/payments", icon: CreditCard },
-  { id: "subscriptions", label: "Subscriptions", href: "/admin/subscriptions", icon: Layers },
-  { id: "reports", label: "Reports", href: "/admin/reports", icon: BarChart3 },
-  { id: "support", label: "Support", href: "/admin/support", icon: LifeBuoy },
-  { id: "settings", label: "Platform Settings", href: "/admin/settings", icon: Settings },
-  { id: "activity", label: "Security & Audit Logs", href: "/admin/activity", icon: ShieldAlert }
+  { id: "overview", label: "Overview", path: "/", icon: LayoutGrid },
+  { id: "users", label: "Users", path: "/users", icon: Users },
+  { id: "properties", label: "Properties", path: "/properties", icon: Building2 },
+  { id: "tenants", label: "Tenants", path: "/tenants", icon: UserCheck },
+  { id: "payments", label: "Payments", path: "/payments", icon: CreditCard },
+  { id: "subscriptions", label: "Subscriptions", path: "/subscriptions", icon: Layers },
+  { id: "reports", label: "Reports", path: "/reports", icon: BarChart3 },
+  { id: "support", label: "Support", path: "/support", icon: LifeBuoy },
+  { id: "settings", label: "Platform Settings", path: "/settings", icon: Settings },
+  { id: "activity", label: "Security & Audit Logs", path: "/activity", icon: ShieldAlert }
 ];
 
 export default function AdminSidebar({ onClose, isCollapsed = false }) {
   const [location] = useLocation();
 
-  const isItemActive = (href) => {
-    if (href === "/admin") {
-      return location === "/admin" || location === "/super-admin";
+  const isItemActive = (itemPath) => {
+    const targetHref = adminHref(itemPath);
+    if (itemPath === "/") {
+      return location === targetHref || location === `${targetHref}/`;
     }
-    return location === href || location.startsWith(`${href}/`);
+    return location === targetHref || location.startsWith(`${targetHref}/`);
   };
 
   if (isCollapsed) {
@@ -44,9 +46,10 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
       <div className="flex flex-col h-full bg-[#0a1e35] text-[#a8bfd4] select-none border-r border-[#1a3a5c] w-16 items-center justify-between py-2">
         <div className="flex-1 w-full space-y-1.5 pt-2">
           {ADMIN_NAV_ITEMS.map((item) => {
-            const active = isItemActive(item.href);
+            const href = adminHref(item.path);
+            const active = isItemActive(item.path);
             return (
-              <Link key={item.id} href={item.href} onClick={onClose} title={item.label}>
+              <Link key={item.id} href={href} onClick={onClose} title={item.label}>
                 <div
                   className={cn(
                     "relative flex items-center justify-center h-10 w-full transition-colors cursor-pointer",
@@ -61,12 +64,8 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
           })}
         </div>
 
-        <div className="w-full pt-2 border-t border-[#1a3a5c]/80 flex flex-col items-center gap-2 pb-2">
-          <Link href="/dashboard" onClick={onClose} title="Workspace Dashboard">
-            <div className="p-2 text-[#7fa8c0] hover:text-white rounded-md transition cursor-pointer">
-              <ArrowLeft className="w-4 h-4" />
-            </div>
-          </Link>
+        <div className="w-full pt-2 border-t border-[#1a3a5c]/80 flex flex-col items-center gap-2 pb-2" title="Msimamizi Admin">
+          <ShieldCheck className="w-4 h-4 text-[#00a99d]" />
         </div>
       </div>
     );
@@ -76,10 +75,10 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
     <div className="flex flex-col h-full bg-[#0d2240] text-[#a8bfd4] select-none border-r border-[#1a3a5c]">
       {/* Brand Header */}
       <div className="px-5 py-4 border-b border-[#1a3a5c]/80 flex items-center justify-between">
-        <Link href="/admin" onClick={onClose} className="cursor-pointer block">
+        <Link href={adminHref("/")} onClick={onClose} className="cursor-pointer block">
           <DwelloLogo />
           <span className="mt-1.5 inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-[#00a99d]/20 text-[#00d4c8] border border-[#00a99d]/30">
-            Super Admin
+            Msimamizi · Owner
           </span>
         </Link>
       </div>
@@ -87,9 +86,10 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
       {/* Main Navigation */}
       <div className="flex-1 overflow-y-auto py-3 space-y-0.5">
         {ADMIN_NAV_ITEMS.map((item) => {
-          const active = isItemActive(item.href);
+          const href = adminHref(item.path);
+          const active = isItemActive(item.path);
           return (
-            <Link key={item.id} href={item.href} onClick={onClose}>
+            <Link key={item.id} href={href} onClick={onClose}>
               <div
                 className={cn(
                   "relative flex items-center gap-3 px-5 py-2.5 text-[13px] font-medium transition-colors cursor-pointer",
@@ -109,14 +109,12 @@ export default function AdminSidebar({ onClose, isCollapsed = false }) {
         })}
       </div>
 
-      {/* Footer Link back to Standard Workspace */}
+      {/* Standalone Footer */}
       <div className="p-4 border-t border-[#1a3a5c]/80 bg-[#0a1e35]">
-        <Link href="/dashboard" onClick={onClose}>
-          <div className="flex items-center gap-2.5 px-3 py-2 text-xs text-[#a8bfd4] hover:text-white hover:bg-[#132d4a]/60 rounded-md transition cursor-pointer">
-            <ArrowLeft className="w-3.5 h-3.5 text-[#00a99d]" />
-            <span>Back to Property View</span>
-          </div>
-        </Link>
+        <div className="flex items-center gap-2 text-[11px] text-[#7fa8c0]">
+          <ShieldCheck className="w-3.5 h-3.5 text-[#00a99d] shrink-0" />
+          <span className="truncate">msimamizi.afrinextech.co.ke</span>
+        </div>
       </div>
     </div>
   );

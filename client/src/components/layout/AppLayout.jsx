@@ -207,16 +207,6 @@ function SidebarNavigation({ onClose, onOpenModal, isCollapsed = false }) {
       label: "Billing & Plans",
       href: "/billing"
     },
-    ...(user?.isSuperAdmin || user?.role === "superadmin"
-      ? [
-          {
-            id: "super_admin",
-            icon: ShieldCheck,
-            label: "Super Admin",
-            href: "/admin"
-          }
-        ]
-      : []),
     {
       id: "settings",
       icon: Settings,

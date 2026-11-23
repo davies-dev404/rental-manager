@@ -211,7 +211,24 @@ async function runTests() {
     const refreshedLandlord = await User.findById(landlord._id);
     assert.strictEqual(refreshedLandlord.role, 'admin');
     assert.strictEqual(refreshedLandlord.isSuperAdmin, false);
-    console.log('✅ PASS 1: Public signup, profile escalation & unauthorized admin routes strictly blocked (401/403)');
+
+    // Standalone Msimamizi auth rejects normal landlord/tenant credentials
+    const nonAdminMsimamiziLogin = await fetch(`${baseUrl}/api/admin/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: landlord.email, password: 'Landlord#Password123' })
+    });
+    assert.strictEqual(nonAdminMsimamiziLogin.status, 401);
+
+    const validMsimamiziLogin = await fetch(`${baseUrl}/api/admin/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: superUser.email, password: 'SuperStrong#Password123' })
+    });
+    assert.strictEqual(validMsimamiziLogin.status, 200);
+    const validMsimamiziBody = await validMsimamiziLogin.json();
+    assert.strictEqual(validMsimamiziBody.requiresOTP, true);
+    console.log('✅ PASS 1: Public signup, profile escalation, Msimamizi auth isolation & unauthorized admin routes strictly blocked (401/403)');
 
     // 2. Super Admin Login OTP Flow & Dashboard KPIs Match DB
     const loginRes = await fetch(`${baseUrl}/api/auth/login`, {

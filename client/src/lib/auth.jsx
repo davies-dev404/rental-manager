@@ -109,6 +109,14 @@ export function AuthProvider({ children }) {
         return await api.resendLoginOtp(email);
     };
 
+    const completeSessionLogin = (result) => {
+        if (!result?.token) return result;
+        localStorage.setItem("rental_user", JSON.stringify(result));
+        hydrateQueryCacheForUser(result);
+        setUser(result);
+        return result;
+    };
+
     const logout = async () => {
         try {
             await api.logout();
@@ -117,7 +125,15 @@ export function AuthProvider({ children }) {
         localStorage.removeItem("rental_user");
         clearPersistedQueryCache();
         toast({ title: "Logged out successfully" });
-        window.location.href = "/login";
+        const host = typeof window !== "undefined" ? (window.location.hostname || "").toLowerCase() : "";
+        const path = typeof window !== "undefined" ? (window.location.pathname || "") : "";
+        if (host.startsWith("msimamizi.") || import.meta.env?.VITE_APP_MODE === "msimamizi") {
+            window.location.href = "/login";
+        } else if (path === "/msimamizi" || path.startsWith("/msimamizi/")) {
+            window.location.href = "/msimamizi/login";
+        } else {
+            window.location.href = "/login";
+        }
     };
 
     const updateProfile = async (updates) => {
@@ -133,7 +149,7 @@ export function AuthProvider({ children }) {
         }
     };
 
-    return (<AuthContext.Provider value={{ user, login, verifyLoginOtp, resendLoginOtp, logout, updateProfile, isLoading }}>
+    return (<AuthContext.Provider value={{ user, login, verifyLoginOtp, resendLoginOtp, completeSessionLogin, logout, updateProfile, isLoading }}>
       {children}
     </AuthContext.Provider>);
 }

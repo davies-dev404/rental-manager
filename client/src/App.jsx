@@ -43,6 +43,8 @@ import UnitsPage from "@/pages/properties/UnitsPage";
 import StatementsPage from "@/pages/reports/StatementsPage";
 import InsightsPage from "@/pages/reports/InsightsPage";
 import BillingDashboardPage from "@/pages/billing";
+import { isMsimamiziHost, isLocalDevHost } from "@/admin/utils/msimamiziMode";
+const AdminLogin = lazy(() => import("@/admin/pages/AdminLogin"));
 const AdminLayout = lazy(() => import("@/admin/layouts/AdminLayout"));
 const AdminDashboard = lazy(() => import("@/admin/pages/AdminDashboard"));
 const AdminUsers = lazy(() => import("@/admin/pages/AdminUsers"));
@@ -61,7 +63,7 @@ function AdminRoute({ component: Component }) {
       fallback={
         <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#f4f6fa] dark:bg-slate-950 text-slate-600 gap-3">
           <Loader2 className="w-7 h-7 animate-spin text-[#00a99d]" />
-          <p className="text-sm font-medium">Loading Super Admin module...</p>
+          <p className="text-sm font-medium">Loading Msimamizi module...</p>
         </div>
       }
     >
@@ -72,6 +74,42 @@ function AdminRoute({ component: Component }) {
       </AdminLayout>
     </Suspense>
   );
+}
+
+function AdminLoginRoute() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full flex items-center justify-center bg-[#f4f6fa] dark:bg-slate-950">
+          <Loader2 className="w-7 h-7 animate-spin text-[#00a99d]" />
+        </div>
+      }
+    >
+      <ErrorBoundary>
+        <AdminLogin />
+      </ErrorBoundary>
+    </Suspense>
+  );
+}
+
+function renderMsimamiziRoutes(prefix = "") {
+  const p = (sub) => {
+    if (!prefix) return sub;
+    return sub === "/" ? prefix : `${prefix}${sub}`;
+  };
+  return [
+    <Route key={`${prefix}-login`} path={p("/login")} component={AdminLoginRoute} />,
+    <Route key={`${prefix}-home`} path={p("/")}>{() => <AdminRoute component={AdminDashboard} />}</Route>,
+    <Route key={`${prefix}-users`} path={p("/users")}>{() => <AdminRoute component={AdminUsers} />}</Route>,
+    <Route key={`${prefix}-props`} path={p("/properties")}>{() => <AdminRoute component={AdminProperties} />}</Route>,
+    <Route key={`${prefix}-tenants`} path={p("/tenants")}>{() => <AdminRoute component={AdminTenants} />}</Route>,
+    <Route key={`${prefix}-payments`} path={p("/payments")}>{() => <AdminRoute component={AdminPayments} />}</Route>,
+    <Route key={`${prefix}-subs`} path={p("/subscriptions")}>{() => <AdminRoute component={AdminSubscriptions} />}</Route>,
+    <Route key={`${prefix}-reports`} path={p("/reports")}>{() => <AdminRoute component={AdminReports} />}</Route>,
+    <Route key={`${prefix}-support`} path={p("/support")}>{() => <AdminRoute component={AdminSupport} />}</Route>,
+    <Route key={`${prefix}-settings`} path={p("/settings")}>{() => <AdminRoute component={AdminSettings} />}</Route>,
+    <Route key={`${prefix}-activity`} path={p("/activity")}>{() => <AdminRoute component={AdminActivityLogs} />}</Route>
+  ];
 }
 
 function PrivateRoute({ component: Component, ...rest }) {
@@ -127,7 +165,19 @@ function PrivateRoute({ component: Component, ...rest }) {
     );
 }
 function Router() {
+    if (isMsimamiziHost()) {
+      return (
+        <Switch>
+          {renderMsimamiziRoutes("")}
+          <Route>{() => <Redirect to="/" />}</Route>
+        </Switch>
+      );
+    }
+
     return (<Switch>
+      {/* Local dev mount for standalone msimamizi testing */}
+      {isLocalDevHost() && renderMsimamiziRoutes("/msimamizi")}
+
       {/* Public Marketing & Auth Pages */}
       <Route path="/" component={LandingPage}/>
       <Route path="/home" component={LandingPage}/>
@@ -208,39 +258,6 @@ function Router() {
       </Route>
       <Route path="/billing">
         {() => <PrivateRoute component={BillingDashboardPage}/>}
-      </Route>
-      <Route path="/admin">
-        {() => <AdminRoute component={AdminDashboard}/>}
-      </Route>
-      <Route path="/admin/users">
-        {() => <AdminRoute component={AdminUsers}/>}
-      </Route>
-      <Route path="/admin/properties">
-        {() => <AdminRoute component={AdminProperties}/>}
-      </Route>
-      <Route path="/admin/tenants">
-        {() => <AdminRoute component={AdminTenants}/>}
-      </Route>
-      <Route path="/admin/payments">
-        {() => <AdminRoute component={AdminPayments}/>}
-      </Route>
-      <Route path="/admin/subscriptions">
-        {() => <AdminRoute component={AdminSubscriptions}/>}
-      </Route>
-      <Route path="/admin/reports">
-        {() => <AdminRoute component={AdminReports}/>}
-      </Route>
-      <Route path="/admin/support">
-        {() => <AdminRoute component={AdminSupport}/>}
-      </Route>
-      <Route path="/admin/settings">
-        {() => <AdminRoute component={AdminSettings}/>}
-      </Route>
-      <Route path="/admin/activity">
-        {() => <AdminRoute component={AdminActivityLogs}/>}
-      </Route>
-      <Route path="/super-admin">
-        {() => <AdminRoute component={AdminDashboard}/>}
       </Route>
 
       <Route component={NotFound}/>

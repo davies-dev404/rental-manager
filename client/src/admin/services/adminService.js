@@ -33,6 +33,33 @@ async function downloadAdminBlob(url, fallbackFilename) {
 }
 
 export const adminService = {
+  adminLogin: async (email, password, turnstileToken) => {
+    const res = await smartFetch(`${API_URL}/admin/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, password, turnstileToken })
+    });
+    return parseApiResponse(res, "Invalid administrator credentials");
+  },
+  adminVerifyOtp: async (email, otp) => {
+    const res = await smartFetch(`${API_URL}/admin/auth/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email, otp })
+    });
+    return parseApiResponse(res, "OTP verification failed");
+  },
+  adminResendOtp: async (email) => {
+    const res = await smartFetch(`${API_URL}/admin/auth/resend-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ email })
+    });
+    return parseApiResponse(res, "Failed to resend OTP");
+  },
   getDashboard: async () => {
     const res = await smartFetch(`${API_URL}/admin/dashboard`, {
       headers: getAuthHeaders(),
