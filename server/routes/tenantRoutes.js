@@ -7,6 +7,7 @@ const Payment = require('../models/Payment');
 const logActivity = require('../utils/logActivity');
 const { protect } = require('../middleware/authMiddleware');
 const { validateObjectId, pickAllowed, isValidObjectId } = require('../middleware/securityMiddleware');
+const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 
 const ALLOWED_TENANT_FIELDS = [
   'name', 'email', 'phone', 'nationalId', 'unitId', 'propertyId', 'rentAmount',
@@ -17,14 +18,23 @@ const ALLOWED_TENANT_FIELDS = [
 // Get all tenants with payment status
 router.get('/', protect, async (req, res) => {
   try {
-    const tenants = await Tenant.find({ user: req.user.id }).populate({
+    const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+
+    let tenantQuery = Tenant.find({ user: req.user.id }).populate({
       path: 'unitId',
       select: 'unitNumber rentAmount propertyId',
       populate: {
         path: 'propertyId',
         select: 'name address'
       }
-    });
+    }).sort({ createdAt: -1 });
+
+    if (hasPagination) {
+      tenantQuery = tenantQuery.skip((page - 1) * limit).limit(limit);
+    }
+    const tenants = await tenantQuery.lean();
     
     // Get current month date range
     const now = new Date();
@@ -32,10 +42,14 @@ router.get('/', protect, async (req, res) => {
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
     // Fetch payments for this month
-    const payments = await Payment.find({
-        user: req.user.id,
-        date: { $gte: startOfMonth, $lte: endOfMonth }
-    });
+    const tenantIds = tenants.map((t) => t._id);
+    const payments = tenantIds.length > 0
+      ? await Payment.find({
+          user: req.user.id,
+          tenantId: { $in: tenantIds },
+          date: { $gte: startOfMonth, $lte: endOfMonth }
+        }).select('tenantId amount rentAmount utilityAmount status').lean()
+      : [];
 
     const tenantsWithStatus = tenants.map(tenant => {
         // Sum completed/paid payments for this tenant this month
@@ -75,7 +89,7 @@ router.get('/', protect, async (req, res) => {
         const unitNum = unitObj && typeof unitObj === 'object' ? unitObj.unitNumber : (tenant.unit || '');
 
         return { 
-            ...tenant.toObject(), 
+            ...tenant, 
             propertyId: propId ? propId.toString() : (tenant.propertyId ? tenant.propertyId.toString() : ''),
             property: propName || tenant.property || '',
             propertyName: propName || tenant.property || '',
@@ -100,7 +114,8 @@ router.get('/', protect, async (req, res) => {
 });
 
 // Add tenant
-router.post('/', protect, async (req, res) => {
+router.post('/', protect, idempotencyMiddleware('tenant_register'), async (req, res) => {
+  let claimedUnitId = null;
   try {
     const payload = pickAllowed(req.body, ALLOWED_TENANT_FIELDS);
 
@@ -110,9 +125,24 @@ router.post('/', protect, async (req, res) => {
     } else if (!isValidObjectId(String(payload.unitId))) {
       delete payload.unitId;
     } else {
-      const ownedUnit = await Unit.findOne({ _id: payload.unitId, user: req.user.id }).select('_id');
+      const ownedUnit = await Unit.findOne({ _id: payload.unitId, user: req.user.id }).select('_id status');
       if (!ownedUnit) {
         return res.status(403).json({ message: 'Unit not found or not owned by your organization.' });
+      }
+      // Atomic vacancy claim protects against simultaneous double allocation
+      if ((payload.status || 'active') === 'active') {
+        const claimed = await Unit.findOneAndUpdate(
+          { _id: payload.unitId, user: req.user.id, status: 'vacant' },
+          { $set: { status: 'occupied' } },
+          { returnDocument: 'after' }
+        );
+        if (!claimed) {
+          return res.status(409).json({
+            code: 'UNIT_ALREADY_OCCUPIED',
+            message: 'Unit is already occupied or under maintenance. Please refresh and select a vacant unit.'
+          });
+        }
+        claimedUnitId = claimed._id;
       }
     }
 
@@ -159,9 +189,17 @@ router.post('/', protect, async (req, res) => {
     }
 
     await logActivity(req.user, 'Add Tenant', `Added tenant ${tenant.name}`, 'tenant', 'success');
+    const { invalidateLandlordCache } = require('../services/cacheService');
+    invalidateLandlordCache(req.user.id).catch(() => {});
 
     res.status(201).json(tenant);
   } catch (error) {
+    if (claimedUnitId) {
+      await Unit.findOneAndUpdate(
+        { _id: claimedUnitId, user: req.user.id },
+        { $set: { status: 'vacant' } }
+      ).catch(() => {});
+    }
     if (req.user) {
       await logActivity(req.user, 'Add Tenant Failed', `Failed to add tenant: ${error.message}`, 'tenant', 'error');
     }
@@ -201,16 +239,23 @@ router.put('/:id', protect, validateObjectId('id'), async (req, res) => {
     const originalTenant = await Tenant.findOne({ _id: req.params.id, user: req.user.id });
     if (!originalTenant) return res.status(404).json({ message: 'Tenant not found' });
 
-    // Handle unit swap/removal logic (strictly scoped to req.user.id)
+    // Handle unit swap/removal logic (strictly scoped to req.user.id & atomic vacancy check)
     if (payload.unitId !== undefined && String(payload.unitId || '') !== String(originalTenant.unitId || '')) {
       if (payload.unitId) {
+        const ownedTarget = await Unit.findOne({ _id: payload.unitId, user: req.user.id }).select('_id');
+        if (!ownedTarget) {
+          return res.status(403).json({ message: 'Unit not found or not owned by your organization.' });
+        }
         const assignedUnit = await Unit.findOneAndUpdate(
-          { _id: payload.unitId, user: req.user.id },
-          { status: 'occupied' },
+          { _id: payload.unitId, user: req.user.id, status: 'vacant' },
+          { $set: { status: 'occupied' } },
           { returnDocument: 'after' }
         );
         if (!assignedUnit) {
-          return res.status(403).json({ message: 'Unit not found or not owned by your organization.' });
+          return res.status(409).json({
+            code: 'UNIT_ALREADY_OCCUPIED',
+            message: 'Target unit is already occupied or unavailable.'
+          });
         }
         if (payload.rentAmount === undefined) {
           payload.rentAmount = assignedUnit.rentAmount;

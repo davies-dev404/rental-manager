@@ -1,21 +1,23 @@
 const crypto = require('crypto');
 const Invoice = require('../models/Invoice');
+const Counter = require('../models/Counter');
+const FinancialAuditEntry = require('../models/FinancialAuditEntry');
 
 /**
- * Generates sequential/unique invoice numbers strictly distinguishing
+ * Generates collision-free monotonic sequential invoice numbers strictly distinguishing
  * SaaS Subscription Invoices (SUB-YYYY-...) from Tenant Rental Invoices (RNT-YYYY-...).
  */
-async function generateInvoiceNumber(invoiceCategory) {
+async function generateInvoiceNumber(invoiceCategory, session = null) {
   const year = new Date().getFullYear();
   const prefix = invoiceCategory === 'subscription' ? `SUB-${year}` : `RNT-${year}`;
-  const count = await Invoice.countDocuments({ invoiceCategory });
-  const seq = String(count + 1).padStart(4, '0');
+  const seqNum = await Counter.nextSequence(`invoice:${prefix}`, session);
+  const seq = String(seqNum).padStart(4, '0');
   const suffix = crypto.randomBytes(2).toString('hex').toUpperCase();
   return `${prefix}-${seq}-${suffix}`;
 }
 
 /**
- * Create a structured Invoice document with tax breakdown
+ * Create a structured Invoice document with tax breakdown inside an optional DB session
  */
 async function createStructuredInvoice({
   invoiceCategory,
@@ -33,9 +35,10 @@ async function createStructuredInvoice({
   customerEmail = '',
   customerPhone = '',
   customerKraPin = '',
-  status = 'open'
+  status = 'open',
+  session = null
 }) {
-  const invoiceNumber = await generateInvoiceNumber(invoiceCategory);
+  const invoiceNumber = await generateInvoiceNumber(invoiceCategory, session);
 
   let subtotal = 0;
   let taxAmount = 0;
@@ -65,33 +68,58 @@ async function createStructuredInvoice({
   });
 
   const totalAmount = Number((subtotal + taxAmount).toFixed(2));
+  const createOpts = session ? { session } : {};
 
-  const invoice = await Invoice.create({
-    invoiceNumber,
-    invoiceCategory,
-    landlordId,
-    tenantId: tenantId || undefined,
-    propertyId: propertyId || undefined,
-    unitId: unitId || undefined,
-    subscriptionId: subscriptionId || undefined,
-    billingPeriod,
-    items: computedItems,
-    subtotal: Number(subtotal.toFixed(2)),
-    vatRate: Number(vatRate || 0),
-    taxAmount: Number(taxAmount.toFixed(2)),
-    totalAmount,
-    amountPaid: 0,
-    balanceDue: totalAmount,
-    currency: 'KES',
-    status,
-    dueDate,
-    notes,
-    customerName,
-    customerEmail,
-    customerPhone,
-    customerKraPin,
-    etimsStatus: 'not_submitted'
-  });
+  const [invoice] = await Invoice.create(
+    [
+      {
+        invoiceNumber,
+        invoiceCategory,
+        landlordId,
+        tenantId: tenantId || undefined,
+        propertyId: propertyId || undefined,
+        unitId: unitId || undefined,
+        subscriptionId: subscriptionId || undefined,
+        billingPeriod,
+        items: computedItems,
+        subtotal: Number(subtotal.toFixed(2)),
+        vatRate: Number(vatRate || 0),
+        taxAmount: Number(taxAmount.toFixed(2)),
+        totalAmount,
+        amountPaid: 0,
+        balanceDue: totalAmount,
+        currency: 'KES',
+        status,
+        dueDate,
+        notes,
+        customerName,
+        customerEmail,
+        customerPhone,
+        customerKraPin,
+        etimsStatus: 'not_submitted'
+      }
+    ],
+    createOpts
+  );
+
+  await FinancialAuditEntry.create(
+    [
+      {
+        entryType: 'invoice_created',
+        landlordId,
+        tenantId: tenantId || undefined,
+        unitId: unitId || undefined,
+        invoiceId: invoice._id,
+        amount: totalAmount,
+        currency: 'KES',
+        direction: 'debit',
+        reference: invoiceNumber,
+        newStatus: status,
+        reason: `Structured ${invoiceCategory} invoice issued`
+      }
+    ],
+    createOpts
+  ).catch(() => {});
 
   return invoice;
 }

@@ -210,6 +210,12 @@ function validateSafeImageInput(rawValue, { maxBytes = 1500 * 1024 } = {}) {
  * when running on a replica set (e.g., MongoDB Atlas), with graceful fallback on standalone dev instances.
  */
 async function runWithOptionalTransaction(work) {
+  const topologyType = mongoose.connection?.client?.topology?.description?.type;
+  // Standalone MongoDB instances (e.g., local dev/test) do not support multi-document transactions or retryable transaction writes.
+  if (topologyType === 'Single') {
+    return await work(null);
+  }
+
   let session = null;
   try {
     session = await mongoose.startSession();
@@ -222,8 +228,10 @@ async function runWithOptionalTransaction(work) {
     const msg = String(err?.message || '');
     const isNoReplicaSet =
       err?.code === 20 ||
+      err?.code === 263 ||
       msg.includes('Transaction numbers are only allowed on a replica set member') ||
       msg.includes('Sessions are not supported') ||
+      msg.includes('does not support retryable writes') ||
       msg.includes('replica set');
     if (isNoReplicaSet) {
       return await work(null);

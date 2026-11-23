@@ -73,6 +73,8 @@ router.post('/', protect, admin, async (req, res) => {
     }
 
     const property = await Property.create({ ...updates, user: req.user.id });
+    const { invalidateLandlordCache } = require('../services/cacheService');
+    invalidateLandlordCache(req.user.id).catch(() => {});
     await logActivity(req.user, 'Create Property', `Created property "${property.name}" in ${property.location || 'N/A'}`, 'property', 'success');
     res.status(201).json(property);
   } catch (error) {

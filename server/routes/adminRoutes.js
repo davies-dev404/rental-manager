@@ -14,6 +14,7 @@ const reportController = require('../controllers/admin/reportController');
 const supportController = require('../controllers/admin/supportController');
 const settingsController = require('../controllers/admin/settingsController');
 const activityController = require('../controllers/admin/activityController');
+const systemController = require('../controllers/admin/systemController');
 
 router.use(requireSuperAdmin);
 router.use(adminActionLimiter);
@@ -69,5 +70,14 @@ router.post('/settings/maintenance/notify', settingsController.sendMaintenanceBr
 
 // Security & Audit Logs
 router.get('/activity-logs', activityController.listAuditLogs);
+
+// System Health, Telemetry, Feature Flags & Dead Letter Queue
+router.get('/system-health', systemController.getSystemHealth);
+router.get('/metrics', systemController.getPrometheusMetrics);
+router.get('/feature-flags', systemController.listFeatureFlags);
+router.patch('/feature-flags/:key', systemController.updateFeatureFlag);
+router.get('/dlq', systemController.listDeadLetterJobs);
+router.post('/dlq/:id/replay', validateObjectId('id'), systemController.replayDeadLetterJob);
+router.patch('/dlq/:id/resolve', validateObjectId('id'), systemController.resolveDeadLetterJob);
 
 module.exports = router;

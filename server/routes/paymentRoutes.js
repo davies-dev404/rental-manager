@@ -7,6 +7,7 @@ const Unit = require('../models/Unit');
 const Property = require('../models/Property');
 const { protect, admin } = require('../middleware/authMiddleware');
 const { validateObjectId, isValidObjectId, escapeRegExp } = require('../middleware/securityMiddleware');
+const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 const { generateReceiptPDF } = require('../utils/generateReceiptPDF');
 const { generateInvoicePDF } = require('../utils/generateInvoicePDF');
 const sendEmail = require('../utils/sendEmail');
@@ -29,7 +30,11 @@ const sendReceiptEmail = sendPaymentReceipt;
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const payments = await Payment.find({ user: req.user.id })
+    const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+
+    let q = Payment.find({ user: req.user.id })
       .populate('tenantId', 'name email phone')
       .populate({
         path: 'unitId',
@@ -41,10 +46,16 @@ router.get('/', protect, async (req, res) => {
       })
       .sort({ date: -1 });
 
+    if (hasPagination) {
+      q = q.skip((page - 1) * limit).limit(limit);
+    }
+
+    const payments = await q.lean();
+
     const paymentsWithProperty = payments.map((p) => {
       const propName = p.unitId?.propertyId?.name || p.property || 'Property';
       return {
-        ...p.toObject(),
+        ...p,
         property: propName
       };
     });
@@ -72,7 +83,7 @@ router.get('/:id', protect, validateObjectId('id'), async (req, res) => {
 // @desc    Record a payment
 // @route   POST /api/payments
 // @access  Private
-router.post('/', protect, async (req, res) => {
+router.post('/', protect, idempotencyMiddleware('manual_payment'), async (req, res) => {
   try {
     const { 
       amount,

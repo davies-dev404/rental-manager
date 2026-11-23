@@ -62,6 +62,7 @@ const AdminSupport = lazy(() => import("@/admin/pages/AdminSupport"));
 const AdminSupportDetail = lazy(() => import("@/admin/pages/AdminSupportDetail"));
 const AdminSettings = lazy(() => import("@/admin/pages/AdminSettings"));
 const AdminActivityLogs = lazy(() => import("@/admin/pages/AdminActivityLogs"));
+const AdminSystemHealth = lazy(() => import("@/admin/pages/AdminSystemHealth"));
 
 function AdminRoute({ component: Component }) {
   return (
@@ -121,6 +122,7 @@ function renderMsimamiziRoutes(prefix = "") {
     <Route key={`${prefix}-support-detail`} path={p("/support/:id")}>{(params) => <AdminRoute component={() => <AdminSupportDetail id={params.id} />} />}</Route>,
     <Route key={`${prefix}-support`} path={p("/support")}>{() => <AdminRoute component={AdminSupport} />}</Route>,
     <Route key={`${prefix}-settings`} path={p("/settings")}>{() => <AdminRoute component={AdminSettings} />}</Route>,
+    <Route key={`${prefix}-system-health`} path={p("/system-health")}>{() => <AdminRoute component={AdminSystemHealth} />}</Route>,
     <Route key={`${prefix}-activity`} path={p("/activity")}>{() => <AdminRoute component={AdminActivityLogs} />}</Route>
   ];
 }

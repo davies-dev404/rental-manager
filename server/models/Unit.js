@@ -14,4 +14,8 @@ const unitSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+unitSchema.index({ user: 1, status: 1, createdAt: -1 });
+unitSchema.index({ propertyId: 1, status: 1 });
+unitSchema.index({ propertyId: 1, unitNumber: 1 });
+
 module.exports = mongoose.model('Unit', unitSchema);

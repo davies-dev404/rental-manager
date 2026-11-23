@@ -35,7 +35,10 @@ const paymentSchema = new mongoose.Schema({
 });
 
 paymentSchema.index({ user: 1, date: -1 });
+paymentSchema.index({ user: 1, status: 1, date: -1 });
+paymentSchema.index({ unitId: 1, date: -1 });
 paymentSchema.index({ tenantId: 1, monthCovered: 1 });
 paymentSchema.index({ reference: 1 }, { sparse: true });
+paymentSchema.index({ paymentTransactionId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Payment', paymentSchema);

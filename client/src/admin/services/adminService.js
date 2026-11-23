@@ -305,5 +305,54 @@ export const adminService = {
       credentials: "include"
     });
     return parseApiResponse(res, "Failed to load activity logs");
+  },
+
+  // System Health, DLQ & Feature Flags
+  getSystemHealth: async () => {
+    const res = await smartFetch(`${API_URL}/admin/system-health`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load system health");
+  },
+  getFeatureFlags: async () => {
+    const res = await smartFetch(`${API_URL}/admin/feature-flags`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load feature flags");
+  },
+  updateFeatureFlag: async (key, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/feature-flags/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update feature flag");
+  },
+  getDeadLetterJobs: async (params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/dlq${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load dead letter jobs");
+  },
+  replayDeadLetterJob: async (id) => {
+    const res = await smartFetch(`${API_URL}/admin/dlq/${id}/replay`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to replay dead letter job");
+  },
+  resolveDeadLetterJob: async (id, notes) => {
+    const res = await smartFetch(`${API_URL}/admin/dlq/${id}/resolve`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify({ notes })
+    });
+    return parseApiResponse(res, "Failed to resolve dead letter job");
   }
 };

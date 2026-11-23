@@ -60,6 +60,8 @@ async function handleGatewayWebhook(req, res) {
       message: result.callback?.processingMessage || 'Callback processed'
     });
   } catch (err) {
+    const logger = require('../utils/logger');
+    logger.error('gateway_webhook_failed', { providerCode, error: err.message, stack: err.stack });
     const code = err.statusCode || 400;
     if (providerCode === 'pesapal') {
       return res.status(code === 403 ? 403 : 200).json({

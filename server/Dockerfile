@@ -1,15 +1,21 @@
-# Backend Dockerfile for MakaziFlow
-FROM node:20-alpine AS builder
+# Backend Dockerfile for MakaziFlow SaaS API & Optional BullMQ Worker
+FROM node:20-alpine
 
 WORKDIR /app
 
+ENV NODE_ENV=production
+
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY . .
 
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 5000
 
-ENV NODE_ENV=production
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5000) + '/api/live').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node", "server.js"]

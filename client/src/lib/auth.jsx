@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { api, refreshAuthSession } from "./api";
-import { hydrateQueryCacheForUser, clearPersistedQueryCache } from "./queryClient";
+import { hydrateQueryCacheForUser, clearPersistedQueryCache, queryClient } from "./queryClient";
+import { connectSocket, disconnectSocket } from "./socket";
 import { useToast } from "@/hooks/use-toast";
 const AuthContext = createContext(undefined);
 
@@ -72,6 +73,7 @@ export function AuthProvider({ children }) {
         initAuth();
 
         const handleLogoutEvent = () => {
+            disconnectSocket();
             setUser(null);
             localStorage.removeItem("rental_user");
             clearPersistedQueryCache();
@@ -82,6 +84,23 @@ export function AuthProvider({ children }) {
             window.removeEventListener("auth:logout", handleLogoutEvent);
         };
     }, []);
+
+    useEffect(() => {
+        if (!user?.token) {
+            disconnectSocket();
+            return;
+        }
+        const sock = connectSocket(user.token);
+        if (!sock) return;
+        const onPaymentSettled = () => {
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+            queryClient.invalidateQueries({ queryKey: ["payments"] });
+        };
+        sock.on("payment:settled", onPaymentSettled);
+        return () => {
+            sock.off("payment:settled", onPaymentSettled);
+        };
+    }, [user?.token]);
 
     // Step 1: verify credentials. Returns { requiresOTP, email, name } or throws.
     const login = async (email, password, turnstileToken) => {

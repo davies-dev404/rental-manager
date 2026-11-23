@@ -14,4 +14,7 @@ const expenseSchema = new mongoose.Schema({
   status: { type: String, default: 'confirmed' }
 }, { timestamps: true });
 
+expenseSchema.index({ user: 1, date: -1 });
+expenseSchema.index({ propertyId: 1, date: -1 });
+
 module.exports = mongoose.model('Expense', expenseSchema);

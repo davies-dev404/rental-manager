@@ -2,6 +2,12 @@ const axios = require('axios');
 const crypto = require('crypto');
 const PaymentAdapter = require('./PaymentAdapter');
 const { getIntaSendConfig } = require('../../config/intasendConfig');
+const { CircuitBreaker, isDefaultRetryableError } = require('../../utils/resilience');
+
+const intasendBreaker = new CircuitBreaker('intasend_gateway', {
+  failureThreshold: 5,
+  cooldownMs: 30000
+});
 
 /**
  * IntaSend API v1 Payment Adapter (Sandbox + Production)
@@ -187,7 +193,10 @@ class IntaSendAdapter extends PaymentAdapter {
     const headers = this.buildGatewayHeaders(authMode, cfg);
     const primaryUrl = `${cfg.baseUrl}${path}`;
     try {
-      return await axios.post(primaryUrl, payload, { headers, timeout });
+      return await intasendBreaker.exec(
+        () => axios.post(primaryUrl, payload, { headers, timeout }),
+        { shouldTrip: isDefaultRetryableError }
+      );
     } catch (primaryErr) {
       const status = primaryErr?.response?.status;
       const cfRay = primaryErr?.response?.headers?.['cf-ray'] || '';

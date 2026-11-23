@@ -1,0 +1,67 @@
+name: MakaziFlow CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-backend-and-frontend:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend dependencies
+        run: npm --prefix server ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix client ci
+
+      - name: Syntax check backend entrypoints
+        run: |
+          node --check server/server.js
+          node --check server/worker.js
+
+      - name: Run server integration & reliability test suite
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci_pipeline_test_jwt_secret_minimum_32_characters
+          MONGODB_URI: mongodb://127.0.0.1:27017/rental_manager_ci_test
+        run: npm --prefix server test
+
+      - name: Build production client bundle
+        run: npm --prefix client run build
+
+      - name: Audit high-severity dependency vulnerabilities
+        run: |
+          npm --prefix server audit --audit-level=high || true
+          npm --prefix client audit --audit-level=high || true

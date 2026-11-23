@@ -2,13 +2,30 @@ const Property = require('../models/Property');
 const { ensureLandlordEntitlement } = require('../services/subscriptionService');
 
 /**
- * Resolves the owning landlord ID for the current request
- * (supports landlord/admin creating directly or caretaker acting on an assigned property).
+ * Resolves the owning landlord ID for the current request with strict ownership validation.
+ * Caretakers may only act on properties explicitly assigned to them or belonging to their organizationOwner.
  */
 async function resolveLandlordId(req) {
-  if (req.user.role === 'caretaker' && req.body?.propertyId) {
-    const prop = await Property.findById(req.body.propertyId).select('user');
-    if (prop && prop.user) return prop.user;
+  if (req.user.role === 'caretaker') {
+    if (req.body?.propertyId) {
+      const prop = await Property.findOne({
+        _id: req.body.propertyId,
+        $or: [
+          { caretakerId: req.user._id },
+          ...(req.user.organizationOwner ? [{ user: req.user.organizationOwner }] : [])
+        ]
+      }).select('user');
+
+      if (!prop || !prop.user) {
+        const err = new Error('Forbidden: Caretaker is not assigned to this property.');
+        err.statusCode = 403;
+        throw err;
+      }
+      return prop.user;
+    }
+    if (req.user.organizationOwner) {
+      return req.user.organizationOwner;
+    }
   }
   return req.user._id || req.user.id;
 }
@@ -33,7 +50,10 @@ const requireActiveSubscription = async (req, res, next) => {
     req.resolvedLandlordId = landlordId;
     next();
   } catch (err) {
-    res.status(500).json({ message: 'Failed to verify subscription status', error: err.message });
+    res.status(err.statusCode || 500).json({
+      message: err.statusCode === 403 ? err.message : 'Failed to verify subscription status',
+      error: err.statusCode === 403 ? undefined : err.message
+    });
   }
 };
 

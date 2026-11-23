@@ -13,6 +13,7 @@ server/dist/
 # Environment variables
 .env
 .env*
+!.env.example
 *.env
 **/.env
 **/.env*
@@ -44,6 +45,5 @@ Thumbs.db
 .replit
 replit.nix
 db-backup/
-docs/
 temp/
 tmp/

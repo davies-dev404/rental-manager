@@ -7,6 +7,7 @@ const Payment = require('../models/Payment');
 const Tenant = require('../models/Tenant');
 const Expense = require('../models/Expense');
 const { protect } = require('../middleware/authMiddleware');
+const { buildLandlordCacheKey, getCached, setCached } = require('../services/cacheService');
 
 // Paid statuses (all casing variants the system uses)
 const PAID_STATUSES = ['paid', 'Paid', 'partial', 'Partial', 'Completed', 'completed'];
@@ -17,6 +18,12 @@ router.get('/stats', protect, async (req, res) => {
   try {
     const userId = req.user.id;
     const userObjId = req.user._id || new mongoose.Types.ObjectId(userId);
+    const cacheKey = buildLandlordCacheKey('dashboard_stats', userId);
+    const cachedStats = await getCached(cacheKey);
+    if (cachedStats) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cachedStats);
+    }
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
@@ -164,7 +171,7 @@ router.get('/stats', protect, async (req, res) => {
       });
     }
 
-    res.json({
+    const payload = {
       totalProperties,
       totalUnits,
       totalTenants,
@@ -178,7 +185,10 @@ router.get('/stats', protect, async (req, res) => {
       expensesThisMonth: totalExpenses,
       netIncomeThisMonth: collectedThisMonth - totalExpenses,
       sixMonthTrend
-    });
+    };
+    await setCached(cacheKey, payload, 45);
+    res.setHeader('X-Cache', 'MISS');
+    res.json(payload);
   } catch (error) {
     console.error('Stats Error:', error);
     res.status(500).json({ message: error.message });

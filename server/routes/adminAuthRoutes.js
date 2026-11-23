@@ -21,7 +21,7 @@ const generateToken = (id, tokenVersion = 0) =>
   jwt.sign({ id, tv: Number(tokenVersion || 0) }, getJwtSecret(), { expiresIn: '7d' });
 
 const generateRefreshToken = (id, tokenVersion = 0) =>
-  jwt.sign({ id, tv: Number(tokenVersion || 0), kind: 'refresh' }, getJwtSecret(), { expiresIn: '30d' });
+  jwt.sign({ id, tv: Number(tokenVersion || 0), kind: 'refresh', jti: crypto.randomUUID() }, getJwtSecret(), { expiresIn: '30d' });
 
 const setAuthCookies = (res, token, refreshToken) => {
   const isProd = process.env.NODE_ENV === 'production';

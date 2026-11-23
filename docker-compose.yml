@@ -1,142 +1,109 @@
 # ==============================================================================
-# MakaziFlow Enterprise Multi-Service Architecture
-# Services:
-# - Frontend: React / Vite + Nginx Reverse Proxy
-# - Backend API: Node.js / Express REST + GraphQL
-# - Message Brokers & Queues: Apache Kafka, RabbitMQ
-# - Caching & State: Redis 7
-# - Search & Analytics: Elasticsearch
-# - Coordination: Zookeeper
+# MakaziFlow Local & Containerized Stack
+# Matches actual production architecture:
+# - client: React + Vite served via Nginx
+# - server: Node.js + Express + Socket.IO modular monolith
+# - mongodb: MongoDB 7 (Replica Set / Local Dev)
+# - redis: Optional Redis 7 for caching, BullMQ & distributed locks
+# - worker: Optional BullMQ background worker (profile: worker)
 # ==============================================================================
 
-version: '3.8'
-
 services:
-  # ─── 1. FRONTEND SERVICE (REACT + NGINX) ──────────────────────────────────
-  client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-    container_name: makaziflow_client
-    restart: always
+  mongodb:
+    image: mongo:7
+    container_name: makaziflow_mongodb
+    restart: unless-stopped
     ports:
-      - "5173:80"
-    environment:
-      - VITE_API_URL=/api
-    depends_on:
-      - server
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - makaziflow_network
 
-  # ─── 2. BACKEND API SERVICE (EXPRESS + GRAPHQL) ───────────────────────────
-  server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-    container_name: makaziflow_server
-    restart: always
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./server/.env
-    environment:
-      - PORT=5000
-      - REDIS_URL=redis://redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      - ELASTICSEARCH_NODE=http://elasticsearch:9200
-    depends_on:
-      - redis
-      - rabbitmq
-      - kafka
-      - elasticsearch
-    networks:
-      - makaziflow_network
-
-  # ─── 3. REDIS IN-MEMORY CACHE & PUB/SUB ───────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: makaziflow_redis
-    restart: always
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - makaziflow_network
 
-  # ─── 4. RABBITMQ MESSAGE BROKER & MANAGEMENT UI ───────────────────────────
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: makaziflow_rabbitmq
-    restart: always
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: makaziflow_server
+    restart: unless-stopped
     ports:
-      - "5672:5672"      # AMQP protocol
-      - "15672:15672"    # Web Management UI
+      - "5000:5000"
+    env_file:
+      - ./server/.env
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - makaziflow_network
-
-  # ─── 5. ZOOKEEPER COORDINATOR ─────────────────────────────────────────────
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
-    container_name: makaziflow_zookeeper
-    restart: always
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    networks:
-      - makaziflow_network
-
-  # ─── 6. APACHE KAFKA EVENT STREAMING ──────────────────────────────────────
-  kafka:
-    image: confluentinc/cp-kafka:7.4.0
-    container_name: makaziflow_kafka
-    restart: always
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/rental_manager_dev
+      - REDIS_URL=redis://redis:6379
+      - ENABLE_SOCKET_IO=true
     depends_on:
-      - zookeeper
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - makaziflow_network
 
-  # ─── 7. ELASTICSEARCH FULL-TEXT SEARCH & ANALYTICS ────────────────────────
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: makaziflow_elasticsearch
-    restart: always
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: makaziflow_worker
+    profiles: ["worker"]
+    command: ["node", "worker.js"]
+    env_file:
+      - ./server/.env
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/rental_manager_dev
+      - REDIS_URL=redis://redis:6379
+      - ENABLE_BULLMQ_WORKERS=true
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - makaziflow_network
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: makaziflow_client
+    restart: unless-stopped
     ports:
-      - "9200:9200"
-      - "9300:9300"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
+      - "5173:80"
+    depends_on:
+      - server
     networks:
       - makaziflow_network
 
 volumes:
+  mongo_data:
   redis_data:
-    driver: local
-  rabbitmq_data:
-    driver: local
-  es_data:
-    driver: local
 
 networks:
   makaziflow_network:

@@ -47,4 +47,9 @@ const tenantSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+tenantSchema.index({ user: 1, status: 1, createdAt: -1 });
+tenantSchema.index({ unitId: 1, status: 1 });
+tenantSchema.index({ user: 1, email: 1 });
+tenantSchema.index({ user: 1, phone: 1 });
+
 module.exports = mongoose.model('Tenant', tenantSchema);

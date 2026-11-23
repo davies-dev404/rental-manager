@@ -18,6 +18,10 @@ const { EquityEazzyBizAdapter, KcbBuniAdapter, CoopBankAdapter } = require('./Ba
 const { activatePaidSubscription } = require('../subscriptionService');
 const { sendPaymentReceipt } = require('../../utils/sendPaymentReceipt');
 const logActivity = require('../../utils/logActivity');
+const FinancialAuditEntry = require('../../models/FinancialAuditEntry');
+const { runWithOptionalTransaction } = require('../../middleware/securityMiddleware');
+const { registerDeadLetterHandler, recordDeadLetter } = require('../dlqService');
+const { invalidateLandlordCache } = require('../cacheService');
 
 class PaymentService {
   constructor() {
@@ -346,6 +350,19 @@ class PaymentService {
     const adapter = this.getAdapter(cleanProvider);
     const signatureValid = adapter.verifyWebhookSignature(payload, headers);
     const parsed = adapter.parseWebhookPayload(payload);
+
+    // Optional header-based replay timestamp window enforcement (max 15 min skew)
+    const rawTs = headers['x-webhook-timestamp'] || headers['x-timestamp'];
+    if (rawTs) {
+      const tsMs = /^\d+$/.test(String(rawTs).trim())
+        ? (String(rawTs).trim().length <= 10 ? Number(rawTs) * 1000 : Number(rawTs))
+        : Date.parse(String(rawTs));
+      if (!Number.isFinite(tsMs) || Math.abs(Date.now() - tsMs) > 15 * 60 * 1000) {
+        const err = new Error('Stale or invalid webhook timestamp rejected (replay protection)');
+        err.statusCode = 401;
+        throw err;
+      }
+    }
     const activeEnv = cleanProvider === 'pesapal'
       ? getPesapalConfig({ requireConfigured: false }).environment
       : (cleanProvider === 'intasend'
@@ -427,14 +444,27 @@ class PaymentService {
     let verifiedState = parsed;
     if (cleanProvider === 'intasend' || cleanProvider === 'pesapal') {
       const trackingToVerify = parsed.trackingId || txn.trackingId || txn.gatewayInvoiceNumber || parsed.checkoutId || txn.checkoutId;
-      verifiedState = await adapter.verifyTransaction({
-        accountReference: txn.accountReference,
-        gatewayInvoiceNumber: txn.gatewayInvoiceNumber,
-        trackingId: trackingToVerify,
-        checkoutId: parsed.checkoutId || txn.checkoutId,
-        signature: txn.checkoutSignature || undefined,
-        expectedEnvironment: txnEnv
-      });
+      try {
+        verifiedState = await adapter.verifyTransaction({
+          accountReference: txn.accountReference,
+          gatewayInvoiceNumber: txn.gatewayInvoiceNumber,
+          trackingId: trackingToVerify,
+          checkoutId: parsed.checkoutId || txn.checkoutId,
+          signature: txn.checkoutSignature || undefined,
+          expectedEnvironment: txnEnv
+        });
+      } catch (verifyErr) {
+        if (verifyErr?.retryable) {
+          await recordDeadLetter({
+            queueName: 'webhooks',
+            jobName: 'gateway_webhook_verify',
+            landlordId: txn.landlordId,
+            payload: { providerCode: cleanProvider, payload, sourceIp },
+            error: verifyErr
+          }).catch(() => {});
+        }
+        throw verifyErr;
+      }
       if (!verifiedState.verifiedReferenceMatch) {
         callbackRecord.processingStatus = 'rejected_signature';
         callbackRecord.processingMessage = `Reference mismatch: expected ${txn.accountReference}, gateway returned ${verifiedState.accountReference}`;
@@ -556,166 +586,233 @@ class PaymentService {
       ? paymentChannel
       : transaction.paymentChannel;
 
-    // Atomic status transition guard against simultaneous webhook + pull-verify race conditions
-    const claimed = await PaymentTransaction.findOneAndUpdate(
-      { _id: transaction._id, status: { $ne: 'paid' } },
-      {
-        $set: {
-          status: 'paid',
-          amountPaid: Number(amountPaid || transaction.amount),
-          providerReference: providerReference || transaction.internalTransactionId,
-          ...(trackingId ? { trackingId, gatewayInvoiceNumber: trackingId } : {}),
-          ...(paymentMethodDetail ? { paymentMethodDetail } : {}),
-          paymentChannel: nextChannel,
-          reconciliationStatus: 'reconciled',
-          paidAt,
-          verifiedAt: new Date(),
-          reconciledAt: new Date(),
-          updatedAt: new Date()
-        }
-      },
-      { returnDocument: 'after' }
-    );
-    if (!claimed) {
-      const current = await PaymentTransaction.findById(transaction._id);
-      return { transaction: current || transaction, alreadySettled: true };
-    }
-    transaction = claimed;
+    const isSubCategory = ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(transaction.paymentCategory);
 
     let activationResult = null;
     let rentPaymentRecord = null;
     let invoiceRecord = null;
+    let receipt = null;
+    let alreadySettled = false;
 
-    const isSubCategory = ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(transaction.paymentCategory);
-
-    // 1. Update Invoice if attached
-    if (transaction.invoiceId) {
-      invoiceRecord = await Invoice.findById(transaction.invoiceId);
-      if (invoiceRecord) {
-        invoiceRecord.amountPaid = Number(invoiceRecord.amountPaid || 0) + Number(transaction.amountPaid);
-        invoiceRecord.balanceDue = Math.max(0, Number(invoiceRecord.totalAmount) - invoiceRecord.amountPaid);
-        invoiceRecord.status = invoiceRecord.balanceDue === 0 ? 'paid' : 'partial';
-        if (invoiceRecord.status === 'paid') invoiceRecord.paidAt = new Date();
-        invoiceRecord.updatedAt = new Date();
-        await invoiceRecord.save();
-      }
-    }
-
-    if (isSubCategory && transaction.subscriptionId) {
-      // SaaS Subscription Activation / Upgrade / Renewal
-      activationResult = await activatePaidSubscription({
-        subscriptionId: transaction.subscriptionId,
-        paymentTransaction: transaction,
-        actorId
-      });
-
-      await PaymentAllocation.findOneAndUpdate(
-        { transactionId: transaction._id, invoiceId: transaction.invoiceId || undefined, category: 'subscription' },
+    await runWithOptionalTransaction(async (session) => {
+      const sOpt = session ? { session } : {};
+      // Atomic status transition guard against simultaneous webhook + pull-verify race conditions
+      const claimed = await PaymentTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: { $ne: 'paid' } },
         {
-          $setOnInsert: {
-            transactionId: transaction._id,
-            invoiceId: transaction.invoiceId || undefined,
-            landlordId: transaction.landlordId,
-            category: 'subscription',
-            allocatedAmount: transaction.amountPaid,
-            currency: transaction.currency
+          $set: {
+            status: 'paid',
+            amountPaid: Number(amountPaid || transaction.amount),
+            providerReference: providerReference || transaction.internalTransactionId,
+            ...(trackingId ? { trackingId, gatewayInvoiceNumber: trackingId } : {}),
+            ...(paymentMethodDetail ? { paymentMethodDetail } : {}),
+            paymentChannel: nextChannel,
+            reconciliationStatus: 'reconciled',
+            paidAt,
+            verifiedAt: new Date(),
+            reconciledAt: new Date(),
+            updatedAt: new Date()
           }
         },
-        { upsert: true, returnDocument: 'after' }
+        { returnDocument: 'after', ...sOpt }
       );
-    } else if (transaction.tenantId) {
-      // Tenant Rent / Utility / Penalty Collection (Strictly separate from SaaS Subscription!)
-      const tenant = await Tenant.findById(transaction.tenantId).populate('unitId');
-      const unitId = transaction.unitId || tenant?.unitId?._id || tenant?.unitId;
-      const propId = transaction.propertyId || tenant?.unitId?.propertyId;
-      const bd = transaction.chargeBreakdown || {};
-      const rAmt = Number(bd.rent || 0) || (transaction.paymentCategory === 'rent' ? transaction.amountPaid : 0);
-      const uAmt = Number(bd.water || 0) + Number(bd.electricity || 0);
-      const sAmt = Number(bd.serviceCharge || 0);
-      const pAmt = Number(bd.penalty || 0);
-      const dAmt = Number(bd.deposit || 0);
-      const providerLabel = transaction.provider === 'pesapal'
-        ? 'Pesapal'
-        : transaction.provider === 'mpesa_c2b'
-        ? 'M-Pesa Paybill'
-        : (transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow');
 
-      rentPaymentRecord = await Payment.create({
-        tenantId: transaction.tenantId,
-        propertyId: propId || undefined,
-        unitId: unitId || undefined,
-        invoiceId: transaction.invoiceId || undefined,
-        invoiceNumber: invoiceRecord?.invoiceNumber || '',
-        paymentTransactionId: transaction._id,
-        user: transaction.landlordId,
-        amount: transaction.amountPaid,
-        currency: transaction.currency,
-        rentAmount: rAmt > 0 ? rAmt : (uAmt + sAmt + pAmt + dAmt === 0 ? transaction.amountPaid : 0),
-        depositAmount: dAmt,
-        utilityAmount: uAmt,
-        serviceChargeAmount: sAmt,
-        penaltyAmount: pAmt,
-        date: paidAt,
-        method: `${providerLabel} (${transaction.paymentChannel})`,
-        status: 'paid',
-        monthCovered: `${new Date(paidAt).getFullYear()}-${String(new Date(paidAt).getMonth() + 1).padStart(2, '0')}`,
-        type: transaction.paymentCategory === 'combined' ? 'Combined' : transaction.paymentCategory,
-        category: ['rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'combined'].includes(transaction.paymentCategory)
-          ? transaction.paymentCategory
-          : 'rent',
-        reference: transaction.providerReference,
-        reconciled: true
-      });
+      if (!claimed) {
+        const current = await PaymentTransaction.findById(transaction._id, null, sOpt);
+        transaction = current || transaction;
+        alreadySettled = true;
+        return;
+      }
+      transaction = claimed;
 
-      await PaymentAllocation.findOneAndUpdate(
-        { transactionId: transaction._id, invoiceId: transaction.invoiceId || undefined, category: rentPaymentRecord.category },
-        {
-          $setOnInsert: {
+      // 1. Update Invoice if attached
+      if (transaction.invoiceId) {
+        invoiceRecord = await Invoice.findById(transaction.invoiceId, null, sOpt);
+        if (invoiceRecord) {
+          invoiceRecord.amountPaid = Number(invoiceRecord.amountPaid || 0) + Number(transaction.amountPaid);
+          invoiceRecord.balanceDue = Math.max(0, Number(invoiceRecord.totalAmount) - invoiceRecord.amountPaid);
+          invoiceRecord.status = invoiceRecord.balanceDue === 0 ? 'paid' : 'partial';
+          if (invoiceRecord.status === 'paid') invoiceRecord.paidAt = new Date();
+          invoiceRecord.updatedAt = new Date();
+          await invoiceRecord.save(sOpt);
+        }
+      }
+
+      if (isSubCategory && transaction.subscriptionId) {
+        // SaaS Subscription Activation / Upgrade / Renewal
+        activationResult = await activatePaidSubscription({
+          subscriptionId: transaction.subscriptionId,
+          paymentTransaction: transaction,
+          actorId,
+          session
+        });
+
+        await PaymentAllocation.findOneAndUpdate(
+          { transactionId: transaction._id, invoiceId: transaction.invoiceId || undefined, category: 'subscription' },
+          {
+            $setOnInsert: {
+              transactionId: transaction._id,
+              invoiceId: transaction.invoiceId || undefined,
+              landlordId: transaction.landlordId,
+              category: 'subscription',
+              allocatedAmount: transaction.amountPaid,
+              currency: transaction.currency
+            }
+          },
+          { upsert: true, returnDocument: 'after', ...sOpt }
+        );
+      } else if (transaction.tenantId) {
+        // Tenant Rent / Utility / Penalty Collection (Strictly separate from SaaS Subscription!)
+        const tenant = await Tenant.findById(transaction.tenantId, null, sOpt).populate('unitId');
+        const unitId = transaction.unitId || tenant?.unitId?._id || tenant?.unitId;
+        const propId = transaction.propertyId || tenant?.unitId?.propertyId;
+        const bd = transaction.chargeBreakdown || {};
+        const rAmt = Number(bd.rent || 0) || (transaction.paymentCategory === 'rent' ? transaction.amountPaid : 0);
+        const uAmt = Number(bd.water || 0) + Number(bd.electricity || 0);
+        const sAmt = Number(bd.serviceCharge || 0);
+        const pAmt = Number(bd.penalty || 0);
+        const dAmt = Number(bd.deposit || 0);
+        const providerLabel = transaction.provider === 'pesapal'
+          ? 'Pesapal'
+          : transaction.provider === 'mpesa_c2b'
+          ? 'M-Pesa Paybill'
+          : (transaction.provider === 'intasend' ? 'IntaSend' : 'Pesaflow');
+
+        const [createdRent] = await Payment.create(
+          [
+            {
+              tenantId: transaction.tenantId,
+              propertyId: propId || undefined,
+              unitId: unitId || undefined,
+              invoiceId: transaction.invoiceId || undefined,
+              invoiceNumber: invoiceRecord?.invoiceNumber || '',
+              paymentTransactionId: transaction._id,
+              user: transaction.landlordId,
+              amount: transaction.amountPaid,
+              currency: transaction.currency,
+              rentAmount: rAmt > 0 ? rAmt : (uAmt + sAmt + pAmt + dAmt === 0 ? transaction.amountPaid : 0),
+              depositAmount: dAmt,
+              utilityAmount: uAmt,
+              serviceChargeAmount: sAmt,
+              penaltyAmount: pAmt,
+              date: paidAt,
+              method: `${providerLabel} (${transaction.paymentChannel})`,
+              status: 'paid',
+              monthCovered: `${new Date(paidAt).getFullYear()}-${String(new Date(paidAt).getMonth() + 1).padStart(2, '0')}`,
+              type: transaction.paymentCategory === 'combined' ? 'Combined' : transaction.paymentCategory,
+              category: ['rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'combined'].includes(transaction.paymentCategory)
+                ? transaction.paymentCategory
+                : 'rent',
+              reference: transaction.providerReference,
+              reconciled: true
+            }
+          ],
+          sOpt
+        );
+        rentPaymentRecord = createdRent;
+
+        await PaymentAllocation.findOneAndUpdate(
+          { transactionId: transaction._id, invoiceId: transaction.invoiceId || undefined, category: rentPaymentRecord.category },
+          {
+            $setOnInsert: {
+              transactionId: transaction._id,
+              invoiceId: transaction.invoiceId || undefined,
+              paymentId: rentPaymentRecord._id,
+              landlordId: transaction.landlordId,
+              tenantId: transaction.tenantId,
+              unitId: unitId || undefined,
+              category: rentPaymentRecord.category,
+              allocatedAmount: transaction.amountPaid,
+              currency: transaction.currency
+            }
+          },
+          { upsert: true, returnDocument: 'after', ...sOpt }
+        );
+      }
+
+      // Create Official PaymentReceipt record inside same transaction boundary
+      const landlordInfo = await User.findById(transaction.landlordId, 'name email', sOpt);
+      const receiptNumber = `RCT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+      const [createdReceipt] = await PaymentReceipt.create(
+        [
+          {
+            receiptNumber,
+            receiptCategory: isSubCategory ? 'subscription' : 'rental',
             transactionId: transaction._id,
-            invoiceId: transaction.invoiceId || undefined,
-            paymentId: rentPaymentRecord._id,
+            paymentId: rentPaymentRecord?._id,
+            invoiceId: transaction.invoiceId,
             landlordId: transaction.landlordId,
             tenantId: transaction.tenantId,
-            unitId: unitId || undefined,
-            category: rentPaymentRecord.category,
-            allocatedAmount: transaction.amountPaid,
-            currency: transaction.currency
+            subscriptionId: transaction.subscriptionId,
+            recipientName: transaction.customerName || landlordInfo?.name || 'Customer',
+            recipientEmail: transaction.customerEmail || landlordInfo?.email || '',
+            amount: transaction.amountPaid,
+            currency: transaction.currency,
+            paymentMethod: `${transaction.provider} (${transaction.paymentChannel})`,
+            providerReference: transaction.providerReference,
+            description: isSubCategory
+              ? `MakaziFlow Subscription Payment (${transaction.accountReference})`
+              : `Rental Payment (${transaction.accountReference})`,
+            emailedTo: transaction.customerEmail || landlordInfo?.email || '',
+            emailedAt: new Date()
           }
-        },
-        { upsert: true, returnDocument: 'after' }
+        ],
+        sOpt
       );
+      receipt = createdReceipt;
 
-      // Dispatch strict email PDF receipt to tenant
+      await FinancialAuditEntry.create(
+        [
+          {
+            entryType: isSubCategory ? 'subscription_activation' : 'gateway_settlement',
+            landlordId: transaction.landlordId,
+            tenantId: transaction.tenantId || undefined,
+            unitId: transaction.unitId || undefined,
+            invoiceId: transaction.invoiceId || undefined,
+            paymentId: rentPaymentRecord?._id,
+            transactionId: transaction._id,
+            amount: transaction.amountPaid,
+            currency: transaction.currency,
+            direction: 'credit',
+            reference: transaction.providerReference || transaction.internalTransactionId,
+            previousStatus: 'pending',
+            newStatus: 'paid',
+            actorId: actorId || undefined,
+            reason: 'Verified gateway settlement reconciled'
+          }
+        ],
+        sOpt
+      );
+    });
+
+    if (alreadySettled) {
+      return { transaction, alreadySettled: true };
+    }
+
+    // Dispatch receipt PDF outside transaction commit boundary
+    if (rentPaymentRecord?._id) {
       sendPaymentReceipt(rentPaymentRecord._id).catch((err) => {
         console.warn('Tenant email receipt warning:', err.message);
       });
     }
+    if (transaction?.landlordId) {
+      invalidateLandlordCache(transaction.landlordId).catch(() => {});
+      const { emitToLandlord, emitToAdmins } = require('../socketService');
+      emitToLandlord(transaction.landlordId, 'payment:settled', {
+        transactionId: String(transaction._id),
+        category: transaction.paymentCategory,
+        amountPaid: transaction.amountPaid,
+        currency: transaction.currency,
+        provider: transaction.provider
+      });
+      emitToAdmins('admin:payment_settled', {
+        transactionId: String(transaction._id),
+        landlordId: String(transaction.landlordId),
+        amountPaid: transaction.amountPaid
+      });
+    }
 
-    // Create Official PaymentReceipt record
     const landlord = await User.findById(transaction.landlordId).select('name email');
-    const receiptNumber = `RCT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-    const receipt = await PaymentReceipt.create({
-      receiptNumber,
-      receiptCategory: isSubCategory ? 'subscription' : 'rental',
-      transactionId: transaction._id,
-      paymentId: rentPaymentRecord?._id,
-      invoiceId: transaction.invoiceId,
-      landlordId: transaction.landlordId,
-      tenantId: transaction.tenantId,
-      subscriptionId: transaction.subscriptionId,
-      recipientName: transaction.customerName || landlord?.name || 'Customer',
-      recipientEmail: transaction.customerEmail || landlord?.email || '',
-      amount: transaction.amountPaid,
-      currency: transaction.currency,
-      paymentMethod: `${transaction.provider} (${transaction.paymentChannel})`,
-      providerReference: transaction.providerReference,
-      description: isSubCategory
-        ? `MakaziFlow Subscription Payment (${transaction.accountReference})`
-        : `Rental Payment (${transaction.accountReference})`,
-      emailedTo: transaction.customerEmail || landlord?.email || '',
-      emailedAt: new Date()
-    });
-
     await logActivity(
       landlord || 'System',
       'Payment Verified & Reconciled',
@@ -817,37 +914,65 @@ class PaymentService {
   }
 
   /**
-   * Handle payment reversal / refund safely
+   * Handle payment reversal / refund safely inside an atomic boundary
    */
   async handleReversal({ transactionId, reason = 'Payment reversed', actorId = null }) {
-    const txn = await PaymentTransaction.findById(transactionId);
-    if (!txn) throw new Error('Transaction not found');
+    let txn = null;
+    await runWithOptionalTransaction(async (session) => {
+      const sOpt = session ? { session } : {};
+      txn = await PaymentTransaction.findById(transactionId, null, sOpt);
+      if (!txn) throw new Error('Transaction not found');
 
-    txn.status = 'reversed';
-    txn.reconciliationStatus = 'reversed';
-    txn.reversalReason = reason;
-    txn.reversedAt = new Date();
-    txn.updatedAt = new Date();
-    await txn.save();
+      const prevStatus = txn.status;
+      txn.status = 'reversed';
+      txn.reconciliationStatus = 'reversed';
+      txn.reversalReason = reason;
+      txn.reversedAt = new Date();
+      txn.updatedAt = new Date();
+      await txn.save(sOpt);
 
-    // Reverse linked rent payment record if exists
-    await Payment.updateMany(
-      { paymentTransactionId: txn._id },
-      { $set: { status: 'reversed', reconciled: false } }
-    );
+      // Reverse linked rent payment record if exists
+      await Payment.updateMany(
+        { paymentTransactionId: txn._id },
+        { $set: { status: 'reversed', reconciled: false } },
+        sOpt
+      );
 
-    // Reopen invoice balance if it was paid by this transaction
-    if (txn.invoiceId) {
-      const inv = await Invoice.findById(txn.invoiceId);
-      if (inv) {
-        inv.amountPaid = Math.max(0, Number(inv.amountPaid || 0) - Number(txn.amountPaid || txn.amount));
-        inv.balanceDue = Math.max(0, Number(inv.totalAmount) - inv.amountPaid);
-        inv.status = inv.amountPaid > 0 ? 'partial' : 'open';
-        inv.paidAt = undefined;
-        inv.updatedAt = new Date();
-        await inv.save();
+      // Reopen invoice balance if it was paid by this transaction
+      if (txn.invoiceId) {
+        const inv = await Invoice.findById(txn.invoiceId, null, sOpt);
+        if (inv) {
+          inv.amountPaid = Math.max(0, Number(inv.amountPaid || 0) - Number(txn.amountPaid || txn.amount));
+          inv.balanceDue = Math.max(0, Number(inv.totalAmount) - inv.amountPaid);
+          inv.status = inv.amountPaid > 0 ? 'partial' : 'open';
+          inv.paidAt = undefined;
+          inv.updatedAt = new Date();
+          await inv.save(sOpt);
+        }
       }
-    }
+
+      await FinancialAuditEntry.create(
+        [
+          {
+            entryType: 'reversal',
+            landlordId: txn.landlordId,
+            tenantId: txn.tenantId || undefined,
+            unitId: txn.unitId || undefined,
+            invoiceId: txn.invoiceId || undefined,
+            transactionId: txn._id,
+            amount: Number(txn.amountPaid || txn.amount),
+            currency: txn.currency,
+            direction: 'debit',
+            reference: txn.providerReference || txn.internalTransactionId,
+            previousStatus: prevStatus,
+            newStatus: 'reversed',
+            actorId: actorId || undefined,
+            reason
+          }
+        ],
+        sOpt
+      );
+    });
 
     await logActivity(
       actorId ? { _id: actorId } : 'System',
@@ -861,4 +986,9 @@ class PaymentService {
   }
 }
 
-module.exports = new PaymentService();
+const paymentServiceInstance = new PaymentService();
+registerDeadLetterHandler('webhooks:gateway_webhook_verify', async (jobPayload) => {
+  return await paymentServiceInstance.processWebhook(jobPayload);
+});
+
+module.exports = paymentServiceInstance;

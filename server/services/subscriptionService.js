@@ -707,8 +707,9 @@ async function checkAndSendUnitThresholdAlerts(landlordId, entitlement) {
 /**
  * Activate or Upgrade/Renew a LandlordSubscription ONLY after backend payment verification.
  */
-async function activatePaidSubscription({ subscriptionId, paymentTransaction, actorId = null }) {
-  const sub = await LandlordSubscription.findById(subscriptionId);
+async function activatePaidSubscription({ subscriptionId, paymentTransaction, actorId = null, session = null }) {
+  const sOpt = session ? { session } : {};
+  const sub = await LandlordSubscription.findById(subscriptionId, null, sOpt);
   if (!sub) throw new Error('Subscription record not found');
 
   // Strict Sandbox vs Production isolation guard:
@@ -766,7 +767,8 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
       _id: { $ne: sub._id },
       status: { $in: ['active', 'trial', 'grace_period'] }
     },
-    { $set: { status: 'cancelled', cancelledAt: now, updatedAt: now } }
+    { $set: { status: 'cancelled', cancelledAt: now, updatedAt: now } },
+    sOpt
   );
 
   const previousState = { status: sub.status, purchasedUnits: sub.purchasedUnits, expiryDate: sub.expiryDate };
@@ -787,9 +789,9 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
     limitReached100: false
   };
   sub.updatedAt = now;
-  await sub.save();
+  await sub.save(sOpt);
 
-  const actualUnits = await Unit.countDocuments({ user: sub.landlordId });
+  const actualUnits = await Unit.countDocuments({ user: sub.landlordId }).session(session || null);
   const entitlementStatus = (!sub.isCustomUnlimited && actualUnits > sub.purchasedUnits)
     ? 'restricted' // Downgrade / smaller limit preserves all existing units cleanly while preventing new ones
     : 'active';
@@ -812,13 +814,17 @@ async function activatePaidSubscription({ subscriptionId, paymentTransaction, ac
         updatedAt: now
       }
     },
-    { upsert: true, returnDocument: 'after' }
+    { upsert: true, returnDocument: 'after', ...sOpt }
   );
 
-  await User.findByIdAndUpdate(sub.landlordId, {
-    activeSubscriptionId: sub._id,
-    subscriptionTier: sub.planCode
-  });
+  await User.findByIdAndUpdate(
+    sub.landlordId,
+    {
+      activeSubscriptionId: sub._id,
+      subscriptionTier: sub.planCode
+    },
+    sOpt
+  );
 
   await logSubscriptionAudit({
     landlordId: sub.landlordId,

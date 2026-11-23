@@ -14,7 +14,8 @@ import {
   LifeBuoy,
   Settings,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  Activity
 } from "lucide-react";
 
 export const ADMIN_NAV_ITEMS = [
@@ -27,6 +28,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: "reports", label: "Reports", path: "/reports", icon: BarChart3 },
   { id: "support", label: "Support", path: "/support", icon: LifeBuoy },
   { id: "settings", label: "Platform Settings", path: "/settings", icon: Settings },
+  { id: "system-health", label: "System Health", path: "/system-health", icon: Activity },
   { id: "activity", label: "Security & Audit Logs", path: "/activity", icon: ShieldAlert }
 ];
 

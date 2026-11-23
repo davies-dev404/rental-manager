@@ -6,6 +6,7 @@ const Tenant = require('../models/Tenant');
 const Property = require('../models/Property');
 const { protect, admin } = require('../middleware/authMiddleware');
 const { validateObjectId, pickAllowed, isValidObjectId } = require('../middleware/securityMiddleware');
+const { idempotencyMiddleware } = require('../middleware/idempotencyMiddleware');
 const { resolveLandlordId } = require('../middleware/subscriptionMiddleware');
 const { reserveUnitSlot, releaseUnitSlot } = require('../services/subscriptionService');
 const logActivity = require('../utils/logActivity');
@@ -56,7 +57,7 @@ router.get('/', protect, async (req, res) => {
 // @desc    Create a unit (Protected by Atomic Subscription Unit Limit Enforcement)
 // @route   POST /api/units
 // @access  Private (Admin)
-router.post('/', protect, admin, async (req, res) => {
+router.post('/', protect, admin, idempotencyMiddleware('unit_create'), async (req, res) => {
   let slotReserved = false;
   let landlordId = req.user._id || req.user.id;
   try {
@@ -106,6 +107,8 @@ router.post('/', protect, admin, async (req, res) => {
     }
 
     await logActivity(req.user, 'Create Unit', `Created unit "${unit.unitNumber}"`, 'unit', 'success');
+    const { invalidateLandlordCache } = require('../services/cacheService');
+    invalidateLandlordCache(landlordId).catch(() => {});
     res.status(201).json(unit);
   } catch (error) {
     // Roll back reserved slot if Unit.create failed after reservation

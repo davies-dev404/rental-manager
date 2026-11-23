@@ -1,4 +1,5 @@
 const path = require('path');
+const http = require('http');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config();
@@ -7,10 +8,27 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const morgan = require('morgan');
-const { validateSecurityConfig, sanitizeRequest } = require('./middleware/securityMiddleware');
+const { sanitizeRequest } = require('./middleware/securityMiddleware');
+const { requestContextMiddleware } = require('./middleware/requestContextMiddleware');
+const { validateEnvironment, getRuntimeCapabilities } = require('./config/envConfig');
+const logger = require('./utils/logger');
 
-validateSecurityConfig();
+let Sentry = null;
+if ((process.env.SENTRY_DSN || '').trim() && process.env.NODE_ENV !== 'test') {
+  try {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN.trim(),
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || 0.1)
+    });
+  } catch (sentryErr) {
+    logger.warn('Optional @sentry/node package unavailable or failed to init', { error: sentryErr.message });
+    Sentry = null;
+  }
+}
+
+validateEnvironment();
 
 const app = express();
 app.disable('x-powered-by');
@@ -18,6 +36,7 @@ const PORT = process.env.PORT || 5000;
 
 // Render / reverse-proxy IP resolution for rate limiting & cookies
 app.set('trust proxy', 1);
+app.use(requestContextMiddleware);
 
 const ALLOWED_CORS_ORIGINS = new Set([
   'http://localhost:5173',
@@ -32,19 +51,39 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'https://msimamizi.afrinextech.co.ke',
 ]);
 
+const EXTRA_ORIGINS = String(process.env.CORS_EXTRA_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+for (const o of EXTRA_ORIGINS) ALLOWED_CORS_ORIGINS.add(o);
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or same-origin rewrites)
+    // Allow requests with no origin (server-to-server webhooks, curl, same-origin rewrites)
     if (!origin) return callback(null, true);
-    if (
-      ALLOWED_CORS_ORIGINS.has(origin) ||
-      origin.endsWith('.vercel.app') ||
-      origin.endsWith('.afrinextech.co.ke') ||
-      origin.endsWith('.onrender.com')
-    ) {
-      return callback(null, true);
+    try {
+      const parsed = new URL(origin);
+      const host = parsed.hostname.toLowerCase();
+      const isTrustedHost =
+        ALLOWED_CORS_ORIGINS.has(origin) ||
+        host.endsWith('.vercel.app') ||
+        host === 'afrinextech.co.ke' ||
+        host.endsWith('.afrinextech.co.ke') ||
+        host.endsWith('.onrender.com');
+      if (isTrustedHost) {
+        return callback(null, true);
+      }
+      if (process.env.NODE_ENV !== 'production' && (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost'))) {
+        return callback(null, true);
+      }
+    } catch {
+      // Malformed origin rejected below
     }
-    return callback(null, true); // Permissive for unified domain routing
+    if (process.env.NODE_ENV === 'production') {
+      logger.warn('cors_origin_blocked', { origin });
+      return callback(new Error('Origin not permitted by CORS policy'));
+    }
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -152,7 +191,7 @@ const limiter = rateLimit({
   max: 1500, // Generous per-IP budget for SPA fetches, refreshes, and PDF downloads
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
+  skip: (req) => req.method === 'OPTIONS' || ['/api/health', '/api/live', '/api/ready'].includes(req.path),
   message: { message: 'Too many requests, please try again shortly.' }
 });
 app.use(limiter);
@@ -177,7 +216,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(morgan('dev'));
 
 // Global bufferCommands setting: fail fast when disconnected (NoSQL operator injection is stripped at Express layer via sanitizeRequest)
 mongoose.set('bufferCommands', false);
@@ -257,37 +295,45 @@ const connectDB = async () => {
 
 // Initiate connection on boot — await it so routes only register after DB is ready
 let dbReady = false;
+let expiryCronTask = null;
 const dbBootPromise = connectDB()
     .then(async () => {
       dbReady = true;
       if (process.env.NODE_ENV !== 'test') {
         try {
+          const { runPendingMigrations } = require('./services/migrationService');
+          await runPendingMigrations();
           const { seedDefaultPlans, processSubscriptionExpirations } = require('./services/subscriptionService');
           const PaymentService = require('./services/payments/PaymentService');
           await seedDefaultPlans();
           await PaymentService.seedProviders();
           const cron = require('node-cron');
-          // Run hourly sweep; per-day date key guarantees max 1 reminder email/day per expired/expiring landlord
-          cron.schedule('0 * * * *', () => {
+          const { withDistributedLock } = require('./services/cronLockService');
+          // Run hourly sweep protected by distributed lock so multiple instances never duplicate expiry notices
+          expiryCronTask = cron.schedule('0 * * * *', () => {
             if (mongoose.connection.readyState === 1) {
-              processSubscriptionExpirations().catch((e) => console.warn('Expiry sweep warning:', e.message));
+              withDistributedLock('subscription_expiry_sweep', 50 * 60 * 1000, () =>
+                processSubscriptionExpirations()
+              ).catch((e) => logger.warn('Expiry sweep warning', { error: e.message }));
             }
           });
           setTimeout(() => {
             if (mongoose.connection.readyState === 1) {
-              processSubscriptionExpirations().catch((e) => console.warn('Initial expiry sweep warning:', e.message));
+              withDistributedLock('subscription_expiry_boot_sweep', 5 * 60 * 1000, () =>
+                processSubscriptionExpirations()
+              ).catch((e) => logger.warn('Initial expiry sweep warning', { error: e.message }));
             }
-          }, 5000);
+          }, 5000).unref?.();
         } catch (seedErr) {
-          console.warn('SaaS seed notice:', seedErr.message);
+          logger.warn('SaaS seed notice', { error: seedErr.message });
         }
       }
     })
-    .catch(err => console.error('Initial DB connect error:', err.message));
+    .catch(err => logger.error('Initial DB connect error', { error: err.message }));
 
 // Middleware to ensure DB is connected before processing API requests
 app.use(async (req, res, next) => {
-    if (req.method === 'OPTIONS' || req.path === '/' || req.path === '/api/health' || req.path.startsWith('/api/public')) return next();
+    if (req.method === 'OPTIONS' || req.path === '/' || ['/api/health', '/api/live', '/api/ready'].includes(req.path) || req.path.startsWith('/api/public')) return next();
     try {
         if (!dbReady) await dbBootPromise; // wait for boot connection if still pending
         await connectDB();
@@ -341,6 +387,30 @@ app.get('/', (req, res) => {
     res.send('Rental Manager API is running...');
 });
 
+app.get('/api/live', (req, res) => {
+    res.status(200).json({
+        status: 'alive',
+        uptime: Math.floor(process.uptime()),
+        pid: process.pid,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/api/ready', (req, res) => {
+    const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    const readyState = mongoose.connection.readyState;
+    const isDbReady = readyState === 1;
+    res.status(isDbReady ? 200 : 503).json({
+        status: isDbReady ? 'ready' : 'not_ready',
+        database: {
+            status: states[readyState] || 'unknown',
+            readyState
+        },
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.get('/api/health', async (req, res) => {
     let connectionError = null;
     if (req.query.connect === 'true') {
@@ -355,9 +425,16 @@ app.get('/api/health', async (req, res) => {
     const rawKey = (process.env.BREVO_API_KEY || '').trim();
     const PaymentService = require('./services/payments/PaymentService');
     const paymentGateway = PaymentService.getActiveGatewayStatus();
-    res.json({
+    const mem = process.memoryUsage();
+    res.status(connectionError ? 503 : 200).json({
         status: connectionError ? 'error' : 'ok',
         uptime: Math.floor(process.uptime()),
+        pid: process.pid,
+        memoryMB: {
+            rss: Math.round(mem.rss / 1048576),
+            heapUsed: Math.round(mem.heapUsed / 1048576),
+            heapTotal: Math.round(mem.heapTotal / 1048576)
+        },
         database: {
             status: dbState,
             readyState: mongoose.connection.readyState
@@ -366,29 +443,90 @@ app.get('/api/health', async (req, res) => {
             configured: Boolean(rawKey)
         },
         paymentGateway,
+        capabilities: getRuntimeCapabilities(),
         env: process.env.NODE_ENV || 'development'
     });
 });
 
 // Error Handling Middleware (never expose stack traces or raw internals in production)
 app.use((err, req, res, next) => {
-    console.error('Unhandled Server Error:', err.stack || err.message);
+    logger.error('unhandled_server_error', {
+        error: err,
+        correlationId: req.correlationId,
+        method: req.method,
+        path: req.originalUrl
+    });
+    if (Sentry && err) {
+        try { Sentry.captureException(err); } catch {}
+    }
     if (err.type === 'entity.too.large') {
-        return res.status(413).json({ message: 'Request payload exceeds maximum allowed size (2MB).' });
+        return res.status(413).json({ message: 'Request payload exceeds maximum allowed size (2MB).', correlationId: req.correlationId });
     }
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({ message: 'Malformed JSON request body.' });
+        return res.status(400).json({ message: 'Malformed JSON request body.', correlationId: req.correlationId });
     }
     const isProd = process.env.NODE_ENV === 'production';
     res.status(err.status || 500).json({
-        message: isProd ? 'Internal Server Error' : (err.message || 'Internal Server Error')
+        message: isProd ? 'Internal Server Error' : (err.message || 'Internal Server Error'),
+        correlationId: req.correlationId
     });
 });
 
-if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-    app.listen(PORT, () => {
-        console.log(`🚀 Server running on port ${PORT}`);
-    });
+let httpServer = null;
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal = 'SIGTERM') {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logger.info('graceful_shutdown_started', { signal });
+
+    const forceTimer = setTimeout(() => {
+        logger.error('graceful_shutdown_forced_exit', { signal });
+        process.exit(1);
+    }, 10000);
+    if (typeof forceTimer.unref === 'function') forceTimer.unref();
+
+    try {
+        if (expiryCronTask && typeof expiryCronTask.stop === 'function') {
+            expiryCronTask.stop();
+        }
+        const { closeSocketServer } = require('./services/socketService');
+        const { closeQueues } = require('./queues/jobQueues');
+        const { disconnectRedis } = require('./config/redisClient');
+        await closeSocketServer().catch(() => {});
+        await closeQueues().catch(() => {});
+        await disconnectRedis().catch(() => {});
+        if (httpServer && httpServer.listening) {
+            await new Promise((resolve) => httpServer.close(resolve));
+        }
+        if (mongoose.connection && mongoose.connection.readyState !== 0) {
+            await mongoose.connection.close();
+        }
+        logger.info('graceful_shutdown_completed', { signal });
+        process.exit(0);
+    } catch (err) {
+        logger.error('graceful_shutdown_error', { signal, error: err.message });
+        process.exit(1);
+    }
 }
 
+app.initSocketServer = (srv) => {
+    const { initSocketServer } = require('./services/socketService');
+    return initSocketServer(srv, corsOptions);
+};
+
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+    httpServer = http.createServer(app);
+    // Keep alive slightly higher than Render / Nginx 60s idle timeouts to avoid 502 races
+    httpServer.keepAliveTimeout = 65000;
+    httpServer.headersTimeout = 66000;
+    app.initSocketServer(httpServer);
+    httpServer.listen(PORT, () => {
+        logger.info('server_started', { port: PORT, capabilities: getRuntimeCapabilities() });
+    });
+    process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+}
+
+app.gracefulShutdown = gracefulShutdown;
 module.exports = app;

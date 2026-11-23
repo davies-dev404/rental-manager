@@ -1,6 +1,12 @@
 const axios = require('axios');
 const PaymentAdapter = require('./PaymentAdapter');
 const { getPesapalConfig } = require('../../config/pesapalConfig');
+const { withRetry, CircuitBreaker, isDefaultRetryableError } = require('../../utils/resilience');
+
+const pesapalBreaker = new CircuitBreaker('pesapal_gateway', {
+  failureThreshold: 5,
+  cooldownMs: 30000
+});
 
 /**
  * Pesapal API 3.0 Payment Adapter (Sandbox + Production)
@@ -152,19 +158,27 @@ class PesapalAdapter extends PaymentAdapter {
     }
 
     try {
-      const response = await axios.post(
-        `${cfg.baseUrl}/api/Auth/RequestToken`,
-        {
-          consumer_key: cfg.consumerKey,
-          consumer_secret: cfg.consumerSecret
-        },
-        {
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000
-        }
+      const response = await pesapalBreaker.exec(
+        () =>
+          withRetry(
+            () =>
+              axios.post(
+                `${cfg.baseUrl}/api/Auth/RequestToken`,
+                {
+                  consumer_key: cfg.consumerKey,
+                  consumer_secret: cfg.consumerSecret
+                },
+                {
+                  headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json'
+                  },
+                  timeout: 30000
+                }
+              ),
+            { maxRetries: 2, baseDelayMs: 250, label: 'pesapal_auth_token' }
+          ),
+        { shouldTrip: isDefaultRetryableError }
       );
 
       const data = response.data || {};
@@ -436,17 +450,22 @@ class PesapalAdapter extends PaymentAdapter {
 
     try {
       const token = await this.getAccessToken(cfg);
-      const response = await axios.get(
-        `${cfg.baseUrl}/api/Transactions/GetTransactionStatus`,
-        {
-          params: { orderTrackingId },
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000
-        }
+      const response = await pesapalBreaker.exec(
+        () =>
+          withRetry(
+            () =>
+              axios.get(`${cfg.baseUrl}/api/Transactions/GetTransactionStatus`, {
+                params: { orderTrackingId },
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  Accept: 'application/json',
+                  'Content-Type': 'application/json'
+                },
+                timeout: 30000
+              }),
+            { maxRetries: 2, baseDelayMs: 300, label: 'pesapal_verify_transaction' }
+          ),
+        { shouldTrip: isDefaultRetryableError }
       );
 
       const data = response.data || {};

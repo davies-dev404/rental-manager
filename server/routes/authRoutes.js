@@ -27,7 +27,7 @@ const generateToken = (id, tokenVersion = 0) => {
 };
 
 const generateRefreshToken = (id, tokenVersion = 0) => {
-  return jwt.sign({ id, tv: Number(tokenVersion || 0), kind: 'refresh' }, getJwtSecret(), {
+  return jwt.sign({ id, tv: Number(tokenVersion || 0), kind: 'refresh', jti: crypto.randomUUID() }, getJwtSecret(), {
     expiresIn: '30d',
   });
 };

@@ -1,6 +1,12 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 const BUSINESS_CONFIG = require('../config/businessConfig');
+const { withRetry, CircuitBreaker, isDefaultRetryableError } = require('./resilience');
+
+const brevoBreaker = new CircuitBreaker('brevo_messaging', {
+  failureThreshold: 5,
+  cooldownMs: 30000
+});
 
 const verifiedSenderCache = new Map();
 
@@ -161,14 +167,22 @@ async function sendTransactionalEmail({
       .filter((att) => att.content || att.url);
   }
 
-  const response = await axios.post('https://api.brevo.com/v3/smtp/email', payload, {
-    headers: {
-      'api-key': resolvedKey,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
-    timeout: 12000
-  });
+  const response = await brevoBreaker.exec(
+    () =>
+      withRetry(
+        () =>
+          axios.post('https://api.brevo.com/v3/smtp/email', payload, {
+            headers: {
+              'api-key': resolvedKey,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            timeout: 12000
+          }),
+        { maxRetries: 2, baseDelayMs: 300, label: 'brevo_email_v3' }
+      ),
+    { shouldTrip: isDefaultRetryableError }
+  );
 
   return response.data;
 }
@@ -244,22 +258,30 @@ async function sendTransactionalSMS({ apiKey, phone, message, sender, type = 'tr
 
   const senderId = String(sender || process.env.BREVO_SMS_SENDER || 'MakaziFlow').replace(/[^a-zA-Z0-9]/g, '').slice(0, 11) || 'MakaziFlow';
 
-  const response = await axios.post(
-    'https://api.brevo.com/v3/transactionalSMS/sms',
-    {
-      sender: senderId,
-      recipient,
-      content: message,
-      type
-    },
-    {
-      headers: {
-        'api-key': resolvedKey,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      timeout: 12000
-    }
+  const response = await brevoBreaker.exec(
+    () =>
+      withRetry(
+        () =>
+          axios.post(
+            'https://api.brevo.com/v3/transactionalSMS/sms',
+            {
+              sender: senderId,
+              recipient,
+              content: message,
+              type
+            },
+            {
+              headers: {
+                'api-key': resolvedKey,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              timeout: 12000
+            }
+          ),
+        { maxRetries: 2, baseDelayMs: 300, label: 'brevo_sms_v3' }
+      ),
+    { shouldTrip: isDefaultRetryableError }
   );
 
   return response.data;
