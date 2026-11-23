@@ -43,6 +43,7 @@ const tenantSchema = new mongoose.Schema({
     isIncluded: { type: Boolean, default: false } // Landlord can include it in rent or bill separately
   }],
   nextPaymentDate: { type: Date }, // For tracking custom due dates
+  isDemo: { type: Boolean, default: false, index: true },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -84,6 +84,9 @@ export default function AdminProperties() {
           <p className="font-semibold">
             {p.unitStats?.occupiedUnits || 0} / {p.unitStats?.totalUnits || 0} occupied ({p.unitStats?.occupancyRate || 0}%)
           </p>
+          <p className="text-[10.5px] text-slate-500">
+            {p.unitStats?.tenantCount || 0} tenant(s) · KES {Number(p.unitStats?.revenueGenerated || 0).toLocaleString()}
+          </p>
           <div className="w-28 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mt-1 overflow-hidden">
             <div className="h-full bg-[#00a99d]" style={{ width: `${p.unitStats?.occupancyRate || 0}%` }} />
           </div>

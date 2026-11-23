@@ -30,6 +30,7 @@ const paymentSchema = new mongoose.Schema({
   paidAt: { type: Date },
   checkoutRequestId: { type: String },
   reconciled: { type: Boolean, default: false },
+  isDemo: { type: Boolean, default: false, index: true },
   createdAt: { type: Date, default: Date.now }
 });
 

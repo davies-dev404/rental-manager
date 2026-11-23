@@ -170,42 +170,69 @@ router.get('/google-reviews', async (req, res) => {
 });
 
 /**
- * @desc    Submit Landing Page Contact / Demo Inquiry -> Persists as SupportTicket for Msimamizi Admin
- * @route   POST /api/public/contact
- * @access  Public
+ * @desc    Submit Landing Page Contact / Demo Inquiry or AfriNexTech Ecosystem Support Ticket
+ * @route   POST /api/public/contact  &  POST /api/public/afrinextech/support
+ * @access  Public (optionally verified via x-afrinextech-key if configured for server-to-server sync)
  */
-router.post('/contact', contactLimiter, async (req, res) => {
+async function handleUnifiedPublicSupport(req, res) {
   try {
+    const syncSecret = (process.env.AFRINEXTECH_SYNC_SECRET || '').trim();
+    const incomingKey = String(req.headers['x-afrinextech-key'] || '').trim();
+    const isPlatformEndpoint = req.path.includes('afrinextech');
+    if (isPlatformEndpoint && syncSecret && incomingKey && incomingKey !== syncSecret) {
+      return res.status(401).json({ message: 'Invalid AfriNexTech sync key.' });
+    }
+
     const {
       name,
       email,
-      phone,
+      phone = '',
       role = '',
       units = '',
       subject = '',
       message = '',
-      category = 'landing_inquiry'
+      category = 'landing_inquiry',
+      priority = 'high',
+      platform = 'makaziflow',
+      platformLabel = '',
+      externalReference = '',
+      source = ''
     } = req.body || {};
 
     const cleanName = String(name || '').trim();
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanPhone = String(phone || '').trim();
     const cleanMessage = String(message || '').trim();
+    const cleanPlatform = String(platform || 'makaziflow').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'makaziflow';
+    const resolvedPlatformLabel =
+      String(platformLabel || '').trim() ||
+      (cleanPlatform === 'makaziflow'
+        ? 'MakaziFlow'
+        : cleanPlatform === 'afrinextech'
+        ? 'AfriNexTech'
+        : cleanPlatform.charAt(0).toUpperCase() + cleanPlatform.slice(1));
 
-    if (!cleanName || !cleanEmail || !cleanPhone) {
-      return res.status(400).json({ message: 'Name, email, and phone number are required.' });
+    if (!cleanName || !cleanEmail || (!isPlatformEndpoint && !cleanPhone)) {
+      return res.status(400).json({ message: 'Name, email, and required inquiry fields must be provided.' });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({ message: 'Please provide a valid email address.' });
     }
 
     const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-    const roleLabel = role ? String(role).trim() : 'Prospective Customer';
+    const roleLabel = role ? String(role).trim() : (isPlatformEndpoint ? `${resolvedPlatformLabel} User` : 'Prospective Customer');
     const unitsLabel = units ? String(units).trim() : '';
     const derivedSubject = String(subject || '').trim() ||
-      `Landing Inquiry (${roleLabel}${unitsLabel ? ` · ${unitsLabel} units` : ''})`;
+      `${resolvedPlatformLabel} Inquiry (${roleLabel}${unitsLabel ? ` · ${unitsLabel} units` : ''})`;
     const derivedBody = cleanMessage ||
-      `Requested a live demo/callback from the MakaziFlow landing page.\nRole: ${roleLabel}\nPortfolio Size: ${unitsLabel || 'Unspecified'}\nPhone: ${cleanPhone}`;
+      `Requested support/callback from ${resolvedPlatformLabel}.\nRole: ${roleLabel}\nPortfolio Size: ${unitsLabel || 'Unspecified'}\nPhone: ${cleanPhone || 'N/A'}`;
+
+    const allowedCats = new Set(['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request', 'demo_request', 'landing_inquiry']);
+    const resolvedCategory = allowedCats.has(String(category)) ? String(category) : (isPlatformEndpoint ? 'general' : 'landing_inquiry');
+    const resolvedSource = isPlatformEndpoint
+      ? 'afrinextech_platform'
+      : (source === 'afrinextech_platform' ? 'afrinextech_platform' : 'landing_page');
+    const resolvedPriority = ['low', 'medium', 'high', 'urgent'].includes(String(priority)) ? String(priority) : 'high';
 
     const ticket = await SupportTicket.create({
       ticketNumber,
@@ -213,11 +240,14 @@ router.post('/contact', contactLimiter, async (req, res) => {
       email: cleanEmail,
       phone: cleanPhone,
       subject: derivedSubject,
-      category: category === 'demo_request' ? 'demo_request' : 'landing_inquiry',
-      source: 'landing_page',
+      category: resolvedCategory,
+      source: resolvedSource,
+      platform: cleanPlatform,
+      platformLabel: resolvedPlatformLabel,
+      externalReference: String(externalReference || '').trim(),
       organizationRole: roleLabel,
       unitsEstimate: unitsLabel,
-      priority: 'high',
+      priority: resolvedPriority,
       status: 'open',
       message: derivedBody
     });
@@ -229,9 +259,9 @@ router.post('/contact', contactLimiter, async (req, res) => {
         if (alertEmail && ps?.notifications?.emailOnSupportTicket !== false) {
           sendEmail({
             email: alertEmail,
-            toName: 'MakaziFlow Admin',
-            subject: `[${ticketNumber}] New Landing Inquiry from ${cleanName}`,
-            message: `<p><strong>Name:</strong> ${cleanName}<br/><strong>Email:</strong> ${cleanEmail}<br/><strong>Phone:</strong> ${cleanPhone}<br/><strong>Role:</strong> ${roleLabel} (${unitsLabel || 'N/A'})</p><p>${derivedBody.replace(/\n/g, '<br/>')}</p>`
+            toName: 'AfriNexTech / Msimamizi Admin',
+            subject: `[${resolvedPlatformLabel} · ${ticketNumber}] New Inquiry from ${cleanName}`,
+            message: `<p><strong>Platform:</strong> ${resolvedPlatformLabel}<br/><strong>Name:</strong> ${cleanName}<br/><strong>Email:</strong> ${cleanEmail}<br/><strong>Phone:</strong> ${cleanPhone || 'N/A'}<br/><strong>Role:</strong> ${roleLabel}</p><p>${derivedBody.replace(/\n/g, '<br/>')}</p>`
           }).catch(() => {});
         }
       }).catch(() => {});
@@ -243,9 +273,12 @@ router.post('/contact', contactLimiter, async (req, res) => {
       ticket
     });
   } catch (error) {
-    console.error('Public contact submission error:', error.message);
-    return res.status(500).json({ message: 'Failed to submit contact inquiry. Please try again.' });
+    console.error('Public contact/platform support submission error:', error.message);
+    return res.status(500).json({ message: 'Failed to submit support inquiry. Please try again.' });
   }
-});
+}
+
+router.post('/contact', contactLimiter, handleUnifiedPublicSupport);
+router.post('/afrinextech/support', contactLimiter, handleUnifiedPublicSupport);
 
 module.exports = router;

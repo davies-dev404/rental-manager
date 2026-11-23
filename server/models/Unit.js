@@ -10,6 +10,7 @@ const unitSchema = new mongoose.Schema({
   bedrooms: { type: Number, default: 1 },
   bathrooms: { type: Number, default: 1 },
   size: { type: Number }, // sqft
+  isDemo: { type: Boolean, default: false, index: true },
   createdAt: { type: Date, default: Date.now }
 });
 

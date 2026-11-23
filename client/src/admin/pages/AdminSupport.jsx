@@ -17,7 +17,7 @@ import {
   DialogDescription,
   DialogFooter
 } from "@/components/ui/dialog";
-import { Search, LifeBuoy, Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
+import { Search, LifeBuoy, Clock, CheckCircle2, AlertCircle, MessageSquare, Globe } from "lucide-react";
 
 export default function AdminSupport() {
   const { toast } = useToast();
@@ -26,6 +26,7 @@ export default function AdminSupport() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
+  const [platform, setPlatform] = useState("all");
   const [page, setPage] = useState(1);
 
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -36,8 +37,8 @@ export default function AdminSupport() {
   const [nextAssignee, setNextAssignee] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-support", search, status, category, page],
-    queryFn: () => adminService.getSupportTickets({ search, status, category, page, limit: 15 })
+    queryKey: ["admin-support", search, status, category, platform, page],
+    queryFn: () => adminService.getSupportTickets({ search, status, category, platform, page, limit: 15 })
   });
 
   const updateMutation = useMutation({
@@ -54,6 +55,7 @@ export default function AdminSupport() {
 
   const summary = data?.summary || {};
   const admins = data?.admins || [];
+  const platforms = data?.platforms || [];
 
   const openTicketModal = (t) => {
     setSelectedTicket(t);
@@ -96,7 +98,10 @@ export default function AdminSupport() {
       key: "category",
       label: "Category / Priority",
       render: (t) => (
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline" className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+            {t.platformLabel || t.platform || "MakaziFlow"}
+          </Badge>
           <Badge variant="outline" className="text-[10px] capitalize">{t.category.replace(/_/g, " ")}</Badge>
           <Badge
             variant="outline"
@@ -147,10 +152,43 @@ export default function AdminSupport() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Support Management</h1>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">Support Management (AfriNexTech Hub)</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Categorize user requests, assign administrators, record replies, and track resolution turnaround times.
+          Unified support desk across MakaziFlow and all AfriNexTech platforms. Categorize requests, assign administrators, and reply directly via email.
         </p>
+      </div>
+
+      {/* AfriNexTech Multi-Platform Filter Bar */}
+      <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 mr-1">
+            <Globe className="w-3.5 h-3.5 text-[#00a99d]" /> Platforms:
+          </span>
+          <button
+            type="button"
+            onClick={() => { setPlatform("all"); setPage(1); }}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer ${
+              platform === "all" ? "bg-[#0d2240] text-white border-[#0d2240]" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+            }`}
+          >
+            All Platforms
+          </button>
+          {platforms.map((pf) => (
+            <button
+              key={pf.id}
+              type="button"
+              onClick={() => { setPlatform(pf.id); setPage(1); }}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium border cursor-pointer ${
+                platform === pf.id ? "bg-[#00a99d] text-white border-[#00a99d]" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
+              }`}
+            >
+              {pf.label} ({pf.open}/{pf.total})
+            </button>
+          ))}
+        </div>
+        <span className="text-[10.5px] font-mono text-slate-400">
+          Sync API: POST /api/public/afrinextech/support
+        </span>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -160,11 +198,19 @@ export default function AdminSupport() {
         <StatCard title="Avg Resolution Time" value={`${summary.avgResolutionHours || 0} hrs`} icon={LifeBuoy} accent="teal" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="relative sm:col-span-2">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
           <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search ticket #, subject, name, email..." className="pl-8 h-8.5 text-xs" />
         </div>
+        <select value={platform} onChange={(e) => { setPlatform(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
+          <option value="all">All Platforms</option>
+          <option value="makaziflow">MakaziFlow</option>
+          <option value="afrinextech">AfriNexTech</option>
+          {platforms.filter((p) => p.id !== "makaziflow" && p.id !== "afrinextech").map((p) => (
+            <option key={p.id} value={p.id}>{p.label}</option>
+          ))}
+        </select>
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
           <option value="all">All Statuses</option>
           <option value="open">Open</option>

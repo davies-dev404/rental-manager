@@ -37,6 +37,7 @@ async function seedDemoDataForUser(user) {
     location: 'Argwings Kodhek Rd, Kilimani, Nairobi',
     type: 'Apartment',
     user: userId,
+    isDemo: true,
     image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=600&q=80'
   });
 
@@ -45,6 +46,7 @@ async function seedDemoDataForUser(user) {
     location: 'Muthithi Rd, Westlands, Nairobi',
     type: 'Commercial & Residential',
     user: userId,
+    isDemo: true,
     image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80'
   });
 
@@ -53,6 +55,7 @@ async function seedDemoDataForUser(user) {
     location: 'Off Thika Superhighway, Roysambu, Nairobi',
     type: 'Apartment',
     user: userId,
+    isDemo: true,
     image: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=600&q=80'
   });
 
@@ -61,6 +64,7 @@ async function seedDemoDataForUser(user) {
     location: 'Karen Road, Karen, Nairobi',
     type: 'Villa',
     user: userId,
+    isDemo: true,
     image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=80'
   });
 
@@ -69,46 +73,47 @@ async function seedDemoDataForUser(user) {
     location: 'Eastern Bypass, Ruiru, Kiambu',
     type: 'Apartment',
     user: userId,
+    isDemo: true,
     image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=600&q=80'
   });
 
   // ─── 2. UNITS ────────────────────────────────────────────────────────────
   // Kilimani (5 units)
-  const ukA101 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'A101', type: '2 Bedroom', user: userId, rentAmount: 45000, status: 'occupied', bedrooms: 2, bathrooms: 2, size: 1150 });
-  const ukA102 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'A102', type: '2 Bedroom', user: userId, rentAmount: 45000, status: 'occupied', bedrooms: 2, bathrooms: 2, size: 1150 });
-  const ukB201 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'B201', type: '3 Bedroom Penthouse', user: userId, rentAmount: 75000, status: 'occupied', bedrooms: 3, bathrooms: 3, size: 1800 });
-  await Unit.create({ propertyId: propKilimani._id, unitNumber: 'B202', type: '1 Bedroom Executive', user: userId, rentAmount: 32000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 650 });
-  const ukC301 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'C301', type: 'Studio', user: userId, rentAmount: 22000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 420 });
+  const ukA101 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'A101', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 45000, status: 'occupied', bedrooms: 2, bathrooms: 2, size: 1150 });
+  const ukA102 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'A102', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 45000, status: 'occupied', bedrooms: 2, bathrooms: 2, size: 1150 });
+  const ukB201 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'B201', type: '3 Bedroom Penthouse', user: userId, isDemo: true, rentAmount: 75000, status: 'occupied', bedrooms: 3, bathrooms: 3, size: 1800 });
+  await Unit.create({ propertyId: propKilimani._id, unitNumber: 'B202', type: '1 Bedroom Executive', user: userId, isDemo: true, rentAmount: 32000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 650 });
+  const ukC301 = await Unit.create({ propertyId: propKilimani._id, unitNumber: 'C301', type: 'Studio', user: userId, isDemo: true, rentAmount: 22000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 420 });
 
   // Westlands (4 units)
-  const uwS101 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Suite 101', type: 'Commercial Office', user: userId, rentAmount: 85000, status: 'occupied', bedrooms: 0, bathrooms: 2, size: 1200 });
-  const uwS201 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Studio 201', type: 'Studio', user: userId, rentAmount: 28000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 450 });
-  await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Studio 202', type: 'Studio', user: userId, rentAmount: 28000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 450 });
-  const uwP301 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Penthouse 301', type: '3 Bedroom Penthouse', user: userId, rentAmount: 120000, status: 'occupied', bedrooms: 3, bathrooms: 3, size: 2200 });
+  const uwS101 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Suite 101', type: 'Commercial Office', user: userId, isDemo: true, rentAmount: 85000, status: 'occupied', bedrooms: 0, bathrooms: 2, size: 1200 });
+  const uwS201 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Studio 201', type: 'Studio', user: userId, isDemo: true, rentAmount: 28000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 450 });
+  await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Studio 202', type: 'Studio', user: userId, isDemo: true, rentAmount: 28000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 450 });
+  const uwP301 = await Unit.create({ propertyId: propWestlands._id, unitNumber: 'Penthouse 301', type: '3 Bedroom Penthouse', user: userId, isDemo: true, rentAmount: 120000, status: 'occupied', bedrooms: 3, bathrooms: 3, size: 2200 });
 
   // Roysambu (5 units)
-  const urR101 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-101', type: '1 Bedroom', user: userId, rentAmount: 18000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 550 });
-  const urR102 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-102', type: 'Bedsitter', user: userId, rentAmount: 12000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 320 });
-  await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-103', type: '1 Bedroom', user: userId, rentAmount: 18000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 550 });
-  const urR201 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-201', type: '2 Bedroom', user: userId, rentAmount: 25000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 780 });
-  const urR202 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-202', type: '2 Bedroom', user: userId, rentAmount: 25000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 780 });
+  const urR101 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-101', type: '1 Bedroom', user: userId, isDemo: true, rentAmount: 18000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 550 });
+  const urR102 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-102', type: 'Bedsitter', user: userId, isDemo: true, rentAmount: 12000, status: 'occupied', bedrooms: 1, bathrooms: 1, size: 320 });
+  await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-103', type: '1 Bedroom', user: userId, isDemo: true, rentAmount: 18000, status: 'vacant', bedrooms: 1, bathrooms: 1, size: 550 });
+  const urR201 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-201', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 25000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 780 });
+  const urR202 = await Unit.create({ propertyId: propRoysambu._id, unitNumber: 'R-202', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 25000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 780 });
 
   // Karen (3 units — 2 occupied, 1 vacant)
-  const uvK1 = await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 1', type: '4 Bedroom Villa', user: userId, rentAmount: 180000, status: 'occupied', bedrooms: 4, bathrooms: 4, size: 3800 });
-  const uvK2 = await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 2', type: '4 Bedroom Villa', user: userId, rentAmount: 175000, status: 'occupied', bedrooms: 4, bathrooms: 4, size: 3600 });
-  await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 3', type: '3 Bedroom Villa', user: userId, rentAmount: 145000, status: 'vacant', bedrooms: 3, bathrooms: 3, size: 2900 });
+  const uvK1 = await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 1', type: '4 Bedroom Villa', user: userId, isDemo: true, rentAmount: 180000, status: 'occupied', bedrooms: 4, bathrooms: 4, size: 3800 });
+  const uvK2 = await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 2', type: '4 Bedroom Villa', user: userId, isDemo: true, rentAmount: 175000, status: 'occupied', bedrooms: 4, bathrooms: 4, size: 3600 });
+  await Unit.create({ propertyId: propKaren._id, unitNumber: 'Villa 3', type: '3 Bedroom Villa', user: userId, isDemo: true, rentAmount: 145000, status: 'vacant', bedrooms: 3, bathrooms: 3, size: 2900 });
 
   // Thika (4 units — 3 occupied, 1 vacant)
-  const utT101 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-101', type: '2 Bedroom', user: userId, rentAmount: 20000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 650 });
-  const utT102 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-102', type: '2 Bedroom', user: userId, rentAmount: 20000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 650 });
-  const utT201 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-201', type: '3 Bedroom', user: userId, rentAmount: 30000, status: 'occupied', bedrooms: 3, bathrooms: 2, size: 900 });
-  await Unit.create({ propertyId: propThika._id, unitNumber: 'T-202', type: '3 Bedroom', user: userId, rentAmount: 30000, status: 'vacant', bedrooms: 3, bathrooms: 2, size: 900 });
+  const utT101 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-101', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 20000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 650 });
+  const utT102 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-102', type: '2 Bedroom', user: userId, isDemo: true, rentAmount: 20000, status: 'occupied', bedrooms: 2, bathrooms: 1, size: 650 });
+  const utT201 = await Unit.create({ propertyId: propThika._id, unitNumber: 'T-201', type: '3 Bedroom', user: userId, isDemo: true, rentAmount: 30000, status: 'occupied', bedrooms: 3, bathrooms: 2, size: 900 });
+  await Unit.create({ propertyId: propThika._id, unitNumber: 'T-202', type: '3 Bedroom', user: userId, isDemo: true, rentAmount: 30000, status: 'vacant', bedrooms: 3, bathrooms: 2, size: 900 });
 
   // ─── 3. TENANTS ──────────────────────────────────────────────────────────
   const leaseStart = d(-8);
   const leaseEnd   = d(4);
   const mkTenant = (data) => Tenant.create({
-    user: userId, status: 'active', leaseStart, leaseEnd,
+    user: userId, isDemo: true, status: 'active', leaseStart, leaseEnd,
     deposit: data.rentAmount, nextPaymentDate: d(1, 5), idType: 'national_id',
     ...data
   });
@@ -166,7 +171,7 @@ async function seedDemoDataForUser(user) {
 
       const dayPaid = Math.floor(Math.random() * 9) + 2;
       paymentRecords.push({
-        tenantId: td.t._id, unitId: td.u._id, amount, user: userId,
+        tenantId: td.t._id, unitId: td.u._id, amount, user: userId, isDemo: true,
         rentAmount: td.rent, utilityAmount: td.util,
         method: methods[Math.floor(Math.random() * methods.length)],
         status, monthCovered: monthStr(mo), type: 'Rent',
@@ -177,11 +182,11 @@ async function seedDemoDataForUser(user) {
 
   // Security deposit records at move-in
   paymentRecords.push(
-    { tenantId: t01._id, unitId: ukA101._id, amount: 45000,  user: userId, rentAmount: 0, depositAmount: 45000,  utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
-    { tenantId: t05._id, unitId: uwS101._id, amount: 85000,  user: userId, rentAmount: 0, depositAmount: 85000,  utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
-    { tenantId: t07._id, unitId: uwP301._id, amount: 120000, user: userId, rentAmount: 0, depositAmount: 120000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
-    { tenantId: t12._id, unitId: uvK1._id,   amount: 180000, user: userId, rentAmount: 0, depositAmount: 180000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
-    { tenantId: t13._id, unitId: uvK2._id,   amount: 175000, user: userId, rentAmount: 0, depositAmount: 175000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) }
+    { tenantId: t01._id, unitId: ukA101._id, amount: 45000,  user: userId, isDemo: true, rentAmount: 0, depositAmount: 45000,  utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
+    { tenantId: t05._id, unitId: uwS101._id, amount: 85000,  user: userId, isDemo: true, rentAmount: 0, depositAmount: 85000,  utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
+    { tenantId: t07._id, unitId: uwP301._id, amount: 120000, user: userId, isDemo: true, rentAmount: 0, depositAmount: 120000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
+    { tenantId: t12._id, unitId: uvK1._id,   amount: 180000, user: userId, isDemo: true, rentAmount: 0, depositAmount: 180000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) },
+    { tenantId: t13._id, unitId: uvK2._id,   amount: 175000, user: userId, isDemo: true, rentAmount: 0, depositAmount: 175000, utilityAmount: 0, method: 'Bank Transfer', status: 'paid', monthCovered: monthStr(-8), type: 'Deposit', reference: mpesa(), date: d(-8, 1) }
   );
 
   await Payment.insertMany(paymentRecords);

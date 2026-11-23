@@ -24,10 +24,19 @@ const supportTicketSchema = new mongoose.Schema({
   },
   source: {
     type: String,
-    enum: ['app_support', 'landing_page'],
+    enum: ['app_support', 'landing_page', 'afrinextech_platform', 'api_webhook'],
     default: 'app_support',
     index: true
   },
+  platform: {
+    type: String,
+    default: 'makaziflow',
+    trim: true,
+    lowercase: true,
+    index: true
+  },
+  platformLabel: { type: String, default: 'MakaziFlow', trim: true },
+  externalReference: { type: String, default: '', trim: true },
   organizationRole: { type: String, default: '' },
   unitsEstimate: { type: String, default: '' },
   priority: {

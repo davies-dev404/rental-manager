@@ -1,6 +1,10 @@
 const Tenant = require('../../models/Tenant');
+const Property = require('../../models/Property');
+const Unit = require('../../models/Unit');
+const User = require('../../models/User');
 const Payment = require('../../models/Payment');
 const { escapeRegExp, isValidObjectId } = require('../../middleware/securityMiddleware');
+const { getDemoExclusionScope } = require('../../services/adminScopeService');
 
 function maskIdNumber(val) {
   const s = String(val || '').trim();
@@ -14,9 +18,10 @@ exports.listTenants = async (req, res) => {
     const page = Math.max(1, Number(req.query.page || 1));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const skip = (page - 1) * limit;
-    const { search = '', status = 'all', landlordId = 'all' } = req.query;
+    const { search = '', status = 'all', landlordId = 'all', propertyId = 'all' } = req.query;
 
-    const filter = {};
+    const scope = await getDemoExclusionScope();
+    const filter = { ...scope.tenantExcludeFilter };
     if (search && String(search).trim()) {
       const rx = new RegExp(escapeRegExp(String(search).trim()), 'i');
       filter.$or = [{ name: rx }, { email: rx }, { phone: rx }, { accountNumber: rx }];
@@ -32,7 +37,22 @@ exports.listTenants = async (req, res) => {
       filter.user = landlordId;
     }
 
-    const [total, tenants] = await Promise.all([
+    if (propertyId && propertyId !== 'all') {
+      if (propertyId === 'unassigned') {
+        filter.$or = [...(filter.$or ? [filter.$or] : []), { unitId: null }, { unitId: { $exists: false } }];
+        if (filter.$or.length === 3 && Array.isArray(filter.$or[0])) {
+          // If search already set $or, combine via $and
+          const searchOr = filter.$or[0];
+          delete filter.$or;
+          filter.$and = [{ $or: searchOr }, { $or: [{ unitId: null }, { unitId: { $exists: false } }] }];
+        }
+      } else if (isValidObjectId(String(propertyId))) {
+        const unitsForProp = await Unit.find({ propertyId, ...scope.unitExcludeFilter }).select('_id').lean();
+        filter.unitId = { $in: unitsForProp.map((u) => u._id) };
+      }
+    }
+
+    const [total, tenants, propertiesList, landlordsList, allUnitsForSummary, allTenantsForSummary] = await Promise.all([
       Tenant.countDocuments(filter),
       Tenant.find(filter)
         .select('name email phone user unitId status leaseStart leaseEnd rentAmount deposit accountNumber moveInDate moveOutDate nextPaymentDate createdAt')
@@ -45,12 +65,57 @@ exports.listTenants = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean()
+        .lean(),
+      Property.find(scope.propertyExcludeFilter)
+        .populate('user', 'name email')
+        .select('name location type user')
+        .sort({ name: 1 })
+        .lean(),
+      User.find({ ...scope.userExcludeFilter, role: { $in: ['admin', 'landlord'] }, isSuperAdmin: { $ne: true } })
+        .select('name email')
+        .sort({ name: 1 })
+        .limit(200)
+        .lean(),
+      Unit.find(scope.unitExcludeFilter).select('_id propertyId').lean(),
+      Tenant.find(scope.tenantExcludeFilter).select('unitId status').lean()
     ]);
+
+    const unitToProp = new Map(allUnitsForSummary.map((u) => [String(u._id), String(u.propertyId)]));
+    const propCounts = new Map();
+    let unassignedCount = 0;
+    allTenantsForSummary.forEach((t) => {
+      const pId = t.unitId ? unitToProp.get(String(t.unitId)) : null;
+      if (pId) {
+        const cur = propCounts.get(pId) || { total: 0, active: 0 };
+        cur.total += 1;
+        if (t.status === 'active') cur.active += 1;
+        propCounts.set(pId, cur);
+      } else {
+        unassignedCount += 1;
+      }
+    });
+
+    const propertyBreakdown = propertiesList.map((p) => {
+      const c = propCounts.get(String(p._id)) || { total: 0, active: 0 };
+      return {
+        _id: p._id,
+        name: p.name,
+        location: p.location,
+        landlordName: p.user?.name || p.user?.email || '—',
+        tenantCount: c.total,
+        activeTenants: c.active
+      };
+    });
 
     const tenantIds = tenants.map((t) => t._id);
     const paymentAgg = await Payment.aggregate([
-      { $match: { tenantId: { $in: tenantIds }, status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] } } },
+      {
+        $match: {
+          tenantId: { $in: tenantIds },
+          ...scope.paymentExcludeFilter,
+          status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }
+        }
+      },
       { $group: { _id: '$tenantId', totalPaid: { $sum: '$amount' }, paymentCount: { $sum: 1 }, lastPaymentAt: { $max: '$date' } } }
     ]);
     const payMap = new Map(paymentAgg.map((p) => [String(p._id), p]));
@@ -73,6 +138,11 @@ exports.listTenants = async (req, res) => {
 
     res.json({
       items,
+      filters: {
+        properties: propertyBreakdown,
+        landlords: landlordsList,
+        unassignedCount
+      },
       pagination: {
         page,
         limit,

@@ -12,6 +12,8 @@ const AdminLog = require('../../models/AdminLog');
 const ActivityLog = require('../../models/ActivityLog');
 const PlatformSetting = require('../../models/PlatformSetting');
 const PaymentService = require('../../services/payments/PaymentService');
+const { getDemoExclusionScope, purgeSeededDemoRecords } = require('../../services/adminScopeService');
+const { logAdminAction } = require('../../utils/auditLogger');
 
 function buildLastMonths(count = 6) {
   const result = [];
@@ -34,6 +36,11 @@ exports.getOverviewDashboard = async (req, res) => {
     const in14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
     const prodMatch = { gatewayEnvironment: 'production', isSandbox: { $ne: true } };
+    const scope = await getDemoExclusionScope();
+    const settledPaymentMatch = {
+      ...scope.paymentExcludeFilter,
+      status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }
+    };
 
     const [
       userCountsAgg,
@@ -44,6 +51,8 @@ exports.getOverviewDashboard = async (req, res) => {
       txnStatusAgg,
       monthlySubRevAgg,
       totalSubRevAgg,
+      landlordRevAgg,
+      monthlyLandlordRevAgg,
       sandboxVolAgg,
       subStatusAgg,
       subPlanDistAgg,
@@ -61,6 +70,7 @@ exports.getOverviewDashboard = async (req, res) => {
       platformSetting
     ] = await Promise.all([
       User.aggregate([
+        { $match: scope.userExcludeFilter },
         {
           $group: {
             _id: null,
@@ -78,13 +88,15 @@ exports.getOverviewDashboard = async (req, res) => {
         }
       ]),
       User.countDocuments({
+        ...scope.userExcludeFilter,
         role: { $in: ['admin', 'landlord'] },
         isSuperAdmin: { $ne: true },
         accountStatus: { $nin: ['suspended', 'deactivated'] }
       }),
-      Property.countDocuments(),
-      Tenant.countDocuments(),
+      Property.countDocuments(scope.propertyExcludeFilter),
+      Tenant.countDocuments(scope.tenantExcludeFilter),
       Unit.aggregate([
+        { $match: scope.unitExcludeFilter },
         {
           $group: {
             _id: null,
@@ -129,15 +141,29 @@ exports.getOverviewDashboard = async (req, res) => {
         },
         { $group: { _id: null, total: { $sum: { $cond: [{ $gt: ['$amountPaid', 0] }, '$amountPaid', '$amount'] } } } }
       ]),
+      Payment.aggregate([
+        { $match: settledPaymentMatch },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
+      Payment.aggregate([
+        { $match: { ...settledPaymentMatch, date: { $gte: startOfMonth } } },
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+      ]),
       PaymentTransaction.aggregate([
         { $match: { status: 'paid', $or: [{ gatewayEnvironment: 'sandbox' }, { isSandbox: true }] } },
         { $group: { _id: null, total: { $sum: { $cond: [{ $gt: ['$amountPaid', 0] }, '$amountPaid', '$amount'] } }, count: { $sum: 1 } } }
       ]),
       LandlordSubscription.aggregate([
+        ...(scope.demoUserIds.length ? [{ $match: { landlordId: { $nin: scope.demoUserIds } } }] : []),
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
       LandlordSubscription.aggregate([
-        { $match: { status: { $in: ['active', 'trial', 'grace_period'] } } },
+        {
+          $match: {
+            status: { $in: ['active', 'trial', 'grace_period'] },
+            ...(scope.demoUserIds.length ? { landlordId: { $nin: scope.demoUserIds } } : {})
+          }
+        },
         { $group: { _id: '$planName', count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]),
@@ -168,7 +194,7 @@ exports.getOverviewDashboard = async (req, res) => {
         }
       ]),
       Payment.aggregate([
-        { $match: { status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }, date: { $gte: sixMonthsAgo } } },
+        { $match: { ...settledPaymentMatch, date: { $gte: sixMonthsAgo } } },
         {
           $group: {
             _id: { $dateToString: { format: '%Y-%m', date: '$date' } },
@@ -178,7 +204,7 @@ exports.getOverviewDashboard = async (req, res) => {
         }
       ]),
       User.aggregate([
-        { $match: { createdAt: { $gte: sixMonthsAgo } } },
+        { $match: { ...scope.userExcludeFilter, createdAt: { $gte: sixMonthsAgo } } },
         {
           $group: {
             _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
@@ -187,14 +213,17 @@ exports.getOverviewDashboard = async (req, res) => {
         }
       ]),
       AdminLog.find().sort({ createdAt: -1 }).limit(8).lean(),
-      ActivityLog.find().sort({ timestamp: -1 }).limit(8).lean(),
-      PaymentTransaction.find()
+      ActivityLog.find(scope.demoUserIds.length ? { userId: { $nin: scope.demoUserIds } } : {})
+        .sort({ timestamp: -1 })
+        .limit(8)
+        .lean(),
+      PaymentTransaction.find(prodMatch)
         .populate('landlordId', 'name email')
         .populate('tenantId', 'name')
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
-      User.find()
+      User.find(scope.userExcludeFilter)
         .select('name email phone role accountStatus isVerified createdAt')
         .sort({ createdAt: -1 })
         .limit(8)
@@ -335,6 +364,9 @@ exports.getOverviewDashboard = async (req, res) => {
         failedPayments: failedTxnCount,
         monthlyPlatformRevenue: monthlySubRevAgg[0]?.total || 0,
         totalPlatformRevenue: totalSubRevAgg[0]?.total || 0,
+        landlordRentalRevenueTotal: landlordRevAgg[0]?.total || 0,
+        landlordRentalRevenueMonth: monthlyLandlordRevAgg[0]?.total || 0,
+        landlordPaymentsCount: landlordRevAgg[0]?.count || 0,
         activeSubscriptions: (subStatusMap.active || 0) + (subStatusMap.trial || 0),
         expiredSubscriptions: subStatusMap.expired || 0,
         graceSubscriptions: subStatusMap.grace_period || 0,
@@ -344,6 +376,8 @@ exports.getOverviewDashboard = async (req, res) => {
         unmatchedCallbacksCount: unmatchedCallbacksCount || 0,
         sandboxTestVolume: sandboxVolAgg[0]?.total || 0,
         sandboxTestCount: sandboxVolAgg[0]?.count || 0,
+        demoPropertiesRemaining: scope.demoPropertyIds.length,
+        demoUsersRemaining: scope.demoUserIds.length,
         gatewayProvider: gwStatus.provider,
         gatewayEnvironment: gwStatus.environment || 'sandbox',
         currency: platformSetting?.defaultCurrency || 'KES'
@@ -362,5 +396,21 @@ exports.getOverviewDashboard = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Failed to load admin dashboard' });
+  }
+};
+
+exports.clearDemoData = async (req, res) => {
+  try {
+    const result = await purgeSeededDemoRecords();
+    await logAdminAction({
+      req,
+      action: 'DEMO_DATA_PURGED',
+      category: 'settings',
+      targetType: 'Platform',
+      details: `Cleared ${result.deletedProperties} demo properties, ${result.deletedUnits} demo units, ${result.deletedTenants} demo tenants, ${result.deletedPayments} demo payments across ${result.resetDemoUsers} demo-mode account(s)`
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Failed to clear demo data' });
   }
 };

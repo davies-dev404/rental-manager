@@ -8,10 +8,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Download, FileText } from "lucide-react";
 
 const REPORT_TYPES = [
-  { id: "revenue", label: "Revenue Reports" },
+  { id: "landlords", label: "Landlord Portfolio & Revenue" },
+  { id: "revenue", label: "Platform & Landlord Revenue" },
+  { id: "properties", label: "Property & Tenant Sync Reports" },
+  { id: "tenants", label: "Tenant Growth & Collections" },
   { id: "users", label: "User Registration Reports" },
-  { id: "properties", label: "Property Registration Reports" },
-  { id: "tenants", label: "Tenant Growth Reports" },
   { id: "transactions", label: "Transaction Reports" },
   { id: "subscriptions", label: "Subscription Reports" },
   { id: "occupancy", label: "Occupancy Reports" },
@@ -19,8 +20,8 @@ const REPORT_TYPES = [
 ];
 
 export default function AdminReports() {
-  const [reportType, setReportType] = useState("revenue");
-  const [period, setPeriod] = useState("monthly");
+  const [reportType, setReportType] = useState("landlords");
+  const [period, setPeriod] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -87,6 +88,7 @@ export default function AdminReports() {
       {/* Date & Summary Controls */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
         <select value={period} onChange={(e) => setPeriod(e.target.value)} className="h-8.5 rounded-md border px-2.5 text-xs bg-white dark:bg-slate-800">
+          <option value="all">All Time (Full System Sync)</option>
           <option value="weekly">Weekly Summary (Last 7 Days)</option>
           <option value="monthly">Monthly Summary (Last 30 Days)</option>
           <option value="annual">Annual Summary (Year-to-Date)</option>

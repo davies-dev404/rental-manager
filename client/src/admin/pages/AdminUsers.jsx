@@ -223,7 +223,7 @@ export default function AdminUsers() {
             <p className="text-xs text-slate-500 py-6 text-center">Loading profile...</p>
           ) : userDetail?.user && (
             <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg">
                 <div>
                   <span className="text-slate-500 block">Status</span>
                   <strong className="capitalize">{String(userDetail.user.accountStatus).replace(/_/g, " ")}</strong>
@@ -234,12 +234,82 @@ export default function AdminUsers() {
                 </div>
                 <div>
                   <span className="text-slate-500 block">Units</span>
-                  <strong>{userDetail.summary?.unitCount || 0}</strong>
+                  <strong>{userDetail.summary?.occupiedUnits || 0} / {userDetail.summary?.unitCount || 0}</strong>
                 </div>
                 <div>
                   <span className="text-slate-500 block">Tenants</span>
                   <strong>{userDetail.summary?.tenantCount || 0}</strong>
                 </div>
+                <div>
+                  <span className="text-slate-500 block">Revenue Generated</span>
+                  <strong className="text-[#00a99d]">KES {Number(userDetail.summary?.revenueGenerated || 0).toLocaleString()}</strong>
+                </div>
+              </div>
+
+              {/* Complete Registered Profile Details */}
+              <div className="border rounded-lg p-3 bg-white dark:bg-slate-900 space-y-2">
+                <h4 className="font-bold text-slate-800 dark:text-slate-200">Full Registered Account Details</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Full Name</span>
+                    <strong className="text-slate-900 dark:text-white">{userDetail.user.name || "—"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Email Address</span>
+                    <strong className="break-all">{userDetail.user.email || "—"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Phone Number</span>
+                    <strong>{userDetail.user.phone || "Not provided"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Company / Agency</span>
+                    <strong>{userDetail.user.companyName || "Individual Landlord"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Physical Address</span>
+                    <strong>{userDetail.user.address || "Not provided"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">KRA PIN</span>
+                    <strong>{userDetail.user.kraPin || "Not provided"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Role / Onboarding Role</span>
+                    <strong className="capitalize">{userDetail.user.role} ({userDetail.user.onboardingRole || "landlord"})</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Auth Provider / Verified</span>
+                    <strong className="capitalize">
+                      {userDetail.user.authProvider || "local"} · {userDetail.user.isVerified ? "Verified" : "Unverified"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Onboarding &amp; Declared Units</span>
+                    <strong>
+                      {userDetail.user.hasCompletedOnboarding ? "Completed" : "Pending"} ({userDetail.user.unitsCount || 0} units declared)
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Registered On</span>
+                    <strong>{userDetail.user.createdAt ? new Date(userDetail.user.createdAt).toLocaleString("en-KE") : "—"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Last Login</span>
+                    <strong>{userDetail.user.lastLoginAt ? new Date(userDetail.user.lastLoginAt).toLocaleString("en-KE") : "Never / Pre-tracking"}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10.5px]">Subscription / Tier</span>
+                    <strong>
+                      {userDetail.entitlement?.planName || userDetail.subscriptions?.[0]?.planName || userDetail.user.subscriptionTier || "Starter"} ({userDetail.entitlement?.status || userDetail.subscriptions?.[0]?.status || "trial"})
+                    </strong>
+                  </div>
+                </div>
+                {userDetail.user.suspendedReason && (
+                  <p className="text-[11px] text-rose-600 pt-1">
+                    <strong>Suspension Reason:</strong> {userDetail.user.suspendedReason}
+                  </p>
+                )}
               </div>
 
               {userDetail.user.role !== "superadmin" && !userDetail.user.isSuperAdmin && (
@@ -269,9 +339,30 @@ export default function AdminUsers() {
                 ) : (
                   <div className="space-y-1.5">
                     {userDetail.properties.map((p) => (
-                      <div key={p._id} className="border rounded-md p-2 flex justify-between items-center">
-                        <span><strong>{p.name}</strong> · {p.location}</span>
+                      <div key={p._id} className="border rounded-md p-2 flex flex-wrap justify-between items-center gap-2">
+                        <div>
+                          <p><strong>{p.name}</strong> · {p.location}</p>
+                          <p className="text-[10.5px] text-slate-500">
+                            {p.occupiedUnits || 0}/{p.unitCount || 0} units occupied · {p.tenantCount || 0} tenant(s) · KES {Number(p.revenueGenerated || 0).toLocaleString()} generated
+                          </p>
+                        </div>
                         <Badge variant="outline" className="text-[10px]">{p.type || "Apartment"}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-1.5">Registered Tenants ({userDetail.tenants?.length || 0})</h4>
+                {(userDetail.tenants || []).length === 0 ? (
+                  <p className="text-slate-400">No tenants registered under this landlord.</p>
+                ) : (
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {userDetail.tenants.map((t) => (
+                      <div key={t._id} className="border rounded-md px-2.5 py-1.5 flex justify-between items-center">
+                        <span><strong>{t.name}</strong> · {t.phone}</span>
+                        <span className="text-slate-600">KES {Number(t.rentAmount || 0).toLocaleString()} ({t.status})</span>
                       </div>
                     ))}
                   </div>

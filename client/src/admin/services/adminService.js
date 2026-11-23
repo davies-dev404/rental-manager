@@ -67,6 +67,14 @@ export const adminService = {
     });
     return parseApiResponse(res, "Failed to load dashboard statistics");
   },
+  clearDemoData: async () => {
+    const res = await smartFetch(`${API_URL}/admin/system/clear-demo-data`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to clear demo records");
+  },
 
   // Users
   getUsers: async (params = {}) => {

@@ -1,8 +1,9 @@
 import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
 import StatCard from "../components/StatCard";
 import RevenueChart from "../components/RevenueChart";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,20 +22,37 @@ import {
   Ban,
   RefreshCw,
   Bell,
-  Activity
+  Activity,
+  Trash2
 } from "lucide-react";
 
 export default function AdminDashboard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["admin-dashboard"],
     queryFn: adminService.getDashboard,
     staleTime: 30_000
   });
 
+  const clearDemoMutation = useMutation({
+    mutationFn: () => adminService.clearDemoData(),
+    onSuccess: (res) => {
+      toast({
+        title: "Demo Data Cleared",
+        description: `Removed ${res.deletedProperties || 0} demo properties, ${res.deletedTenants || 0} demo tenants, and ${res.deletedPayments || 0} demo payments.`
+      });
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Cleanup Failed", description: err.message })
+  });
+
   const m = data?.metrics || {};
   const charts = data?.charts || {};
   const feeds = data?.feeds || {};
   const currency = m.currency || "KES";
+  const hasDemoLeftovers = (m.demoPropertiesRemaining || 0) > 0 || (m.demoUsersRemaining || 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -64,6 +82,35 @@ export default function AdminDashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Demo Data Cleanup Prompt */}
+      {hasDemoLeftovers && (
+        <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+          <CardContent className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs">
+              <p className="font-bold text-slate-900 dark:text-white">
+                Seeded Demo Records Excluded From Live Metrics
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {m.demoPropertiesRemaining || 0} demo property record(s) and {m.demoUsersRemaining || 0} demo-mode account(s) exist in MongoDB and are already filtered out of this dashboard. You can also purge those leftover sample documents permanently.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={clearDemoMutation.isPending}
+              onClick={() => {
+                if (!window.confirm("Permanently delete all seeded demo properties, units, tenants, and demo payments from the database? Real landlord properties will NOT be touched.")) return;
+                clearDemoMutation.mutate();
+              }}
+              className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 shrink-0 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              {clearDemoMutation.isPending ? "Clearing..." : "Purge Demo Data"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* System Notifications Banner */}
       {(feeds.systemNotifications || []).length > 0 && (
@@ -99,17 +146,17 @@ export default function AdminDashboard() {
         <StatCard title="Occupied Units" value={isLoading ? "…" : m.occupiedUnits || 0} icon={CheckCircle2} accent="teal" />
         <StatCard title="Vacant Units" value={isLoading ? "…" : m.vacantUnits || 0} icon={DoorOpen} accent="slate" />
         <StatCard
-          title="Payments Processed"
-          value={isLoading ? "…" : m.totalPaymentsProcessed || 0}
-          subtitle={`${currency} ${Number(m.totalProcessedVolume || 0).toLocaleString()}`}
+          title="Landlord Collections"
+          value={`${currency} ${Number(m.landlordRentalRevenueTotal || 0).toLocaleString()}`}
+          subtitle={`${m.landlordPaymentsCount || 0} settled · Gateway: ${m.totalPaymentsProcessed || 0} (${currency} ${Number(m.totalProcessedVolume || 0).toLocaleString()})`}
           icon={CreditCard}
           accent="teal"
         />
 
         <StatCard
-          title="Monthly Revenue"
+          title="Platform SaaS Revenue"
           value={`${currency} ${Number(m.monthlyPlatformRevenue || 0).toLocaleString()}`}
-          subtitle={`Total: ${currency} ${Number(m.totalPlatformRevenue || 0).toLocaleString()}`}
+          subtitle={`Lifetime Subs: ${currency} ${Number(m.totalPlatformRevenue || 0).toLocaleString()}`}
           icon={TrendingUp}
           accent="teal"
         />

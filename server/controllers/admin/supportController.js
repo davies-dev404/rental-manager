@@ -14,18 +14,19 @@ exports.listTickets = async (req, res) => {
     const page = Math.max(1, Number(req.query.page || 1));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
     const skip = (page - 1) * limit;
-    const { search = '', status = 'all', category = 'all', priority = 'all' } = req.query;
+    const { search = '', status = 'all', category = 'all', priority = 'all', platform = 'all' } = req.query;
 
     const filter = {};
     if (status && status !== 'all' && VALID_STATUSES.has(String(status))) filter.status = String(status);
     if (category && category !== 'all' && VALID_CATEGORIES.has(String(category))) filter.category = String(category);
     if (priority && priority !== 'all' && VALID_PRIORITIES.has(String(priority))) filter.priority = String(priority);
+    if (platform && platform !== 'all') filter.platform = String(platform).trim().toLowerCase();
     if (search && String(search).trim()) {
       const rx = new RegExp(escapeRegExp(String(search).trim()), 'i');
-      filter.$or = [{ ticketNumber: rx }, { subject: rx }, { name: rx }, { email: rx }];
+      filter.$or = [{ ticketNumber: rx }, { subject: rx }, { name: rx }, { email: rx }, { platformLabel: rx }];
     }
 
-    const [total, items, statusAgg, resolvedTickets, admins] = await Promise.all([
+    const [total, items, statusAgg, platformAgg, resolvedTickets, admins] = await Promise.all([
       SupportTicket.countDocuments(filter),
       SupportTicket.find(filter)
         .populate('userId', 'name email role')
@@ -35,6 +36,19 @@ exports.listTickets = async (req, res) => {
         .limit(limit)
         .lean(),
       SupportTicket.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      SupportTicket.aggregate([
+        {
+          $group: {
+            _id: { $ifNull: ['$platform', 'makaziflow'] },
+            label: { $first: { $ifNull: ['$platformLabel', 'MakaziFlow'] } },
+            total: { $sum: 1 },
+            open: {
+              $sum: { $cond: [{ $in: ['$status', ['open', 'in_progress', 'pending']] }, 1, 0] }
+            }
+          }
+        },
+        { $sort: { total: -1 } }
+      ]),
       SupportTicket.find({ resolvedAt: { $exists: true, $ne: null } }).select('createdAt resolvedAt').limit(200).lean(),
       User.find({ $or: [{ role: 'superadmin' }, { isSuperAdmin: true }] }).select('name email').lean()
     ]);
@@ -51,9 +65,17 @@ exports.listTickets = async (req, res) => {
       avgResolutionHours = Math.round((totalHrs / resolvedTickets.length) * 10) / 10;
     }
 
+    const platforms = platformAgg.map((p) => ({
+      id: p._id || 'makaziflow',
+      label: p.label || (p._id === 'afrinextech' ? 'AfriNexTech' : p._id),
+      total: p.total,
+      open: p.open
+    }));
+
     res.json({
       items,
       admins,
+      platforms,
       summary: {
         open: statusCounts.open || 0,
         in_progress: statusCounts.in_progress || 0,

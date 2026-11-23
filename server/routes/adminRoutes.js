@@ -18,8 +18,9 @@ const activityController = require('../controllers/admin/activityController');
 router.use(requireSuperAdmin);
 router.use(adminActionLimiter);
 
-// Overview Dashboard
+// Overview Dashboard & Demo Data Maintenance Cleanup
 router.get('/dashboard', dashboardController.getOverviewDashboard);
+router.post('/system/clear-demo-data', dashboardController.clearDemoData);
 
 // User Management
 router.get('/users', userController.listUsers);

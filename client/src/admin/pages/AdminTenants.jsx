@@ -12,18 +12,23 @@ import {
   DialogTitle,
   DialogDescription
 } from "@/components/ui/dialog";
-import { Search, Eye, UserCheck } from "lucide-react";
+import { Search, Eye, UserCheck, Building2 } from "lucide-react";
 
 export default function AdminTenants() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const [propertyId, setPropertyId] = useState("all");
+  const [landlordId, setLandlordId] = useState("all");
   const [page, setPage] = useState(1);
   const [detailId, setDetailId] = useState(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-tenants", search, status, page],
-    queryFn: () => adminService.getTenants({ search, status, page, limit: 15 })
+    queryKey: ["admin-tenants", search, status, propertyId, landlordId, page],
+    queryFn: () => adminService.getTenants({ search, status, propertyId, landlordId, page, limit: 15 })
   });
+
+  const registeredProperties = data?.filters?.properties || [];
+  const registeredLandlords = data?.filters?.landlords || [];
 
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ["admin-tenant-detail", detailId],
@@ -109,20 +114,72 @@ export default function AdminTenants() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Tenant Monitoring</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Monitor platform-wide tenancies, lease coverage, inactive tenancy records, and authorized payment summaries.
+          View and filter tenants per registered property, inspect lease coverage, inactive records, and payment summaries.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="relative sm:col-span-2">
+      {/* Quick Property Selector Chips */}
+      {registeredProperties.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+            <Building2 className="w-3.5 h-3.5 text-[#00a99d]" />
+            <span>View Tenants By Registered Property</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => { setPropertyId("all"); setPage(1); }}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold border transition cursor-pointer ${
+                propertyId === "all"
+                  ? "bg-[#0d2240] text-white border-[#0d2240]"
+                  : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              All Registered Properties
+            </button>
+            {registeredProperties.map((p) => (
+              <button
+                key={p._id}
+                type="button"
+                onClick={() => { setPropertyId(p._id); setPage(1); }}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium border transition cursor-pointer ${
+                  propertyId === p._id
+                    ? "bg-[#00a99d] text-white border-[#00a99d]"
+                    : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {p.name} ({p.tenantCount})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
           <Input
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search tenant by name, email, phone or account #..."
+            placeholder="Search name, email, phone..."
             className="pl-8 h-8.5 text-xs"
           />
         </div>
+        <select value={propertyId} onChange={(e) => { setPropertyId(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
+          <option value="all">All Registered Properties</option>
+          {registeredProperties.map((p) => (
+            <option key={p._id} value={p._id}>{p.name} · {p.location} ({p.tenantCount})</option>
+          ))}
+          {(data?.filters?.unassignedCount || 0) > 0 && (
+            <option value="unassigned">Unassigned Unit ({data.filters.unassignedCount})</option>
+          )}
+        </select>
+        <select value={landlordId} onChange={(e) => { setLandlordId(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
+          <option value="all">All Landlords</option>
+          {registeredLandlords.map((l) => (
+            <option key={l._id} value={l._id}>{l.name} ({l.email})</option>
+          ))}
+        </select>
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
           <option value="all">All Tenancy Statuses</option>
           <option value="active">Active Tenancies</option>

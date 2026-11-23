@@ -468,7 +468,120 @@ async function runTests() {
     assert.ok(logsData.items.length >= 6, 'AdminLog must capture security, moderation, settings, and support audit actions');
     console.log('✅ PASS 6: Support tickets, maintenance mode enforcement, zero secret exposure, and immutable AdminLogs verified');
 
-    console.log('\n🎉 ALL 6 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
+    // 7. Demo Exclusion/Purge, Full User Profile, Per-Property Tenants, Synced Reports & AfriNexTech Multi-Platform Support
+    const demoProp = await Property.create({
+      name: 'Thika Road Mansions',
+      location: 'Eastern Bypass, Ruiru, Kiambu',
+      type: 'Apartment',
+      user: landlord._id,
+      isDemo: true
+    });
+    const demoUnit = await Unit.create({
+      propertyId: demoProp._id,
+      unitNumber: 'DEMO-1',
+      user: landlord._id,
+      rentAmount: 100000,
+      status: 'occupied',
+      isDemo: true
+    });
+    await Payment.create({
+      tenantId: tenantRec._id,
+      unitId: demoUnit._id,
+      amount: 100000,
+      user: landlord._id,
+      method: 'M-Pesa Paybill',
+      status: 'paid',
+      reference: 'DEMO-FAKE-REV',
+      isDemo: true,
+      date: new Date()
+    });
+    const realPayment = await Payment.create({
+      tenantId: tenantRec._id,
+      unitId: tenantRec.unitId,
+      amount: 35000,
+      user: landlord._id,
+      method: 'M-Pesa Paybill',
+      status: 'paid',
+      reference: 'MPESA-REAL-001',
+      date: new Date()
+    });
+    assert.ok(realPayment._id);
+
+    // Demo property & demo revenue (100000) must be excluded automatically from dashboard & properties list
+    const dashAfterDemoRes = await fetch(`${baseUrl}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${superToken}` } });
+    const dashAfterDemo = await dashAfterDemoRes.json();
+    assert.strictEqual(dashAfterDemo.metrics.totalProperties, 1, 'Seeded demo property must be excluded from Overview');
+    assert.strictEqual(dashAfterDemo.metrics.landlordRentalRevenueTotal, 60000, 'Real landlord payment revenue (25k + 35k) must sync to Overview while excluding demo 100k');
+
+    const propAfterDemoRes = await fetch(`${baseUrl}/api/admin/properties`, { headers: { Authorization: `Bearer ${superToken}` } });
+    const propAfterDemo = await propAfterDemoRes.json();
+    assert.strictEqual(propAfterDemo.items.length, 1);
+    assert.strictEqual(propAfterDemo.items[0].unitStats.tenantCount, 1);
+    assert.strictEqual(propAfterDemo.items[0].unitStats.revenueGenerated, 60000);
+
+    // Purge demo data leaves real property intact while removing demoProp
+    const purgeRes = await fetch(`${baseUrl}/api/admin/system/clear-demo-data`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(purgeRes.status, 200);
+    const purgeData = await purgeRes.json();
+    assert.strictEqual(purgeData.deletedProperties, 1);
+    assert.strictEqual(await Property.findById(demoProp._id), null);
+    assert.ok(await Property.findById(prop._id), 'Real property must never be removed during demo purge');
+
+    // Full user profile details & landlord revenue summary
+    const userDetailRes = await fetch(`${baseUrl}/api/admin/users/${landlord._id}`, { headers: { Authorization: `Bearer ${superToken}` } });
+    assert.strictEqual(userDetailRes.status, 200);
+    const userDetail = await userDetailRes.json();
+    assert.strictEqual(userDetail.user.email, 'jane_landlord@test.local');
+    assert.strictEqual(userDetail.summary.tenantCount, 1);
+    assert.strictEqual(userDetail.summary.revenueGenerated, 60000);
+
+    // Tenants filterable per registered property
+    const propTenantsRes = await fetch(`${baseUrl}/api/admin/tenants?propertyId=${prop._id}`, { headers: { Authorization: `Bearer ${superToken}` } });
+    assert.strictEqual(propTenantsRes.status, 200);
+    const propTenantsData = await propTenantsRes.json();
+    assert.strictEqual(propTenantsData.items.length, 1);
+    assert.ok(propTenantsData.filters.properties.some((p) => String(p._id) === String(prop._id)));
+
+    // Synced reports: landlords, properties, revenue
+    const landlordReportRes = await fetch(`${baseUrl}/api/admin/reports/landlords?period=all`, { headers: { Authorization: `Bearer ${superToken}` } });
+    assert.strictEqual(landlordReportRes.status, 200);
+    const landlordReport = await landlordReportRes.json();
+    assert.strictEqual(landlordReport.summary.totalPropertiesRegistered, 1);
+    assert.strictEqual(landlordReport.summary.totalTenantsRegistered, 1);
+    assert.strictEqual(landlordReport.summary.totalLandlordRevenueKES, 60000);
+
+    const propsReportRes = await fetch(`${baseUrl}/api/admin/reports/properties?period=all`, { headers: { Authorization: `Bearer ${superToken}` } });
+    const propsReport = await propsReportRes.json();
+    assert.strictEqual(propsReport.summary.totalRegisteredTenants, 1);
+    assert.strictEqual(propsReport.summary.totalRevenueGeneratedKES, 60000);
+
+    // AfriNexTech multi-platform support intake & filtering
+    const afriRes = await fetch(`${baseUrl}/api/public/afrinextech/support`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Amina Hassan',
+        email: 'amina@example.com',
+        phone: '+254799112233',
+        platform: 'afrinextech',
+        platformLabel: 'AfriNexTech Portal',
+        subject: 'Enterprise Integration Request',
+        message: 'Need API docs for AfriPay settlement webhooks.'
+      })
+    });
+    assert.strictEqual(afriRes.status, 201);
+    const afriListRes = await fetch(`${baseUrl}/api/admin/support?platform=afrinextech`, { headers: { Authorization: `Bearer ${superToken}` } });
+    assert.strictEqual(afriListRes.status, 200);
+    const afriList = await afriListRes.json();
+    assert.strictEqual(afriList.items.length, 1);
+    assert.strictEqual(afriList.items[0].platform, 'afrinextech');
+    assert.ok(afriList.platforms.length >= 2);
+    console.log('✅ PASS 7: Demo exclusion/purge, full user profiles, per-property tenant filter, synced reports, and AfriNexTech support verified');
+
+    console.log('\n🎉 ALL 7 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
   } finally {
     await mongoose.connection.dropDatabase().catch(() => {});
     await mongoose.disconnect().catch(() => {});

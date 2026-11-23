@@ -1,8 +1,11 @@
 const Property = require('../../models/Property');
 const Unit = require('../../models/Unit');
+const Tenant = require('../../models/Tenant');
+const Payment = require('../../models/Payment');
 const User = require('../../models/User');
 const { escapeRegExp, isValidObjectId } = require('../../middleware/securityMiddleware');
 const { logAdminAction } = require('../../utils/auditLogger');
+const { getDemoExclusionScope } = require('../../services/adminScopeService');
 
 exports.listProperties = async (req, res) => {
   try {
@@ -11,7 +14,8 @@ exports.listProperties = async (req, res) => {
     const skip = (page - 1) * limit;
     const { search = '', location = 'all', landlordId = 'all', type = 'all', status = 'all' } = req.query;
 
-    const filter = {};
+    const scope = await getDemoExclusionScope();
+    const filter = { ...scope.propertyExcludeFilter };
     if (search && String(search).trim()) {
       const rx = new RegExp(escapeRegExp(String(search).trim()), 'i');
       filter.$or = [{ name: rx }, { location: rx }, { type: rx }];
@@ -38,9 +42,9 @@ exports.listProperties = async (req, res) => {
         .skip(skip)
         .limit(limit)
         .lean(),
-      Property.distinct('location'),
-      Property.distinct('type'),
-      User.find({ role: { $in: ['admin', 'landlord'] }, isSuperAdmin: { $ne: true } })
+      Property.distinct('location', scope.propertyExcludeFilter),
+      Property.distinct('type', scope.propertyExcludeFilter),
+      User.find({ ...scope.userExcludeFilter, role: { $in: ['admin', 'landlord'] }, isSuperAdmin: { $ne: true } })
         .select('name email')
         .sort({ name: 1 })
         .limit(200)
@@ -48,20 +52,57 @@ exports.listProperties = async (req, res) => {
     ]);
 
     const propIds = properties.map((p) => p._id);
-    const unitAgg = await Unit.aggregate([
-      { $match: { propertyId: { $in: propIds } } },
-      {
-        $group: {
-          _id: '$propertyId',
-          totalUnits: { $sum: 1 },
-          occupiedUnits: { $sum: { $cond: [{ $eq: ['$status', 'occupied'] }, 1, 0] } },
-          vacantUnits: { $sum: { $cond: [{ $eq: ['$status', 'vacant'] }, 1, 0] } },
-          maintenanceUnits: { $sum: { $cond: [{ $eq: ['$status', 'maintenance'] }, 1, 0] } },
-          monthlyRentPotential: { $sum: { $ifNull: ['$rentAmount', 0] } }
-        }
-      }
+    const propUnits = await Unit.find({ propertyId: { $in: propIds }, ...scope.unitExcludeFilter })
+      .select('_id propertyId status rentAmount')
+      .lean();
+    const unitToProp = new Map(propUnits.map((u) => [String(u._id), String(u.propertyId)]));
+    const propUnitIds = propUnits.map((u) => u._id);
+
+    const [tenantList, paymentAgg] = await Promise.all([
+      Tenant.find({ unitId: { $in: propUnitIds }, ...scope.tenantExcludeFilter })
+        .select('unitId status')
+        .lean(),
+      Payment.aggregate([
+        {
+          $match: {
+            unitId: { $in: propUnitIds },
+            ...scope.paymentExcludeFilter,
+            status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }
+          }
+        },
+        { $group: { _id: '$unitId', total: { $sum: '$amount' } } }
+      ])
     ]);
-    const unitMap = new Map(unitAgg.map((u) => [String(u._id), u]));
+
+    const unitMap = new Map();
+    propUnits.forEach((u) => {
+      const k = String(u.propertyId);
+      const b = unitMap.get(k) || {
+        totalUnits: 0,
+        occupiedUnits: 0,
+        vacantUnits: 0,
+        maintenanceUnits: 0,
+        monthlyRentPotential: 0,
+        tenantCount: 0,
+        revenueGenerated: 0
+      };
+      b.totalUnits += 1;
+      if (u.status === 'occupied') b.occupiedUnits += 1;
+      else if (u.status === 'maintenance') b.maintenanceUnits += 1;
+      else b.vacantUnits += 1;
+      b.monthlyRentPotential += Number(u.rentAmount || 0);
+      unitMap.set(k, b);
+    });
+
+    tenantList.forEach((t) => {
+      const k = unitToProp.get(String(t.unitId));
+      if (k && unitMap.has(k)) unitMap.get(k).tenantCount += 1;
+    });
+
+    paymentAgg.forEach((r) => {
+      const k = unitToProp.get(String(r._id));
+      if (k && unitMap.has(k)) unitMap.get(k).revenueGenerated += r.total || 0;
+    });
 
     const items = properties.map((p) => {
       const u = unitMap.get(String(p._id)) || {
@@ -69,7 +110,9 @@ exports.listProperties = async (req, res) => {
         occupiedUnits: 0,
         vacantUnits: 0,
         maintenanceUnits: 0,
-        monthlyRentPotential: 0
+        monthlyRentPotential: 0,
+        tenantCount: 0,
+        revenueGenerated: 0
       };
       const occupancyRate = u.totalUnits > 0 ? Math.round((u.occupiedUnits / u.totalUnits) * 100) : 0;
       return {
@@ -82,6 +125,7 @@ exports.listProperties = async (req, res) => {
 
     res.json({
       items,
+      demoPropertiesRemaining: scope.demoPropertyIds.length,
       filters: {
         locations: distinctLocations.filter(Boolean).sort(),
         types: distinctTypes.filter(Boolean).sort(),
