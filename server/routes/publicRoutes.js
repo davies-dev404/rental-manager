@@ -1,9 +1,23 @@
 const express = require('express');
 const axios = require('axios');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const Settings = require('../models/Settings');
+const SupportTicket = require('../models/SupportTicket');
+const PlatformSetting = require('../models/PlatformSetting');
+const sendEmail = require('../utils/sendEmail');
 
 const router = express.Router();
+
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  message: { message: 'Too many contact submissions. Please wait a few minutes and try again.' }
+});
 
 let reviewsCache = {
   key: null,
@@ -129,6 +143,85 @@ router.get('/google-reviews', async (req, res) => {
   } catch (error) {
     console.error('Public Google Reviews error:', error.message);
     return res.status(500).json({ message: 'Unable to load Google reviews at this time.' });
+  }
+});
+
+/**
+ * @desc    Submit Landing Page Contact / Demo Inquiry -> Persists as SupportTicket for Msimamizi Admin
+ * @route   POST /api/public/contact
+ * @access  Public
+ */
+router.post('/contact', contactLimiter, async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      phone,
+      role = '',
+      units = '',
+      subject = '',
+      message = '',
+      category = 'landing_inquiry'
+    } = req.body || {};
+
+    const cleanName = String(name || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanPhone = String(phone || '').trim();
+    const cleanMessage = String(message || '').trim();
+
+    if (!cleanName || !cleanEmail || !cleanPhone) {
+      return res.status(400).json({ message: 'Name, email, and phone number are required.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ message: 'Please provide a valid email address.' });
+    }
+
+    const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const roleLabel = role ? String(role).trim() : 'Prospective Customer';
+    const unitsLabel = units ? String(units).trim() : '';
+    const derivedSubject = String(subject || '').trim() ||
+      `Landing Inquiry (${roleLabel}${unitsLabel ? ` · ${unitsLabel} units` : ''})`;
+    const derivedBody = cleanMessage ||
+      `Requested a live demo/callback from the MakaziFlow landing page.\nRole: ${roleLabel}\nPortfolio Size: ${unitsLabel || 'Unspecified'}\nPhone: ${cleanPhone}`;
+
+    const ticket = await SupportTicket.create({
+      ticketNumber,
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      subject: derivedSubject,
+      category: category === 'demo_request' ? 'demo_request' : 'landing_inquiry',
+      source: 'landing_page',
+      organizationRole: roleLabel,
+      unitsEstimate: unitsLabel,
+      priority: 'high',
+      status: 'open',
+      message: derivedBody
+    });
+
+    // Optional alert to configured platform admin alert email (non-blocking)
+    if (process.env.NODE_ENV !== 'test') {
+      PlatformSetting.findOne({ key: 'global' }).lean().then((ps) => {
+        const alertEmail = ps?.notifications?.adminAlertEmail || process.env.BUSINESS_EMAIL;
+        if (alertEmail && ps?.notifications?.emailOnSupportTicket !== false) {
+          sendEmail({
+            email: alertEmail,
+            toName: 'MakaziFlow Admin',
+            subject: `[${ticketNumber}] New Landing Inquiry from ${cleanName}`,
+            message: `<p><strong>Name:</strong> ${cleanName}<br/><strong>Email:</strong> ${cleanEmail}<br/><strong>Phone:</strong> ${cleanPhone}<br/><strong>Role:</strong> ${roleLabel} (${unitsLabel || 'N/A'})</p><p>${derivedBody.replace(/\n/g, '<br/>')}</p>`
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+
+    return res.status(201).json({
+      success: true,
+      ticketNumber,
+      ticket
+    });
+  } catch (error) {
+    console.error('Public contact submission error:', error.message);
+    return res.status(500).json({ message: 'Failed to submit contact inquiry. Please try again.' });
   }
 });
 

@@ -1202,5 +1202,13 @@ export const api = {
       credentials: "include"
     });
     return await parseApiResponse(response, "Failed to load your support tickets");
+  },
+  submitLandingContact: async (payload) => {
+    const response = await smartFetch(`${API_URL}/public/contact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    return await parseApiResponse(response, "Failed to submit contact inquiry");
   }
 };

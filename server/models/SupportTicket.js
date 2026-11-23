@@ -18,10 +18,18 @@ const supportTicketSchema = new mongoose.Schema({
   subject: { type: String, required: true, trim: true },
   category: {
     type: String,
-    enum: ['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request'],
+    enum: ['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request', 'demo_request', 'landing_inquiry'],
     default: 'general',
     index: true
   },
+  source: {
+    type: String,
+    enum: ['app_support', 'landing_page'],
+    default: 'app_support',
+    index: true
+  },
+  organizationRole: { type: String, default: '' },
+  unitsEstimate: { type: String, default: '' },
   priority: {
     type: String,
     enum: ['low', 'medium', 'high', 'urgent'],

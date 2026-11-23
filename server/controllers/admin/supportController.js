@@ -6,7 +6,7 @@ const { escapeRegExp, isValidObjectId } = require('../../middleware/securityMidd
 const { logAdminAction } = require('../../utils/auditLogger');
 
 const VALID_STATUSES = new Set(['open', 'in_progress', 'pending', 'resolved', 'closed']);
-const VALID_CATEGORIES = new Set(['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request']);
+const VALID_CATEGORIES = new Set(['general', 'billing', 'payments', 'technical', 'account', 'complaint', 'bug', 'feature_request', 'demo_request', 'landing_inquiry']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 
 exports.listTickets = async (req, res) => {

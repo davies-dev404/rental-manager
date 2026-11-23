@@ -80,8 +80,15 @@ export default function AdminSupport() {
       label: "Requester",
       render: (t) => (
         <div>
-          <p className="font-medium">{t.name}</p>
-          <p className="text-[11px] text-slate-500">{t.email}</p>
+          <p className="font-medium">
+            {t.name}
+            {t.source === "landing_page" && (
+              <Badge variant="outline" className="ml-1.5 text-[9.5px] bg-[#00a99d]/12 text-[#00a99d] border-[#00a99d]/30">
+                Landing Page
+              </Badge>
+            )}
+          </p>
+          <p className="text-[11px] text-slate-500">{t.email}{t.phone ? ` · ${t.phone}` : ""}</p>
         </div>
       )
     },
@@ -168,6 +175,8 @@ export default function AdminSupport() {
         </select>
         <select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }} className="h-8.5 rounded-md border px-2 text-xs bg-white dark:bg-slate-800">
           <option value="all">All Categories</option>
+          <option value="landing_inquiry">Landing Page Inquiries</option>
+          <option value="demo_request">Demo Requests</option>
           <option value="general">General</option>
           <option value="billing">Billing</option>
           <option value="payments">Payments</option>
@@ -195,7 +204,9 @@ export default function AdminSupport() {
               [{selectedTicket?.ticketNumber}] {selectedTicket?.subject}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              From: {selectedTicket?.name} ({selectedTicket?.email}) · Submitted{" "}
+              From: {selectedTicket?.name} ({selectedTicket?.email}{selectedTicket?.phone ? ` · ${selectedTicket.phone}` : ""})
+              {selectedTicket?.organizationRole ? ` · Role: ${selectedTicket.organizationRole}` : ""}
+              {selectedTicket?.unitsEstimate ? ` (${selectedTicket.unitsEstimate} units)` : ""} · Submitted{" "}
               {selectedTicket?.createdAt ? new Date(selectedTicket.createdAt).toLocaleString("en-KE") : "—"}
             </DialogDescription>
           </DialogHeader>

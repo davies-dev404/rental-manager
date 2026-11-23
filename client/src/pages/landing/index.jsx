@@ -96,6 +96,7 @@ export default function LandingPage() {
   });
   const [isSubmittingDemo, setIsSubmittingDemo] = useState(false);
   const [demoSubmitted, setDemoSubmitted] = useState(false);
+  const [submittedTicketNo, setSubmittedTicketNo] = useState("");
 
   // Navigation handlers
   const handleGetStarted = (plan = "") => {
@@ -121,7 +122,7 @@ export default function LandingPage() {
     }));
   };
 
-  const handleDemoSubmit = (e) => {
+  const handleDemoSubmit = async (e) => {
     e.preventDefault();
     if (!demoForm.name.trim() || !demoForm.email.trim() || !demoForm.phone.trim()) {
       toast({
@@ -133,14 +134,34 @@ export default function LandingPage() {
     }
 
     setIsSubmittingDemo(true);
-    setTimeout(() => {
-      setIsSubmittingDemo(false);
+    try {
+      const fullPhone = demoForm.phone.trim().startsWith("+")
+        ? demoForm.phone.trim()
+        : `${demoForm.countryCode === "KE" ? "+254" : ""}${demoForm.phone.trim().replace(/^0+/, "")}` || demoForm.phone.trim();
+      const res = await api.submitLandingContact({
+        name: demoForm.name.trim(),
+        email: demoForm.email.trim(),
+        phone: fullPhone || demoForm.phone.trim(),
+        role: demoForm.role,
+        units: demoForm.units,
+        message: demoForm.message.trim(),
+        category: "landing_inquiry"
+      });
+      setSubmittedTicketNo(res?.ticketNumber || "");
       setDemoSubmitted(true);
       toast({
-        title: "Demo Request Received! 🎉",
-        description: `Thank you, ${demoForm.name}. A MakaziFlow specialist will contact you on ${demoForm.phone} shortly.`
+        title: "Message Sent to MakaziFlow! 🎉",
+        description: `Reference ${res?.ticketNumber || ""} received. Our team will reach out on ${demoForm.phone} shortly.`
       });
-    }, 700);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Could Not Submit Inquiry",
+        description: err.message || "Please try again or reach us directly on 0790264792."
+      });
+    } finally {
+      setIsSubmittingDemo(false);
+    }
   };
 
   // Audience Tabs data
@@ -1256,7 +1277,7 @@ export default function LandingPage() {
                   Demo Request Confirmed!
                 </h3>
                 <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
-                  Thank you, <strong>{demoForm.name}</strong>. A MakaziFlow onboarding specialist will contact you on <strong>{demoForm.phone}</strong> shortly to arrange your personalized walkthrough.
+                  Thank you, <strong>{demoForm.name}</strong>. Your inquiry{submittedTicketNo ? ` (${submittedTicketNo})` : ""} has been received. A MakaziFlow specialist will contact you on <strong>{demoForm.phone}</strong> shortly.
                 </p>
                 <div className="pt-3">
                   <button

@@ -334,7 +334,31 @@ async function runTests() {
     assert.strictEqual(revRes.status, 200);
     console.log('✅ PASS 5: Payments CSV/reversal, subscription plan creation, and PDF report export verified');
 
-    // 6. Support Management, Platform Settings (Maintenance Mode + No Secret Leaks), Audit Logs
+    // 6. Support Management, Landing Page Inquiry Sync, Platform Settings & Audit Logs
+    const landingInquiryRes = await fetch(`${baseUrl}/api/public/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Samuel Mutua',
+        email: 'samuel@example.com',
+        phone: '+254712345678',
+        role: 'landlord',
+        units: '21-50',
+        message: 'Interested in M-Pesa Paybill onboarding for 35 units.'
+      })
+    });
+    assert.strictEqual(landingInquiryRes.status, 201);
+    const landingTicket = (await landingInquiryRes.json()).ticket;
+    assert.strictEqual(landingTicket.source, 'landing_page');
+    assert.strictEqual(landingTicket.category, 'landing_inquiry');
+
+    const supportListRes = await fetch(`${baseUrl}/api/admin/support?category=landing_inquiry`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(supportListRes.status, 200);
+    const supportListData = await supportListRes.json();
+    assert.ok(supportListData.items.some((t) => t._id === landingTicket._id), 'Landing inquiry must appear in Msimamizi Support Management');
+
     const tktCreateRes = await fetch(`${baseUrl}/api/support/tickets`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${freshLandlordToken}`, 'Content-Type': 'application/json' },
