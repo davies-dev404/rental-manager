@@ -102,13 +102,13 @@ export default function AdminLogin() {
         <div className="h-2 w-full bg-linear-to-r from-[#0a1e35] via-[#0d2240] to-[#00a99d]" />
 
         {/* Header */}
-        <div className="bg-[#0d2240] px-7 py-6 text-center space-y-2 border-b border-[#1a3a5c]">
-          <div className="flex justify-center">
-            <DwelloLogo />
+        <div className="bg-[#0d2240] px-7 py-6 text-center space-y-2.5 border-b border-[#1a3a5c] flex flex-col items-center">
+          <div className="bg-white/95 px-4 py-2 rounded-xl shadow-xs inline-flex justify-center">
+            <DwelloLogo className="justify-center" />
           </div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#00a99d]/20 border border-[#00a99d]/40 text-[10.5px] font-bold uppercase tracking-widest text-[#00d4c8]">
+          <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#00a99d]/20 border border-[#00a99d]/40 text-[10.5px] font-bold uppercase tracking-widest text-[#00d4c8]">
             <ShieldCheck className="w-3.5 h-3.5" />
-            Msimamizi · Owner Console
+            MSIMAMIZI
           </div>
           <p className="text-xs text-[#a8bfd4]">
             Restricted SaaS Platform Administration

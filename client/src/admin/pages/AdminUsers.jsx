@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogDescription
 } from "@/components/ui/dialog";
-import { Search, Eye, ShieldCheck, Ban, UserCheck } from "lucide-react";
+import { Search, Eye, ShieldCheck, Ban, UserCheck, Trash2 } from "lucide-react";
 
 const STATUS_BADGE = {
   active: "bg-[#00a99d]/15 text-[#00a99d] border-[#00a99d]/30",
@@ -59,6 +59,18 @@ export default function AdminUsers() {
       queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
     },
     onError: (err) => toast({ variant: "destructive", title: "Action Failed", description: err.message })
+  });
+
+  const cleanupTestsMutation = useMutation({
+    mutationFn: () => adminService.cleanupTestAccounts(["kipsoidavis@gmail.com"]),
+    onSuccess: (res) => {
+      toast({
+        title: "Test Accounts Cleaned",
+        description: `Removed ${res.deletedUsers || 0} old test account(s) & ${res.deletedProperties || 0} test properties. Active landlord: kipsoidavis@gmail.com.`
+      });
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Cleanup Failed", description: err.message })
   });
 
   const columns = [
@@ -153,11 +165,28 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white">User Management</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Search registered users, inspect portfolios and subscriptions, and enforce account activation or suspension safeguards.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">User Management</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Search registered users, inspect full business &amp; portfolio profiles, and enforce account activation or suspension safeguards.
+          </p>
+        </div>
+        {(data?.items?.length || 0) > 2 && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={cleanupTestsMutation.isPending}
+            onClick={() => {
+              if (!window.confirm("Remove all other test accounts & their sample properties while keeping kipsoidavis@gmail.com and Super Admin(s)?")) return;
+              cleanupTestsMutation.mutate();
+            }}
+            className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+            {cleanupTestsMutation.isPending ? "Cleaning..." : "Keep Only kipsoidavis@gmail.com"}
+          </Button>
+        )}
       </div>
 
       {/* Filters Bar */}
@@ -304,6 +333,18 @@ export default function AdminUsers() {
                       {userDetail.entitlement?.planName || userDetail.subscriptions?.[0]?.planName || userDetail.user.subscriptionTier || "Starter"} ({userDetail.entitlement?.status || userDetail.subscriptions?.[0]?.status || "trial"})
                     </strong>
                   </div>
+                  {userDetail.businessSettings && (
+                    <>
+                      <div>
+                        <span className="text-slate-500 block text-[10.5px]">M-Pesa Mode / Type</span>
+                        <strong>{userDetail.businessSettings.mpesaType || "Paybill"} {userDetail.businessSettings.paybillAccount ? `(${userDetail.businessSettings.paybillAccount})` : ""}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block text-[10.5px]">Abbreviation / Account Type</span>
+                        <strong>{userDetail.businessSettings.abbreviatedName || "—"} · {userDetail.businessSettings.accountType || "Property Management"}</strong>
+                      </div>
+                    </>
+                  )}
                 </div>
                 {userDetail.user.suspendedReason && (
                   <p className="text-[11px] text-rose-600 pt-1">

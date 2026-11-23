@@ -3,6 +3,7 @@ const Property = require('../../models/Property');
 const Unit = require('../../models/Unit');
 const Tenant = require('../../models/Tenant');
 const Payment = require('../../models/Payment');
+const Settings = require('../../models/Settings');
 const LandlordSubscription = require('../../models/LandlordSubscription');
 const UnitEntitlement = require('../../models/UnitEntitlement');
 const ActivityLog = require('../../models/ActivityLog');
@@ -45,7 +46,7 @@ exports.listUsers = async (req, res) => {
     ]);
 
     const userIds = users.map((u) => u._id);
-    const [propCounts, unitCounts, tenantCounts, revenueAgg, subs, entitlements] = await Promise.all([
+    const [propCounts, unitCounts, tenantCounts, revenueAgg, subs, entitlements, bizSettings] = await Promise.all([
       Property.aggregate([
         { $match: { user: { $in: userIds }, ...scope.propertyExcludeFilter } },
         { $group: { _id: '$user', count: { $sum: 1 } } }
@@ -69,13 +70,17 @@ exports.listUsers = async (req, res) => {
         { $group: { _id: '$user', total: { $sum: '$amount' } } }
       ]),
       LandlordSubscription.find({ landlordId: { $in: userIds } }).sort({ createdAt: -1 }).lean(),
-      UnitEntitlement.find({ landlordId: { $in: userIds } }).lean()
+      UnitEntitlement.find({ landlordId: { $in: userIds } }).lean(),
+      Settings.find({ user: { $in: userIds } })
+        .select('user orgName landlordName abbreviatedName orgEmail orgPhone orgAddress taxId mpesaType')
+        .lean()
     ]);
 
     const propMap = new Map(propCounts.map((p) => [String(p._id), p.count]));
     const unitMap = new Map(unitCounts.map((u) => [String(u._id), u.count]));
     const tenantMap = new Map(tenantCounts.map((t) => [String(t._id), t.count]));
     const revMap = new Map(revenueAgg.map((r) => [String(r._id), r.total]));
+    const bizMap = new Map(bizSettings.map((s) => [String(s.user), s]));
     const entMap = new Map(entitlements.map((e) => [String(e.landlordId), e]));
     const subMap = new Map();
     subs.forEach((s) => {
@@ -86,8 +91,12 @@ exports.listUsers = async (req, res) => {
     const items = users.map((u) => {
       const idStr = String(u._id);
       const effectiveStatus = u.accountStatus || (u.isVerified ? 'active' : 'pending_verification');
+      const biz = bizMap.get(idStr);
       return {
         ...u,
+        companyName: u.companyName || biz?.orgName || '',
+        address: u.address || biz?.orgAddress || '',
+        phone: u.phone || biz?.orgPhone || '',
         accountStatus: effectiveStatus,
         propertyCount: propMap.get(idStr) || 0,
         unitCount: unitMap.get(idStr) || 0,
@@ -120,22 +129,61 @@ exports.getUserDetail = async (req, res) => {
 
     const scope = await getDemoExclusionScope();
 
-    const [properties, units, tenants, revAgg, subscriptions, entitlement, activityLogs, adminLogs] = await Promise.all([
-      Property.find({ user: user._id, ...scope.propertyExcludeFilter }).sort({ createdAt: -1 }).lean(),
-      Unit.find({ user: user._id, ...scope.unitExcludeFilter }).lean(),
-      Tenant.find({ user: user._id, ...scope.tenantExcludeFilter })
-        .select('name email phone status unitId rentAmount createdAt')
+    const properties = await Property.find({ user: user._id, ...scope.propertyExcludeFilter })
+      .sort({ createdAt: -1 })
+      .lean();
+    const propIds = properties.map((p) => p._id);
+
+    const units = await Unit.find({
+      ...scope.unitExcludeFilter,
+      $or: [
+        { user: user._id },
+        ...(propIds.length ? [{ propertyId: { $in: propIds } }] : [])
+      ]
+    })
+      .sort({ unitNumber: 1 })
+      .lean();
+    const unitIds = units.map((u) => u._id);
+
+    const [tenants, revAgg, paymentRecords, bizSettings, subscriptions, entitlement, activityLogs, adminLogs] = await Promise.all([
+      Tenant.find({
+        ...scope.tenantExcludeFilter,
+        $or: [
+          { user: user._id },
+          ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])
+        ]
+      })
+        .select('name email phone status unitId rentAmount leaseStart leaseEnd createdAt')
+        .sort({ createdAt: -1 })
         .lean(),
       Payment.aggregate([
         {
           $match: {
-            user: user._id,
             ...scope.paymentExcludeFilter,
-            status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }
+            status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] },
+            $or: [
+              { user: user._id },
+              ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])
+            ]
           }
         },
         { $group: { _id: '$unitId', total: { $sum: '$amount' }, count: { $sum: 1 } } }
       ]),
+      Payment.find({
+        ...scope.paymentExcludeFilter,
+        $or: [
+          { user: user._id },
+          ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])
+        ]
+      })
+        .populate('tenantId', 'name phone')
+        .select('amount currency method status category type reference date invoiceNumber')
+        .sort({ date: -1, createdAt: -1 })
+        .limit(25)
+        .lean(),
+      Settings.findOne({ user: user._id })
+        .select('orgName landlordName abbreviatedName orgEmail orgPhone orgAddress taxId mpesaType paybillAccount accountType invoiceTitle')
+        .lean(),
       LandlordSubscription.find({ landlordId: user._id }).sort({ createdAt: -1 }).limit(15).lean(),
       UnitEntitlement.findOne({ landlordId: user._id }).lean(),
       ActivityLog.find({ userId: user._id }).sort({ timestamp: -1 }).limit(25).lean(),
@@ -181,8 +229,13 @@ exports.getUserDetail = async (req, res) => {
     res.json({
       user: {
         ...user,
+        companyName: user.companyName || bizSettings?.orgName || '',
+        address: user.address || bizSettings?.orgAddress || '',
+        phone: user.phone || bizSettings?.orgPhone || '',
+        kraPin: user.kraPin || bizSettings?.taxId || '',
         accountStatus: user.accountStatus || (user.isVerified ? 'active' : 'pending_verification')
       },
+      businessSettings: bizSettings || null,
       summary: {
         propertyCount: properties.length,
         unitCount: units.length,
@@ -192,7 +245,9 @@ exports.getUserDetail = async (req, res) => {
         paymentsCount: totalPaymentsCount
       },
       properties: enrichedProperties,
+      units,
       tenants,
+      payments: paymentRecords,
       subscriptions,
       entitlement,
       activityLogs,

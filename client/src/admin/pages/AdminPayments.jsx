@@ -137,34 +137,39 @@ export default function AdminPayments() {
       key: "actions",
       label: "Actions",
       align: "right",
-      render: (t) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <Button size="sm" variant="outline" onClick={() => setDetailId(t._id)} className="h-7 px-2 text-[10.5px] cursor-pointer">
-            <Eye className="w-3 h-3 mr-1" /> Details
-          </Button>
-          {t.status === "pending" && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={verifyMutation.isPending}
-              onClick={() => verifyMutation.mutate(t._id)}
-              className="h-7 px-2 text-[10.5px] cursor-pointer"
-            >
-              Verify
+      render: (t) =>
+        t.isWorkspacePayment ? (
+          <Badge variant="outline" className="text-[10px] text-slate-600">
+            Landlord Ledger
+          </Badge>
+        ) : (
+          <div className="flex items-center justify-end gap-1.5">
+            <Button size="sm" variant="outline" onClick={() => setDetailId(t._id)} className="h-7 px-2 text-[10.5px] cursor-pointer">
+              <Eye className="w-3 h-3 mr-1" /> Details
             </Button>
-          )}
-          {t.status === "paid" && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setReverseTarget(t)}
-              className="h-7 px-2 text-[10.5px] text-rose-600 border-rose-200 cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3 mr-1" /> Reverse
-            </Button>
-          )}
-        </div>
-      )
+            {t.status === "pending" && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={verifyMutation.isPending}
+                onClick={() => verifyMutation.mutate(t._id)}
+                className="h-7 px-2 text-[10.5px] cursor-pointer"
+              >
+                Verify
+              </Button>
+            )}
+            {t.status === "paid" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setReverseTarget(t)}
+                className="h-7 px-2 text-[10.5px] text-rose-600 border-rose-200 cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 mr-1" /> Reverse
+              </Button>
+            )}
+          </div>
+        )
     }
   ];
 

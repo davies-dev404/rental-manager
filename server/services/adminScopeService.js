@@ -5,6 +5,11 @@ const Tenant = require('../models/Tenant');
 const Payment = require('../models/Payment');
 const Expense = require('../models/Expense');
 const Reminder = require('../models/Reminder');
+const Settings = require('../models/Settings');
+const LandlordSubscription = require('../models/LandlordSubscription');
+const UnitEntitlement = require('../models/UnitEntitlement');
+const ActivityLog = require('../models/ActivityLog');
+const Invoice = require('../models/Invoice');
 
 /**
  * Exact (name, location) pairs seeded by seedDemoDataForUser() before `isDemo: true` was added.
@@ -146,8 +151,97 @@ async function purgeSeededDemoRecords() {
   };
 }
 
+/**
+ * Permanently removes non-superadmin test accounts NOT in `keepEmails` along with
+ * their properties, units, tenants, payments, invoices, expenses, reminders, and settings.
+ */
+async function purgeTestAccountsExcept(keepEmails = ['kipsoidavis@gmail.com']) {
+  const normalizedKeep = new Set(
+    (Array.isArray(keepEmails) ? keepEmails : [keepEmails])
+      .map((e) => String(e || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (normalizedKeep.size === 0) {
+    throw new Error('At least one landlord email must be kept when cleaning test accounts.');
+  }
+
+  const allNonSuper = await User.find({
+    role: { $ne: 'superadmin' },
+    isSuperAdmin: { $ne: true }
+  })
+    .select('_id email')
+    .lean();
+
+  const removeUserIds = allNonSuper
+    .filter((u) => !normalizedKeep.has(String(u.email || '').trim().toLowerCase()))
+    .map((u) => u._id);
+
+  if (removeUserIds.length === 0) {
+    return {
+      deletedUsers: 0,
+      deletedProperties: 0,
+      deletedUnits: 0,
+      deletedTenants: 0,
+      deletedPayments: 0
+    };
+  }
+
+  const props = await Property.find({ user: { $in: removeUserIds } }).select('_id').lean();
+  const propIds = props.map((p) => p._id);
+  const units = await Unit.find({ $or: [{ user: { $in: removeUserIds } }, ...(propIds.length ? [{ propertyId: { $in: propIds } }] : [])] })
+    .select('_id')
+    .lean();
+  const unitIds = units.map((u) => u._id);
+  const tenants = await Tenant.find({ $or: [{ user: { $in: removeUserIds } }, ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : [])] })
+    .select('_id')
+    .lean();
+  const tenantIds = tenants.map((t) => t._id);
+
+  const [delPay, delInv, delTen, delUnit, delProp, delExp, delRem, delSet, delSub, delEnt, delAct, delUsr] = await Promise.all([
+    Payment.deleteMany({
+      $or: [
+        { user: { $in: removeUserIds } },
+        ...(unitIds.length ? [{ unitId: { $in: unitIds } }] : []),
+        ...(tenantIds.length ? [{ tenantId: { $in: tenantIds } }] : [])
+      ]
+    }),
+    Invoice.deleteMany({
+      $or: [
+        { user: { $in: removeUserIds } },
+        ...(tenantIds.length ? [{ tenantId: { $in: tenantIds } }] : [])
+      ]
+    }),
+    Tenant.deleteMany({ _id: { $in: tenantIds } }),
+    Unit.deleteMany({ _id: { $in: unitIds } }),
+    Property.deleteMany({ _id: { $in: propIds } }),
+    Expense.deleteMany({ $or: [{ user: { $in: removeUserIds } }, ...(propIds.length ? [{ propertyId: { $in: propIds } }] : [])] }),
+    Reminder.deleteMany({ user: { $in: removeUserIds } }),
+    Settings.deleteMany({ user: { $in: removeUserIds } }),
+    LandlordSubscription.deleteMany({ landlordId: { $in: removeUserIds } }),
+    UnitEntitlement.deleteMany({ landlordId: { $in: removeUserIds } }),
+    ActivityLog.deleteMany({ userId: { $in: removeUserIds } }),
+    User.deleteMany({ _id: { $in: removeUserIds } })
+  ]);
+
+  return {
+    deletedUsers: delUsr.deletedCount || 0,
+    deletedProperties: delProp.deletedCount || 0,
+    deletedUnits: delUnit.deletedCount || 0,
+    deletedTenants: delTen.deletedCount || 0,
+    deletedPayments: delPay.deletedCount || 0,
+    deletedInvoices: delInv.deletedCount || 0,
+    deletedExpenses: delExp.deletedCount || 0,
+    deletedReminders: delRem.deletedCount || 0,
+    deletedSettings: delSet.deletedCount || 0,
+    deletedSubscriptions: delSub.deletedCount || 0,
+    deletedEntitlements: delEnt.deletedCount || 0,
+    deletedActivityLogs: delAct.deletedCount || 0
+  };
+}
+
 module.exports = {
   LEGACY_DEMO_PROPERTY_TUPLES,
   getDemoExclusionScope,
-  purgeSeededDemoRecords
+  purgeSeededDemoRecords,
+  purgeTestAccountsExcept
 };

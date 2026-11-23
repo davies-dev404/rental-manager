@@ -26,7 +26,7 @@ const generateRefreshToken = (id, tokenVersion = 0) =>
 const setAuthCookies = (res, token, refreshToken) => {
   const isProd = process.env.NODE_ENV === 'production';
   if (token) {
-    res.cookie('jwt', token, {
+    res.cookie('msimamizi_jwt', token, {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
@@ -34,7 +34,7 @@ const setAuthCookies = (res, token, refreshToken) => {
     });
   }
   if (refreshToken) {
-    res.cookie('refreshToken', refreshToken, {
+    res.cookie('msimamizi_refresh', refreshToken, {
       httpOnly: true,
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
@@ -335,6 +335,13 @@ router.post('/resend-otp', authOtpLimiter, async (req, res) => {
   } catch {
     res.status(500).json({ message: 'Failed to resend OTP.' });
   }
+});
+
+router.post('/logout', (req, res) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie('msimamizi_jwt', { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' });
+  res.clearCookie('msimamizi_refresh', { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' });
+  res.json({ success: true });
 });
 
 module.exports = router;

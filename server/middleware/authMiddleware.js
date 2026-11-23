@@ -4,17 +4,22 @@ const { getJwtSecret } = require('./securityMiddleware');
 
 const protect = async (req, res, next) => {
   let token;
+  const isAdminRoute = req.originalUrl?.startsWith('/api/admin') || req.baseUrl?.startsWith('/api/admin');
 
-  // 1. Check httpOnly cookie first (XSS Protection - Senior Standard)
-  if (req.cookies && req.cookies.jwt) {
-    token = req.cookies.jwt;
-  }
-  // 2. Fallback to Authorization Bearer Header
-  else if (
+  // 1. Prioritize explicit Authorization Bearer Header so concurrent tabs
+  //    (e.g., landlord on MakaziFlow + Super Admin on Msimamizi sharing the API host)
+  //    never collide over a shared httpOnly cookie.
+  if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
     token = req.headers.authorization.split(' ')[1];
+  }
+  // 2. Fallback to portal-specific httpOnly cookie
+  else if (isAdminRoute && req.cookies && req.cookies.msimamizi_jwt) {
+    token = req.cookies.msimamizi_jwt;
+  } else if (req.cookies && req.cookies.jwt) {
+    token = req.cookies.jwt;
   }
 
   if (token && token !== 'undefined' && token !== 'null') {

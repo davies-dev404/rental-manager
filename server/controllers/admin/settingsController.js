@@ -1,7 +1,9 @@
 const PlatformSetting = require('../../models/PlatformSetting');
+const Settings = require('../../models/Settings');
 const PaymentService = require('../../services/payments/PaymentService');
 const { getPesapalConfig } = require('../../config/pesapalConfig');
 const { getIntaSendConfig } = require('../../config/intasendConfig');
+const { resolveBrevoApiKey } = require('../../utils/brevoService');
 const { validateSafeImageInput, pickAllowed } = require('../../middleware/securityMiddleware');
 const {
   invalidateMaintenanceCache,
@@ -18,10 +20,17 @@ async function getOrCreatePlatformSettings() {
   return doc;
 }
 
-function getSafeIntegrationStatus() {
+async function getSafeIntegrationStatus() {
   const gw = PaymentService.getActiveGatewayStatus();
   const pesapal = getPesapalConfig({ requireConfigured: false });
   const intasend = getIntaSendConfig({ requireConfigured: false });
+  const dbSettings = await Settings.findOne().select('integrations.email.brevo').lean().catch(() => null);
+  const envApiKey = resolveBrevoApiKey(process.env.BREVO_API_KEY);
+  const dbApiKey = resolveBrevoApiKey(dbSettings?.integrations?.email?.brevo?.apiKey);
+  const smtpOk = Boolean(
+    (process.env.BREVO_SMTP_USER || process.env.SMTP_USER || '').trim() &&
+      (process.env.BREVO_SMTP_KEY || process.env.SMTP_PASS || dbSettings?.integrations?.email?.brevo?.smtpKey || '').trim()
+  );
   return {
     activeProvider: gw.provider,
     activeEnvironment: gw.environment || 'sandbox',
@@ -42,7 +51,7 @@ function getSafeIntegrationStatus() {
       }
     },
     messaging: {
-      brevoConfigured: Boolean((process.env.BREVO_API_KEY || '').trim()),
+      brevoConfigured: Boolean(envApiKey || dbApiKey || smtpOk),
       turnstileConfigured: Boolean((process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY || '').trim())
     }
   };
@@ -74,7 +83,7 @@ exports.getPlatformSettings = async (req, res) => {
     res.json({
       settings: doc.toObject(),
       maintenanceState: evaluateMaintenanceState(doc),
-      paymentConfigurationStatus: getSafeIntegrationStatus()
+      paymentConfigurationStatus: await getSafeIntegrationStatus()
     });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Failed to load platform settings' });
@@ -209,7 +218,7 @@ exports.updatePlatformSettings = async (req, res) => {
       settings: refreshedDoc.toObject(),
       maintenanceState: evaluateMaintenanceState(refreshedDoc),
       maintenanceNotification,
-      paymentConfigurationStatus: getSafeIntegrationStatus()
+      paymentConfigurationStatus: await getSafeIntegrationStatus()
     });
   } catch (err) {
     res.status(400).json({ message: err.message || 'Failed to update platform settings' });

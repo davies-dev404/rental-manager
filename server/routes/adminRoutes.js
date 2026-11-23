@@ -21,6 +21,7 @@ router.use(adminActionLimiter);
 // Overview Dashboard & Demo Data Maintenance Cleanup
 router.get('/dashboard', dashboardController.getOverviewDashboard);
 router.post('/system/clear-demo-data', dashboardController.clearDemoData);
+router.post('/system/cleanup-test-accounts', dashboardController.cleanupTestAccounts);
 
 // User Management
 router.get('/users', userController.listUsers);

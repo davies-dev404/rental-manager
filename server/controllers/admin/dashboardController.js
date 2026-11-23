@@ -12,7 +12,11 @@ const AdminLog = require('../../models/AdminLog');
 const ActivityLog = require('../../models/ActivityLog');
 const PlatformSetting = require('../../models/PlatformSetting');
 const PaymentService = require('../../services/payments/PaymentService');
-const { getDemoExclusionScope, purgeSeededDemoRecords } = require('../../services/adminScopeService');
+const {
+  getDemoExclusionScope,
+  purgeSeededDemoRecords,
+  purgeTestAccountsExcept
+} = require('../../services/adminScopeService');
 const { logAdminAction } = require('../../utils/auditLogger');
 
 function buildLastMonths(count = 6) {
@@ -62,6 +66,7 @@ exports.getOverviewDashboard = async (req, res) => {
       recentAdminLogs,
       recentActivityLogs,
       recentTransactions,
+      recentLandlordPayments,
       newRegistrations,
       unmatchedCallbacksCount,
       failedEtimsCount,
@@ -223,6 +228,12 @@ exports.getOverviewDashboard = async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
+      Payment.find({ ...scope.paymentExcludeFilter })
+        .populate('user', 'name email')
+        .populate('tenantId', 'name')
+        .sort({ date: -1, createdAt: -1 })
+        .limit(8)
+        .lean(),
       User.find(scope.userExcludeFilter)
         .select('name email phone role accountStatus isVerified createdAt')
         .sort({ createdAt: -1 })
@@ -348,6 +359,34 @@ exports.getOverviewDashboard = async (req, res) => {
 
     const gwStatus = PaymentService.getActiveGatewayStatus();
 
+    const landlordRevTotal = landlordRevAgg[0]?.total || 0;
+    const landlordRevCount = landlordRevAgg[0]?.count || 0;
+
+    // Combine gateway PaymentTransaction + landlord workspace Payment for live Recent Transactions feed
+    const mergedRecentTransactions = [
+      ...recentTransactions.map((t) => ({
+        ...t,
+        source: 'gateway',
+        displayTime: t.paidAt || t.createdAt
+      })),
+      ...recentLandlordPayments.map((p) => ({
+        _id: `pay_${p._id}`,
+        accountReference: p.reference || p.invoiceNumber || p.type || 'Rent Payment',
+        landlordId: p.user || null,
+        tenantId: p.tenantId || null,
+        customerName: p.tenantId?.name || p.user?.name || 'Tenant',
+        provider: p.method || 'M-Pesa / Manual',
+        amount: p.amount,
+        amountPaid: p.amount,
+        currency: p.currency || 'KES',
+        status: p.status || 'paid',
+        source: 'workspace',
+        displayTime: p.date || p.createdAt
+      }))
+    ]
+      .sort((a, b) => new Date(b.displayTime) - new Date(a.displayTime))
+      .slice(0, 10);
+
     res.json({
       metrics: {
         totalUsers: userStats.totalUsers || 0,
@@ -358,15 +397,17 @@ exports.getOverviewDashboard = async (req, res) => {
         occupiedUnits: unitStats.occupiedUnits || 0,
         vacantUnits: unitStats.vacantUnits || 0,
         maintenanceUnits: unitStats.maintenanceUnits || 0,
-        totalPaymentsProcessed: paidTxnCount,
-        totalProcessedVolume,
+        totalPaymentsProcessed: paidTxnCount + landlordRevCount,
+        totalProcessedVolume: totalProcessedVolume + landlordRevTotal,
+        gatewayPaymentsCount: paidTxnCount,
+        gatewayProcessedVolume: totalProcessedVolume,
         pendingPayments: pendingTxnCount,
         failedPayments: failedTxnCount,
         monthlyPlatformRevenue: monthlySubRevAgg[0]?.total || 0,
         totalPlatformRevenue: totalSubRevAgg[0]?.total || 0,
-        landlordRentalRevenueTotal: landlordRevAgg[0]?.total || 0,
+        landlordRentalRevenueTotal: landlordRevTotal,
         landlordRentalRevenueMonth: monthlyLandlordRevAgg[0]?.total || 0,
-        landlordPaymentsCount: landlordRevAgg[0]?.count || 0,
+        landlordPaymentsCount: landlordRevCount,
         activeSubscriptions: (subStatusMap.active || 0) + (subStatusMap.trial || 0),
         expiredSubscriptions: subStatusMap.expired || 0,
         graceSubscriptions: subStatusMap.grace_period || 0,
@@ -389,7 +430,7 @@ exports.getOverviewDashboard = async (req, res) => {
       },
       feeds: {
         recentActivities,
-        recentTransactions,
+        recentTransactions: mergedRecentTransactions,
         newRegistrations,
         systemNotifications
       }
@@ -412,5 +453,24 @@ exports.clearDemoData = async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ message: err.message || 'Failed to clear demo data' });
+  }
+};
+
+exports.cleanupTestAccounts = async (req, res) => {
+  try {
+    const keepEmails = Array.isArray(req.body?.keepEmails) && req.body.keepEmails.length > 0
+      ? req.body.keepEmails
+      : ['kipsoidavis@gmail.com'];
+    const result = await purgeTestAccountsExcept(keepEmails);
+    await logAdminAction({
+      req,
+      action: 'TEST_ACCOUNTS_PURGED',
+      category: 'settings',
+      targetType: 'Platform',
+      details: `Cleaned ${result.deletedUsers} test account(s) & ${result.deletedProperties} test properties; kept: ${keepEmails.join(', ')}`
+    });
+    res.json({ success: true, kept: keepEmails, ...result });
+  } catch (err) {
+    res.status(400).json({ message: err.message || 'Failed to clean up test accounts' });
   }
 };

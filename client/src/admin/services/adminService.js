@@ -75,6 +75,15 @@ export const adminService = {
     });
     return parseApiResponse(res, "Failed to clear demo records");
   },
+  cleanupTestAccounts: async (keepEmails = ["kipsoidavis@gmail.com"]) => {
+    const res = await smartFetch(`${API_URL}/admin/system/cleanup-test-accounts`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify({ keepEmails })
+    });
+    return parseApiResponse(res, "Failed to clean up test accounts");
+  },
 
   // Users
   getUsers: async (params = {}) => {

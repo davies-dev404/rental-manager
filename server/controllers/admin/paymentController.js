@@ -1,4 +1,5 @@
 const PaymentTransaction = require('../../models/PaymentTransaction');
+const Payment = require('../../models/Payment');
 const PaymentCallback = require('../../models/PaymentCallback');
 const PaymentAllocation = require('../../models/PaymentAllocation');
 const PaymentReceipt = require('../../models/PaymentReceipt');
@@ -6,6 +7,7 @@ const Invoice = require('../../models/Invoice');
 const PaymentService = require('../../services/payments/PaymentService');
 const { escapeRegExp } = require('../../middleware/securityMiddleware');
 const { logAdminAction } = require('../../utils/auditLogger');
+const { getDemoExclusionScope } = require('../../services/adminScopeService');
 
 function buildPaymentFilter(query = {}) {
   const { search = '', provider = 'all', channel = 'all', status = 'all', category = 'all', environment = 'production', startDate = '', endDate = '' } = query;
@@ -61,18 +63,47 @@ exports.listPayments = async (req, res) => {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 25)));
     const skip = (page - 1) * limit;
     const filter = buildPaymentFilter(req.query);
+    const scope = await getDemoExclusionScope();
+    const { search = '', status = 'all', environment = 'production', startDate = '', endDate = '' } = req.query;
 
-    const [total, items, summaryAgg] = await Promise.all([
-      PaymentTransaction.countDocuments(filter),
+    // Also load recorded landlord workspace payments when viewing production/all records
+    const includeWorkspacePayments = environment !== 'sandbox';
+    const ledgerFilter = { ...scope.paymentExcludeFilter };
+    if (search && String(search).trim()) {
+      const rx = new RegExp(escapeRegExp(String(search).trim()), 'i');
+      ledgerFilter.$or = [{ reference: rx }, { invoiceNumber: rx }, { method: rx }, { type: rx }];
+    }
+    if (status && status !== 'all') {
+      ledgerFilter.status = status === 'paid' ? { $in: ['paid', 'confirmed', 'Completed'] } : String(status);
+    }
+    if (startDate || endDate) {
+      ledgerFilter.date = {};
+      if (startDate) ledgerFilter.date.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        ledgerFilter.date.$lte = end;
+      }
+    }
+
+    const [gatewayTxns, ledgerPayments, summaryAgg, ledgerSummaryAgg] = await Promise.all([
       PaymentTransaction.find(filter)
         .select('-metadata')
         .populate('landlordId', 'name email phone')
         .populate('tenantId', 'name email phone')
         .populate('subscriptionId', 'planCode planName billingCycle')
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
+        .limit(200)
         .lean(),
+      includeWorkspacePayments
+        ? Payment.find(ledgerFilter)
+            .populate('user', 'name email phone')
+            .populate('tenantId', 'name email phone')
+            .populate('unitId', 'unitNumber')
+            .sort({ date: -1, createdAt: -1 })
+            .limit(200)
+            .lean()
+        : Promise.resolve([]),
       PaymentTransaction.aggregate([
         { $match: filter },
         {
@@ -82,8 +113,59 @@ exports.listPayments = async (req, res) => {
             volume: { $sum: { $cond: [{ $gt: ['$amountPaid', 0] }, '$amountPaid', '$amount'] } }
           }
         }
-      ])
+      ]),
+      includeWorkspacePayments
+        ? Payment.aggregate([
+            { $match: ledgerFilter },
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 },
+                volume: { $sum: '$amount' }
+              }
+            }
+          ])
+        : Promise.resolve([])
     ]);
+
+    const gatewayLinkedIds = new Set(
+      ledgerPayments.map((p) => (p.paymentTransactionId ? String(p.paymentTransactionId) : null)).filter(Boolean)
+    );
+
+    const combined = [
+      ...gatewayTxns.map((t) => ({
+        ...t,
+        sourceType: 'gateway',
+        sortAt: new Date(t.paidAt || t.createdAt).getTime()
+      })),
+      ...ledgerPayments
+        .filter((p) => !p.paymentTransactionId || !gatewayLinkedIds.has(String(p.paymentTransactionId)))
+        .map((p) => ({
+          _id: `pay_${p._id}`,
+          isWorkspacePayment: true,
+          sourceType: 'workspace_ledger',
+          internalTransactionId: p.reference || p.invoiceNumber || String(p._id),
+          accountReference: p.invoiceNumber || p.reference || p.type || 'Rent Payment',
+          providerReference: p.reference || '',
+          provider: p.method || 'M-Pesa / Ledger',
+          paymentChannel: p.category || p.type || 'rent',
+          paymentCategory: p.category || 'rent',
+          paymentMethodDetail: p.unitId?.unitNumber ? `Unit ${p.unitId.unitNumber}` : (p.type || 'Rent'),
+          landlordId: p.user || null,
+          tenantId: p.tenantId || null,
+          customerName: p.tenantId?.name || p.user?.name || 'Tenant',
+          customerEmail: p.user?.email || p.tenantId?.email || '',
+          amount: p.amount || 0,
+          amountPaid: p.amount || 0,
+          currency: p.currency || 'KES',
+          status: ['paid', 'confirmed', 'Completed'].includes(p.status) ? 'paid' : p.status,
+          createdAt: p.date || p.createdAt,
+          sortAt: new Date(p.date || p.createdAt).getTime()
+        }))
+    ].sort((a, b) => b.sortAt - a.sortAt);
+
+    const total = combined.length;
+    const items = combined.slice(skip, skip + limit);
 
     const summary = {
       totalCount: total,
@@ -103,6 +185,16 @@ exports.listPayments = async (req, res) => {
         summary.failedCount += s.count;
       } else if (['reversed', 'refunded'].includes(s._id)) {
         summary.refundedOrReversedCount += s.count;
+      }
+    });
+    ledgerSummaryAgg.forEach((s) => {
+      if (['paid', 'confirmed', 'Completed', 'partial'].includes(s._id)) {
+        summary.paidCount += s.count;
+        summary.paidVolume += s.volume || 0;
+      } else if (['pending', 'Pending', 'open'].includes(s._id)) {
+        summary.pendingCount += s.count;
+      } else if (['Failed', 'overdue'].includes(s._id)) {
+        summary.failedCount += s.count;
       }
     });
 

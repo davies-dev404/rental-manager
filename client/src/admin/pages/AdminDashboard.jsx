@@ -48,6 +48,18 @@ export default function AdminDashboard() {
     onError: (err) => toast({ variant: "destructive", title: "Cleanup Failed", description: err.message })
   });
 
+  const cleanupTestAccountsMutation = useMutation({
+    mutationFn: () => adminService.cleanupTestAccounts(["kipsoidavis@gmail.com"]),
+    onSuccess: (res) => {
+      toast({
+        title: "Dashboard Focused on kipsoidavis@gmail.com",
+        description: `Cleared ${res.deletedUsers || 0} test user(s) & ${res.deletedProperties || 0} test properties.`
+      });
+      queryClient.invalidateQueries();
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Cleanup Failed", description: err.message })
+  });
+
   const m = data?.metrics || {};
   const charts = data?.charts || {};
   const feeds = data?.feeds || {};
@@ -83,31 +95,53 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Demo Data Cleanup Prompt */}
-      {hasDemoLeftovers && (
+      {/* Demo Data & Old Test Account Cleanup Prompt */}
+      {(hasDemoLeftovers || (m.activeLandlords || 0) > 1) && (
         <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
           <CardContent className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="text-xs">
               <p className="font-bold text-slate-900 dark:text-white">
-                Seeded Demo Records Excluded From Live Metrics
+                Workspace Hygiene &amp; Active Test Landlord Focus
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {m.demoPropertiesRemaining || 0} demo property record(s) and {m.demoUsersRemaining || 0} demo-mode account(s) exist in MongoDB and are already filtered out of this dashboard. You can also purge those leftover sample documents permanently.
+                {hasDemoLeftovers
+                  ? `${m.demoPropertiesRemaining || 0} demo property record(s) and ${m.demoUsersRemaining || 0} demo-mode account(s) are already filtered out. `
+                  : ""}
+                Keep only <strong>kipsoidavis@gmail.com</strong> (and Super Admin accounts) and purge older unused test accounts/properties permanently.
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={clearDemoMutation.isPending}
-              onClick={() => {
-                if (!window.confirm("Permanently delete all seeded demo properties, units, tenants, and demo payments from the database? Real landlord properties will NOT be touched.")) return;
-                clearDemoMutation.mutate();
-              }}
-              className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 shrink-0 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              {clearDemoMutation.isPending ? "Clearing..." : "Purge Demo Data"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {hasDemoLeftovers && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={clearDemoMutation.isPending}
+                  onClick={() => {
+                    if (!window.confirm("Permanently delete seeded demo properties, units, tenants, and demo payments? Real landlord data (kipsoidavis@gmail.com) will NOT be touched.")) return;
+                    clearDemoMutation.mutate();
+                  }}
+                  className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  {clearDemoMutation.isPending ? "Clearing..." : "Purge Demo Data"}
+                </Button>
+              )}
+              {(m.activeLandlords || 0) > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={cleanupTestAccountsMutation.isPending}
+                  onClick={() => {
+                    if (!window.confirm("Remove all other test user accounts and test properties while keeping kipsoidavis@gmail.com and Super Admin(s)?")) return;
+                    cleanupTestAccountsMutation.mutate();
+                  }}
+                  className="text-xs text-[#0d2240] border-slate-300 hover:bg-slate-100 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+                  {cleanupTestAccountsMutation.isPending ? "Cleaning..." : "Keep Only kipsoidavis@gmail.com"}
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

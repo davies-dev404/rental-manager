@@ -579,7 +579,31 @@ async function runTests() {
     assert.strictEqual(afriList.items.length, 1);
     assert.strictEqual(afriList.items[0].platform, 'afrinextech');
     assert.ok(afriList.platforms.length >= 2);
-    console.log('✅ PASS 7: Demo exclusion/purge, full user profiles, per-property tenant filter, synced reports, and AfriNexTech support verified');
+
+    // Cross-portal cookie collision safeguard: Bearer Super Admin token must succeed (200)
+    // even when a regular landlord `jwt` cookie is present in the same browser session
+    const crossCookieSettingsRes = await fetch(`${baseUrl}/api/admin/settings`, {
+      headers: {
+        Authorization: `Bearer ${superToken}`,
+        Cookie: `jwt=${freshLandlordToken}`
+      }
+    });
+    assert.strictEqual(
+      crossCookieSettingsRes.status,
+      200,
+      'Super Admin Bearer token must override stale landlord cookie cleanly without 403'
+    );
+
+    const mixedPaymentsRes = await fetch(`${baseUrl}/api/admin/payments`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(mixedPaymentsRes.status, 200);
+    const mixedPayments = await mixedPaymentsRes.json();
+    assert.ok(
+      mixedPayments.items.some((p) => p.sourceType === 'workspace_ledger' && Number(p.amount) === 35000),
+      'Real landlord workspace ledger payments must appear in Admin Payments'
+    );
+    console.log('✅ PASS 7: Demo exclusion/purge, cookie isolation, full user profiles, per-property tenant filter, synced reports, and AfriNexTech support verified');
 
     console.log('\n🎉 ALL 7 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
   } finally {
