@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { ChevronDown, ArrowRight, Menu, X } from "lucide-react";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 
 export default function PublicNavbar() {
   const [location, setLocation] = useLocation();
@@ -27,6 +28,7 @@ export default function PublicNavbar() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#1f1f22] text-white backdrop-blur">
+      <MaintenanceBanner variant="public" />
       <div className="mx-auto flex min-h-18 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:min-h-20 sm:px-6 lg:px-8">
         
         {/* Brand Logo */}

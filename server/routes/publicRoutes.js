@@ -7,6 +7,7 @@ const Settings = require('../models/Settings');
 const SupportTicket = require('../models/SupportTicket');
 const PlatformSetting = require('../models/PlatformSetting');
 const sendEmail = require('../utils/sendEmail');
+const { getLiveMaintenanceStatus } = require('../services/maintenanceService');
 
 const router = express.Router();
 
@@ -17,6 +18,28 @@ const contactLimiter = rateLimit({
   legacyHeaders: false,
   skip: () => process.env.NODE_ENV === 'test',
   message: { message: 'Too many contact submissions. Please wait a few minutes and try again.' }
+});
+
+/**
+ * @desc    Public Maintenance Mode & Scheduled Window Status for Landing Page & App Top Banner
+ * @route   GET /api/public/maintenance-status
+ * @access  Public
+ */
+router.get('/maintenance-status', async (req, res) => {
+  try {
+    const status = await getLiveMaintenanceStatus();
+    return res.json(status);
+  } catch (error) {
+    console.warn('Public maintenance-status warning:', error.message);
+    return res.json({
+      active: false,
+      manualEnabled: false,
+      scheduled: false,
+      isUpcoming: false,
+      bannerVisible: false,
+      message: ''
+    });
+  }
 });
 
 let reviewsCache = {

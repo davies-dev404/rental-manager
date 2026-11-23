@@ -1,7 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { protect, superAdmin } = require('./authMiddleware');
-const PlatformSetting = require('../models/PlatformSetting');
 const { logAdminAction } = require('../utils/auditLogger');
+const { getLiveMaintenanceStatus, invalidateMaintenanceCache } = require('../services/maintenanceService');
 
 const IS_TEST = () => process.env.NODE_ENV === 'test';
 
@@ -41,16 +41,10 @@ const requireSuperAdmin = [
   }
 ];
 
-let maintenanceCache = { fetchedAt: 0, enabled: false, message: '' };
-const CACHE_TTL_MS = 10000;
-
-function invalidateMaintenanceCache() {
-  maintenanceCache = { fetchedAt: 0, enabled: false, message: '' };
-}
-
 /**
  * Global maintenance mode guard:
  * Allows health checks, auth routes, public landing info, and Super Admin endpoints.
+ * Enforces both immediate manual toggle and active scheduled [startAt, endAt) windows.
  */
 async function enforceMaintenanceMode(req, res, next) {
   try {
@@ -66,20 +60,8 @@ async function enforceMaintenanceMode(req, res, next) {
       return next();
     }
 
-    const now = Date.now();
-    if (now - maintenanceCache.fetchedAt > CACHE_TTL_MS) {
-      const doc = await PlatformSetting.findOne({ key: 'global' })
-        .select('maintenanceMode maintenanceMessage')
-        .lean()
-        .catch(() => null);
-      maintenanceCache = {
-        fetchedAt: now,
-        enabled: Boolean(doc?.maintenanceMode),
-        message: doc?.maintenanceMessage || 'MakaziFlow is currently undergoing scheduled maintenance. Please check back shortly.'
-      };
-    }
-
-    if (!maintenanceCache.enabled) {
+    const status = await getLiveMaintenanceStatus();
+    if (!status.active) {
       return next();
     }
 
@@ -90,7 +72,10 @@ async function enforceMaintenanceMode(req, res, next) {
     return res.status(503).json({
       code: 'MAINTENANCE_MODE',
       maintenanceMode: true,
-      message: maintenanceCache.message
+      scheduled: status.scheduled,
+      startAt: status.startAt,
+      endAt: status.endAt,
+      message: status.message
     });
   } catch {
     return next();

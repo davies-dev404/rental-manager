@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
 import SEO from "@/components/SEO";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 
 export default function LoginPage() {
   const [location, setLocation] = useLocation();
@@ -548,7 +549,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-white px-4 py-8 font-sans select-none">
+    <div className="min-h-screen w-full flex flex-col bg-white font-sans select-none">
+      <MaintenanceBanner variant="public" />
+      <div className="flex-1 w-full flex items-center justify-center px-4 py-8">
       <SEO 
         title={isSignup ? "Create Your Account - Start Managing Properties" : "Sign In to MakaziFlow"}
         canonicalPath="/login"
@@ -1132,6 +1135,7 @@ export default function LoginPage() {
           )}
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

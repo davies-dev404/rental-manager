@@ -9,7 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Settings, ShieldCheck, Save, AlertTriangle } from "lucide-react";
+import { Settings, ShieldCheck, Save, AlertTriangle, CalendarClock, Send, Loader2 } from "lucide-react";
+
+function toLocalDateTimeInput(isoValue) {
+  if (!isoValue) return "";
+  const d = new Date(isoValue);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function AdminSettings() {
   const { toast } = useToast();
@@ -29,6 +37,12 @@ export default function AdminSettings() {
     defaultCurrency: "KES",
     timezone: "Africa/Nairobi",
     maintenanceMode: false,
+    maintenanceScheduled: false,
+    maintenanceStartAt: "",
+    maintenanceEndAt: "",
+    maintenanceNotifyEmails: true,
+    maintenanceLastNotifiedAt: null,
+    maintenanceLastNotifiedCount: 0,
     maintenanceMessage: "",
     subscriptionConfig: {
       trialDays: 14,
@@ -49,23 +63,75 @@ export default function AdminSettings() {
       setForm((prev) => ({
         ...prev,
         ...data.settings,
+        maintenanceStartAt: toLocalDateTimeInput(data.settings.maintenanceStartAt),
+        maintenanceEndAt: toLocalDateTimeInput(data.settings.maintenanceEndAt),
+        maintenanceNotifyEmails: data.settings.maintenanceNotifyEmails !== false,
         subscriptionConfig: { ...prev.subscriptionConfig, ...(data.settings.subscriptionConfig || {}) },
         notifications: { ...prev.notifications, ...(data.settings.notifications || {}) }
       }));
     }
   }, [data]);
 
+  const handleSaveSettings = () => {
+    if (form.maintenanceScheduled) {
+      if (!form.maintenanceStartAt) {
+        toast({
+          variant: "destructive",
+          title: "Start Time Required",
+          description: "Please choose when the scheduled maintenance window begins."
+        });
+        return;
+      }
+      if (form.maintenanceEndAt && new Date(form.maintenanceEndAt) <= new Date(form.maintenanceStartAt)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid Maintenance Window",
+          description: "The scheduled end time must be after the start time."
+        });
+        return;
+      }
+    }
+    const payload = {
+      ...form,
+      maintenanceStartAt: form.maintenanceStartAt ? new Date(form.maintenanceStartAt).toISOString() : null,
+      maintenanceEndAt: form.maintenanceEndAt ? new Date(form.maintenanceEndAt).toISOString() : null
+    };
+    saveMutation.mutate(payload);
+  };
+
   const saveMutation = useMutation({
     mutationFn: (payload) => adminService.updateSettings(payload),
-    onSuccess: () => {
-      toast({ title: "Platform Settings Saved", description: "Global configuration updated and audited." });
+    onSuccess: (res) => {
+      const notif = res?.maintenanceNotification;
+      const notifMsg = notif?.triggered
+        ? ` Email notice dispatched to ${notif.totalRecipients || 0} registered user(s).`
+        : "";
+      toast({
+        title: "Platform Settings Saved",
+        description: `Global configuration updated and audited.${notifMsg}`
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
       queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["public-maintenance-status"] });
     },
     onError: (err) => toast({ variant: "destructive", title: "Save Failed", description: err.message })
   });
 
+  const broadcastMutation = useMutation({
+    mutationFn: () => adminService.sendMaintenanceBroadcast(),
+    onSuccess: (res) => {
+      const count = res?.delivery?.totalRecipients ?? 0;
+      toast({
+        title: "Maintenance Notice Emailed",
+        description: `Sent maintenance notice email to ${count} active platform user(s).`
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
+    },
+    onError: (err) => toast({ variant: "destructive", title: "Email Broadcast Failed", description: err.message })
+  });
+
   const paymentStatus = data?.paymentConfigurationStatus || {};
+  const liveMaintState = data?.maintenanceState || {};
 
   return (
     <div className="space-y-6">
@@ -79,7 +145,7 @@ export default function AdminSettings() {
         <Button
           size="sm"
           disabled={saveMutation.isPending || isLoading}
-          onClick={() => saveMutation.mutate(form)}
+          onClick={handleSaveSettings}
           className="bg-[#0d2240] hover:bg-[#132d4a] text-white text-xs cursor-pointer"
         >
           <Save className="w-3.5 h-3.5 mr-1.5" /> Save Settings
@@ -217,25 +283,73 @@ export default function AdminSettings() {
           </CardContent>
         </Card>
 
-        {/* Maintenance Mode */}
-        <Card className={`shadow-xs ${form.maintenanceMode ? "border-rose-300 bg-rose-50/40 dark:bg-rose-950/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"}`}>
+        {/* Maintenance Mode & Scheduled Window */}
+        <Card className={`shadow-xs ${liveMaintState.active || form.maintenanceMode ? "border-rose-300 bg-rose-50/40 dark:bg-rose-950/20" : form.maintenanceScheduled ? "border-amber-300 bg-amber-50/30 dark:bg-amber-950/15" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"}`}>
           <CardHeader>
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <AlertTriangle className={`w-4 h-4 ${form.maintenanceMode ? "text-rose-600" : "text-amber-500"}`} />
-              Maintenance Mode Control
-            </CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <AlertTriangle className={`w-4 h-4 ${liveMaintState.active || form.maintenanceMode ? "text-rose-600" : "text-amber-500"}`} />
+                Maintenance Mode &amp; Schedule Control
+              </CardTitle>
+              {liveMaintState.active ? (
+                <Badge className="bg-rose-600 text-white text-[10px]">ACTIVE NOW</Badge>
+              ) : liveMaintState.isUpcoming ? (
+                <Badge className="bg-amber-600 text-white text-[10px]">SCHEDULED</Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-300 bg-emerald-50">OPERATIONAL</Badge>
+              )}
+            </div>
             <CardDescription className="text-xs">
-              Enabling maintenance mode pauses regular landlord &amp; tenant workspace endpoints with HTTP 503 while preserving Super Admin access.
+              Enabling immediate or scheduled maintenance displays a notice banner at the top of the landing page &amp; workspace, emails registered users, and pauses workspace endpoints with HTTP 503 while preserving Super Admin access.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
             <div className="flex items-center justify-between p-3 rounded-lg border bg-white dark:bg-slate-900">
-              <span className="font-semibold">Enable Maintenance Mode</span>
+              <div>
+                <span className="font-semibold block">Enable Maintenance Mode Now</span>
+                <span className="text-[11px] text-slate-500">Immediately pauses landlord &amp; tenant workspace endpoints</span>
+              </div>
               <Switch
                 checked={Boolean(form.maintenanceMode)}
                 onCheckedChange={(v) => setForm({ ...form, maintenanceMode: v })}
               />
             </div>
+
+            {/* Scheduled Maintenance Window */}
+            <div className="p-3 rounded-lg border bg-white dark:bg-slate-900 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CalendarClock className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="font-semibold">Schedule Maintenance Window</span>
+                </div>
+                <Switch
+                  checked={Boolean(form.maintenanceScheduled)}
+                  onCheckedChange={(v) => setForm({ ...form, maintenanceScheduled: v })}
+                />
+              </div>
+
+              {form.maintenanceScheduled && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <Label className="text-[11px]">Start Date &amp; Time</Label>
+                    <Input
+                      type="datetime-local"
+                      value={form.maintenanceStartAt || ""}
+                      onChange={(e) => setForm({ ...form, maintenanceStartAt: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Expected End Date &amp; Time</Label>
+                    <Input
+                      type="datetime-local"
+                      value={form.maintenanceEndAt || ""}
+                      onChange={(e) => setForm({ ...form, maintenanceEndAt: e.target.value })}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
               <Label>Maintenance Notice Message</Label>
               <Textarea
@@ -243,6 +357,42 @@ export default function AdminSettings() {
                 value={form.maintenanceMessage}
                 onChange={(e) => setForm({ ...form, maintenanceMessage: e.target.value })}
               />
+            </div>
+
+            {/* Email Broadcast Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-lg border bg-white dark:bg-slate-900">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={Boolean(form.maintenanceNotifyEmails)}
+                  onCheckedChange={(v) => setForm({ ...form, maintenanceNotifyEmails: v })}
+                />
+                <div>
+                  <span className="font-semibold block">Email registered users on save</span>
+                  {form.maintenanceLastNotifiedAt && (
+                    <span className="text-[10px] text-slate-500">
+                      Last sent {new Date(form.maintenanceLastNotifiedAt).toLocaleString("en-KE")} ({form.maintenanceLastNotifiedCount || 0} recipients)
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={broadcastMutation.isPending}
+                onClick={() => {
+                  if (!window.confirm("Send the current maintenance notice email to all active landlords and tenants now?")) return;
+                  broadcastMutation.mutate();
+                }}
+                className="text-xs cursor-pointer shrink-0"
+              >
+                {broadcastMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5 mr-1.5 text-[#00a99d]" />
+                )}
+                Email Users Now
+              </Button>
             </div>
           </CardContent>
         </Card>

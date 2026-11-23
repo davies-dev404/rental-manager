@@ -379,19 +379,85 @@ async function runTests() {
     const rawSettingsStr = JSON.stringify(settingsJson);
     assert.ok(!rawSettingsStr.includes('secretKey') && !rawSettingsStr.includes('consumerSecret'), 'Platform settings must never leak secret keys');
 
-    // Toggle maintenance mode ON -> landlord blocked with 503 -> toggle OFF
+    // Toggle maintenance mode ON -> public status & 503 check -> scheduled maintenance lifecycle -> manual broadcast -> OFF
     await fetch(`${baseUrl}/api/admin/settings`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maintenanceMode: true, defaultCurrency: 'KES' })
+      body: JSON.stringify({
+        maintenanceMode: true,
+        maintenanceMessage: 'Emergency DB index maintenance in progress.',
+        maintenanceNotifyEmails: true,
+        defaultCurrency: 'KES'
+      })
     });
+    const publicActiveRes = await fetch(`${baseUrl}/api/public/maintenance-status`);
+    assert.strictEqual(publicActiveRes.status, 200);
+    const publicActiveData = await publicActiveRes.json();
+    assert.strictEqual(publicActiveData.active, true);
+    assert.strictEqual(publicActiveData.bannerVisible, true);
+    assert.strictEqual(publicActiveData.message, 'Emergency DB index maintenance in progress.');
+
     const blockedByMaint = await fetch(`${baseUrl}/api/properties`, { headers: { Authorization: `Bearer ${freshLandlordToken}` } });
     assert.strictEqual(blockedByMaint.status, 503);
 
+    // Upcoming future schedule: banner visible at top of landing & app, but system stays accessible
+    const futureStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const futureEnd = new Date(Date.now() + 120 * 60 * 1000).toISOString();
     await fetch(`${baseUrl}/api/admin/settings`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maintenanceMode: false })
+      body: JSON.stringify({
+        maintenanceMode: false,
+        maintenanceScheduled: true,
+        maintenanceStartAt: futureStart,
+        maintenanceEndAt: futureEnd,
+        maintenanceMessage: 'Scheduled midnight infrastructure upgrade.'
+      })
+    });
+    const upcomingRes = await fetch(`${baseUrl}/api/public/maintenance-status`);
+    const upcomingData = await upcomingRes.json();
+    assert.strictEqual(upcomingData.isUpcoming, true);
+    assert.strictEqual(upcomingData.active, false);
+    assert.strictEqual(upcomingData.bannerVisible, true);
+
+    const allowedDuringUpcoming = await fetch(`${baseUrl}/api/properties`, { headers: { Authorization: `Bearer ${freshLandlordToken}` } });
+    assert.strictEqual(allowedDuringUpcoming.status, 200);
+
+    // Active scheduled window: startAt in past, endAt in future -> blocks with 503 automatically
+    const pastStart = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    await fetch(`${baseUrl}/api/admin/settings`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        maintenanceMode: false,
+        maintenanceScheduled: true,
+        maintenanceStartAt: pastStart,
+        maintenanceEndAt: futureEnd
+      })
+    });
+    const blockedBySchedule = await fetch(`${baseUrl}/api/properties`, { headers: { Authorization: `Bearer ${freshLandlordToken}` } });
+    assert.strictEqual(blockedBySchedule.status, 503);
+
+    // Manual email broadcast endpoint triggers without failing & excludes superadmin
+    const notifyRes = await fetch(`${baseUrl}/api/admin/settings/maintenance/notify`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(notifyRes.status, 200);
+    const notifyData = await notifyRes.json();
+    assert.strictEqual(notifyData.success, true);
+    assert.ok(notifyData.delivery.totalRecipients >= 1);
+
+    // Clear schedule & disable maintenance -> access restored cleanly
+    await fetch(`${baseUrl}/api/admin/settings`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        maintenanceMode: false,
+        maintenanceScheduled: false,
+        maintenanceStartAt: null,
+        maintenanceEndAt: null
+      })
     });
     const allowedAfterMaint = await fetch(`${baseUrl}/api/properties`, { headers: { Authorization: `Bearer ${freshLandlordToken}` } });
     assert.strictEqual(allowedAfterMaint.status, 200);

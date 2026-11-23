@@ -11,6 +11,12 @@ const platformSettingSchema = new mongoose.Schema({
   defaultCurrency: { type: String, default: BUSINESS_CONFIG.defaultCurrency || 'KES' },
   timezone: { type: String, default: BUSINESS_CONFIG.defaultTimezone || 'Africa/Nairobi' },
   maintenanceMode: { type: Boolean, default: false },
+  maintenanceScheduled: { type: Boolean, default: false },
+  maintenanceStartAt: { type: Date, default: null },
+  maintenanceEndAt: { type: Date, default: null },
+  maintenanceNotifyEmails: { type: Boolean, default: true },
+  maintenanceLastNotifiedAt: { type: Date, default: null },
+  maintenanceLastNotifiedCount: { type: Number, default: 0 },
   maintenanceMessage: {
     type: String,
     default: 'MakaziFlow is currently undergoing scheduled maintenance. Please check back shortly.'

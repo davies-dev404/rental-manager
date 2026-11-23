@@ -62,6 +62,7 @@ router.patch('/support/:id', validateObjectId('id'), supportController.updateTic
 // Platform Settings
 router.get('/settings', settingsController.getPlatformSettings);
 router.patch('/settings', settingsController.updatePlatformSettings);
+router.post('/settings/maintenance/notify', settingsController.sendMaintenanceBroadcast);
 
 // Security & Audit Logs
 router.get('/activity-logs', activityController.listAuditLogs);

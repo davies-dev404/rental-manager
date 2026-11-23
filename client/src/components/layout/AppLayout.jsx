@@ -49,6 +49,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { ActionModals } from "@/components/dashboard/Modals";
 import { GlobalSearchBar } from "./GlobalSearchBar";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 
@@ -604,6 +605,9 @@ export default function AppLayout({ children }) {
 
       {/* Main Content Area with Top Header Bar */}
       <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden transition-all duration-300">
+        {/* Global Active / Scheduled Maintenance Notice Banner */}
+        <MaintenanceBanner variant="app" />
+
         {/* Top Header Bar */}
         <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center gap-3">

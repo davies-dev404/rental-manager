@@ -272,6 +272,14 @@ export const adminService = {
     });
     return parseApiResponse(res, "Failed to save platform settings");
   },
+  sendMaintenanceBroadcast: async () => {
+    const res = await smartFetch(`${API_URL}/admin/settings/maintenance/notify`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to send maintenance email broadcast");
+  },
 
   // Activity & Audit Logs
   getActivityLogs: async (params = {}) => {

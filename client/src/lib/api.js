@@ -113,6 +113,9 @@ export async function parseApiResponse(response, defaultErrorMsg = 'Request fail
       localStorage.removeItem("rental_user");
       window.dispatchEvent(new Event("auth:logout"));
     }
+    if (response.status === 503 && data?.code === 'MAINTENANCE_MODE' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('makaziflow:maintenance', { detail: data }));
+    }
     if (data && (data.message || data.error)) {
       throw new Error(data.message || data.error);
     }
@@ -1210,5 +1213,14 @@ export const api = {
       body: JSON.stringify(payload)
     });
     return await parseApiResponse(response, "Failed to submit contact inquiry");
+  },
+  getMaintenanceStatus: async () => {
+    try {
+      const response = await smartFetch(`${API_URL}/public/maintenance-status`);
+      if (!response.ok) return { active: false, bannerVisible: false, isUpcoming: false };
+      return await response.json();
+    } catch {
+      return { active: false, bannerVisible: false, isUpcoming: false };
+    }
   }
 };
