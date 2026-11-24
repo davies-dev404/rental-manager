@@ -2,7 +2,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import { ADMIN_NAV_ITEMS } from "./AdminSidebar";
 import { adminHref } from "../utils/msimamiziMode";
-import { Menu, Power, ShieldCheck } from "lucide-react";
+import { Menu, Power, ShieldCheck, ChevronRight } from "lucide-react";
 
 export default function AdminNavbar({
   user,
@@ -10,7 +10,7 @@ export default function AdminNavbar({
   onToggleSidebar,
   onLogout
 }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const activeItem =
     ADMIN_NAV_ITEMS.find((i) => {
       const targetHref = adminHref(i.path);
@@ -20,6 +20,8 @@ export default function AdminNavbar({
     }) || ADMIN_NAV_ITEMS[0];
 
   const HeaderIcon = activeItem.icon || ShieldCheck;
+  const usersBase = adminHref("/users");
+  const isUserDetail = location.startsWith(`${usersBase}/`) && location.length > usersBase.length + 1;
 
   return (
     <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
@@ -33,9 +35,23 @@ export default function AdminNavbar({
         >
           <Menu className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100 font-semibold text-xs sm:text-sm truncate">
-          <HeaderIcon className="w-4 h-4 text-[#00a99d] shrink-0" />
-          <span className="truncate">{activeItem.label}</span>
+        <div className="flex items-center gap-1.5 text-slate-800 dark:text-slate-100 font-semibold text-xs sm:text-sm truncate">
+          <HeaderIcon className="w-4 h-4 text-[#00B8B0] shrink-0" />
+          {isUserDetail ? (
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 truncate">
+              <button
+                type="button"
+                onClick={() => setLocation(usersBase)}
+                className="text-[#738197] hover:text-[#102B4C] dark:hover:text-white transition cursor-pointer"
+              >
+                Users
+              </button>
+              <ChevronRight className="w-3.5 h-3.5 text-[#738197] shrink-0" />
+              <span className="truncate text-[#152238] dark:text-white">User Details</span>
+            </nav>
+          ) : (
+            <span className="truncate">{activeItem.label}</span>
+          )}
         </div>
       </div>
 

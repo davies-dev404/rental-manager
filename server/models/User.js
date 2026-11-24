@@ -56,7 +56,11 @@ const userSchema = new mongoose.Schema({
   suspendedAt: { type: Date },
   suspendedReason: { type: String, default: '' },
   suspendedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  lastLoginAt: { type: Date }
+  lastLoginAt: { type: Date },
+  lastActiveAt: { type: Date },
+  loginCount: { type: Number, default: 0 },
+  deletedAt: { type: Date },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 });
 
 userSchema.index({ role: 1, accountStatus: 1, createdAt: -1 });

@@ -100,6 +100,15 @@ export const adminService = {
     });
     return parseApiResponse(res, "Failed to load user profile");
   },
+  updateUserProfile: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update user profile");
+  },
   updateUserStatus: async (id, payload) => {
     const res = await smartFetch(`${API_URL}/admin/users/${id}/status`, {
       method: "PATCH",
@@ -108,6 +117,115 @@ export const adminService = {
       body: JSON.stringify(payload)
     });
     return parseApiResponse(res, "Failed to update account status");
+  },
+  performUserAccountAction: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/actions`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to run account action");
+  },
+  exportUserData: (id, format = "json") =>
+    downloadAdminBlob(
+      `${API_URL}/admin/users/${id}/export${buildQueryString({ format })}`,
+      `makaziflow-user360-${id}.${format}`
+    ),
+  getUserProperties: async (id, params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/properties${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load landlord properties");
+  },
+  exportUserPropertiesCsv: (id, params = {}) =>
+    downloadAdminBlob(
+      `${API_URL}/admin/users/${id}/properties${buildQueryString({ ...params, export: "csv" })}`,
+      `landlord-properties-${id}.csv`
+    ),
+  manageUserProperty: async (userId, propertyId, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${userId}/properties/${propertyId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update property");
+  },
+  getUserTenants: async (id, params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/tenants${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load landlord tenants");
+  },
+  getUserPayments: async (id, params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/payments${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load financial intelligence");
+  },
+  exportUserPaymentsCsv: (id, params = {}) =>
+    downloadAdminBlob(
+      `${API_URL}/admin/users/${id}/payments${buildQueryString({ ...params, export: "csv" })}`,
+      `landlord-payments-${id}.csv`
+    ),
+  getUserPaymentInvestigation: async (userId, paymentId) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${userId}/payments/${paymentId}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to inspect transaction");
+  },
+  getUserSubscriptions: async (id) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/subscriptions`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load subscription details");
+  },
+  manageUserSubscription: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/subscriptions/manage`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update subscription");
+  },
+  getUserSecurityAudit: async (id, params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/security${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load security & audit history");
+  },
+  getUserSupportCenter: async (id) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/support`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load support center");
+  },
+  createUserInternalNote: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/notes`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to save internal note");
+  },
+  sendUserNotification: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/users/${id}/notify`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to send notification");
   },
 
   // Properties

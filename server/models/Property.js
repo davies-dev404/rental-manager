@@ -17,6 +17,14 @@ const propertySchema = new mongoose.Schema({
   flagReason: { type: String, default: '' },
   flaggedAt: { type: Date },
   flaggedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected'],
+    default: 'pending',
+    index: true
+  },
+  verifiedAt: { type: Date },
+  verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isDemo: { type: Boolean, default: false, index: true },
   createdAt: { type: Date, default: Date.now }
 });
