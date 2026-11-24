@@ -17,6 +17,15 @@ const STATUS_BADGE = {
   deactivated: "bg-slate-200 text-slate-700 border-slate-300"
 };
 
+function formatRoleLabel(role, isSuperAdmin) {
+  const r = String(role || "").toLowerCase();
+  if (isSuperAdmin || r === "superadmin") return "Super Admin";
+  if (r === "admin" || r === "landlord") return "Landlord";
+  if (r === "caretaker") return "Caretaker";
+  if (r === "tenant") return "Tenant";
+  return role || "Landlord";
+}
+
 export default function AdminUsers() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -62,7 +71,7 @@ export default function AdminUsers() {
     {
       key: "role",
       label: "Role",
-      render: (u) => <Badge variant="outline" className="text-[10px] capitalize">{u.role}</Badge>
+      render: (u) => <Badge variant="outline" className="text-[10px]">{formatRoleLabel(u.role, u.isSuperAdmin)}</Badge>
     },
     {
       key: "accountStatus",

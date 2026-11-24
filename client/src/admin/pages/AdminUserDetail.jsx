@@ -70,7 +70,9 @@ export default function AdminUserDetail({ id }) {
               <ShieldCheck className="w-5 h-5 text-[#00a99d]" />
               {u.name}
             </h1>
-            <p className="text-xs text-slate-500">{u.email} · {u.role}</p>
+            <p className="text-xs text-slate-500">
+              {u.email} · {u.role === "admin" || u.role === "landlord" ? "Landlord" : u.role}
+            </p>
           </div>
         </div>
         <Badge variant="outline" className="text-xs capitalize self-start sm:self-auto">

@@ -361,6 +361,65 @@ exports.getOverviewDashboard = async (req, res) => {
     const landlordRevTotal = landlordRevAgg[0]?.total || 0;
     const landlordRevCount = landlordRevAgg[0]?.count || 0;
 
+    // Aggregate settled rental payments per Property (ODPP compliant: no tenant PII, property-level totals)
+    const [allNonDemoProps, allNonDemoUnits, allSettledRentalPayments] = await Promise.all([
+      Property.find(scope.propertyExcludeFilter)
+        .populate('user', 'name email')
+        .select('name location user createdAt')
+        .lean(),
+      Unit.find(scope.unitExcludeFilter).select('_id propertyId').lean(),
+      Payment.find(settledPaymentMatch)
+        .select('propertyId unitId user amount date createdAt currency')
+        .lean()
+    ]);
+
+    const unitToPropMap = new Map();
+    for (const u of allNonDemoUnits) {
+      if (u.propertyId) unitToPropMap.set(String(u._id), String(u.propertyId));
+    }
+
+    const propSummaryMap = new Map();
+    for (const prop of allNonDemoProps) {
+      propSummaryMap.set(String(prop._id), {
+        propertyId: String(prop._id),
+        propertyName: prop.name,
+        location: prop.location || '',
+        landlordId: prop.user?._id ? String(prop.user._id) : null,
+        landlordName: prop.user?.name || 'Landlord',
+        totalPaid: 0,
+        paymentCount: 0,
+        currency: platformSetting?.defaultCurrency || 'KES',
+        lastPaymentAt: null
+      });
+    }
+
+    for (const pay of allSettledRentalPayments) {
+      const resolvedPropId = pay.propertyId
+        ? String(pay.propertyId)
+        : (pay.unitId ? unitToPropMap.get(String(pay.unitId)) : null);
+      if (!resolvedPropId || !propSummaryMap.has(resolvedPropId)) continue;
+      const entry = propSummaryMap.get(resolvedPropId);
+      entry.totalPaid += Number(pay.amount || 0);
+      entry.paymentCount += 1;
+      const dt = pay.date || pay.createdAt;
+      if (dt && (!entry.lastPaymentAt || new Date(dt) > new Date(entry.lastPaymentAt))) {
+        entry.lastPaymentAt = dt;
+      }
+    }
+
+    const propertyTransactions = Array.from(propSummaryMap.values()).sort((a, b) => {
+      if (b.totalPaid !== a.totalPaid) return b.totalPaid - a.totalPaid;
+      return String(a.propertyName).localeCompare(String(b.propertyName));
+    });
+
+    const formattedRegistrations = newRegistrations.map((u) => {
+      const r = String(u.role || '').toLowerCase();
+      return {
+        ...u,
+        roleLabel: r === 'admin' || r === 'landlord' ? 'Landlord' : r === 'superadmin' ? 'Super Admin' : u.role
+      };
+    });
+
     // Combine gateway PaymentTransaction + landlord workspace Payment for live Recent Transactions feed (ODPP redacted)
     const mergedRecentTransactions = [
       ...recentTransactions.map((t) => ({
@@ -368,8 +427,8 @@ exports.getOverviewDashboard = async (req, res) => {
         accountReference: t.accountReference,
         landlordId: t.landlordId || null,
         customerName: ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory)
-          ? (t.landlordId?.name || t.customerName || 'Subscriber')
-          : `${t.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
+          ? (t.landlordId?.name || t.customerName || 'Landlord')
+          : `${t.landlordId?.name || 'Landlord'} · Protected Tenant Payment`,
         provider: t.provider,
         amount: t.amount,
         amountPaid: t.amountPaid,
@@ -442,7 +501,8 @@ exports.getOverviewDashboard = async (req, res) => {
       feeds: {
         recentActivities,
         recentTransactions: mergedRecentTransactions,
-        newRegistrations,
+        propertyTransactions,
+        newRegistrations: formattedRegistrations,
         systemNotifications
       }
     });

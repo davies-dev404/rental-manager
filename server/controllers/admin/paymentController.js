@@ -1,11 +1,13 @@
 const PaymentTransaction = require('../../models/PaymentTransaction');
 const Payment = require('../../models/Payment');
+const Property = require('../../models/Property');
+const Unit = require('../../models/Unit');
 const PaymentCallback = require('../../models/PaymentCallback');
 const PaymentAllocation = require('../../models/PaymentAllocation');
 const PaymentReceipt = require('../../models/PaymentReceipt');
 const Invoice = require('../../models/Invoice');
 const PaymentService = require('../../services/payments/PaymentService');
-const { escapeRegExp } = require('../../middleware/securityMiddleware');
+const { escapeRegExp, isValidObjectId } = require('../../middleware/securityMiddleware');
 const { logAdminAction } = require('../../utils/auditLogger');
 const { getDemoExclusionScope } = require('../../services/adminScopeService');
 
@@ -64,14 +66,60 @@ exports.listPayments = async (req, res) => {
     const skip = (page - 1) * limit;
     const filter = buildPaymentFilter(req.query);
     const scope = await getDemoExclusionScope();
-    const { search = '', status = 'all', environment = 'production', startDate = '', endDate = '' } = req.query;
+    const { search = '', status = 'all', environment = 'production', startDate = '', endDate = '', propertyId = 'all' } = req.query;
+
+    const [allProps, allUnits] = await Promise.all([
+      Property.find(scope.propertyExcludeFilter)
+        .populate('user', 'name email')
+        .select('name location user')
+        .sort({ name: 1 })
+        .lean(),
+      Unit.find(scope.unitExcludeFilter).select('_id propertyId unitNumber').lean()
+    ]);
+
+    const propMap = new Map(allProps.map((pr) => [String(pr._id), pr]));
+    const unitMap = new Map(allUnits.map((u) => [String(u._id), u]));
+
+    const selectedPropId = propertyId && propertyId !== 'all' && isValidObjectId(String(propertyId))
+      ? String(propertyId)
+      : null;
+    const selectedPropUnitIds = selectedPropId
+      ? allUnits.filter((u) => String(u.propertyId) === selectedPropId).map((u) => u._id)
+      : [];
+
+    if (selectedPropId) {
+      const propClause = {
+        $or: [
+          { propertyId: selectedPropId },
+          ...(selectedPropUnitIds.length > 0 ? [{ unitId: { $in: selectedPropUnitIds } }] : [])
+        ]
+      };
+      if (filter.$and) {
+        filter.$and.push(propClause);
+      } else {
+        Object.assign(filter, propClause);
+      }
+    }
 
     // Also load recorded landlord workspace payments when viewing production/all records
     const includeWorkspacePayments = environment !== 'sandbox';
     const ledgerFilter = { ...scope.paymentExcludeFilter };
+    if (selectedPropId) {
+      ledgerFilter.$or = [
+        { propertyId: selectedPropId },
+        ...(selectedPropUnitIds.length > 0 ? [{ unitId: { $in: selectedPropUnitIds } }] : [])
+      ];
+    }
     if (search && String(search).trim()) {
       const rx = new RegExp(escapeRegExp(String(search).trim()), 'i');
-      ledgerFilter.$or = [{ reference: rx }, { invoiceNumber: rx }, { method: rx }, { type: rx }];
+      const ledgerSearch = { $or: [{ reference: rx }, { invoiceNumber: rx }, { method: rx }, { type: rx }] };
+      if (ledgerFilter.$or) {
+        const propOr = ledgerFilter.$or;
+        delete ledgerFilter.$or;
+        ledgerFilter.$and = [{ $or: propOr }, ledgerSearch];
+      } else {
+        Object.assign(ledgerFilter, ledgerSearch);
+      }
     }
     if (status && status !== 'all') {
       ledgerFilter.status = status === 'paid' ? { $in: ['paid', 'confirmed', 'Completed'] } : String(status);
@@ -92,14 +140,14 @@ exports.listPayments = async (req, res) => {
         .populate('landlordId', 'name email phone')
         .populate('subscriptionId', 'planCode planName billingCycle')
         .sort({ createdAt: -1 })
-        .limit(200)
+        .limit(300)
         .lean(),
       includeWorkspacePayments
         ? Payment.find(ledgerFilter)
             .populate('user', 'name email phone')
-            .populate('unitId', 'unitNumber')
+            .populate('unitId', 'unitNumber propertyId')
             .sort({ date: -1, createdAt: -1 })
-            .limit(200)
+            .limit(300)
             .lean()
         : Promise.resolve([]),
       PaymentTransaction.aggregate([
@@ -130,42 +178,69 @@ exports.listPayments = async (req, res) => {
       ledgerPayments.map((p) => (p.paymentTransactionId ? String(p.paymentTransactionId) : null)).filter(Boolean)
     );
 
+    const resolvePropDetails = (propIdVal, unitIdVal) => {
+      const unitObj = unitIdVal && typeof unitIdVal === 'object' ? unitIdVal : unitMap.get(String(unitIdVal || ''));
+      const pid = propIdVal
+        ? String(propIdVal)
+        : (unitObj?.propertyId ? String(unitObj.propertyId) : null);
+      const propObj = pid ? propMap.get(pid) : null;
+      return {
+        propertyId: pid || null,
+        propertyName: propObj?.name || '',
+        unitNumber: unitObj?.unitNumber || ''
+      };
+    };
+
     const combined = [
       ...gatewayTxns.map((t) => {
         const isSub = ['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory);
+        const propInfo = resolvePropDetails(t.propertyId, t.unitId);
+        // ODPP Privacy Compliance: never expose tenant names/emails/phones on non-subscription payments
+        const safeLabel = isSub
+          ? (t.landlordId?.name || 'Landlord')
+          : `${propInfo.propertyName || t.landlordId?.name || 'Property'}${propInfo.unitNumber ? ` · Unit ${propInfo.unitNumber}` : ''} (Tenant Protected - ODPP)`;
         return {
           ...t,
           tenantId: undefined,
-          customerName: isSub ? (t.landlordId?.name || t.customerName || 'Subscriber') : `${t.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
-          customerEmail: isSub ? (t.landlordId?.email || t.customerEmail || '') : (t.landlordId?.email || ''),
-          customerPhone: isSub ? (t.landlordId?.phone || t.customerPhone || '') : '',
+          propertyId: propInfo.propertyId,
+          propertyName: propInfo.propertyName || (isSub ? 'Platform Subscription' : 'Assigned Property'),
+          unitNumber: propInfo.unitNumber,
+          customerName: safeLabel,
+          customerEmail: isSub ? (t.landlordId?.email || '') : 'ODPP Protected',
+          customerPhone: isSub ? (t.landlordId?.phone || '') : '',
           sourceType: 'gateway',
           sortAt: new Date(t.paidAt || t.createdAt).getTime()
         };
       }),
       ...ledgerPayments
         .filter((p) => !p.paymentTransactionId || !gatewayLinkedIds.has(String(p.paymentTransactionId)))
-        .map((p) => ({
-          _id: `pay_${p._id}`,
-          isWorkspacePayment: true,
-          sourceType: 'workspace_ledger',
-          internalTransactionId: p.reference || p.invoiceNumber || String(p._id),
-          accountReference: p.invoiceNumber || p.reference || p.type || 'Rent Payment',
-          providerReference: p.reference || '',
-          provider: p.method || 'M-Pesa / Ledger',
-          paymentChannel: p.category || p.type || 'rent',
-          paymentCategory: p.category || 'rent',
-          paymentMethodDetail: p.unitId?.unitNumber ? `Unit ${p.unitId.unitNumber}` : (p.type || 'Rent'),
-          landlordId: p.user || null,
-          customerName: p.unitId?.unitNumber ? `${p.user?.name || 'Subscriber'} · Unit ${p.unitId.unitNumber}` : (p.user?.name || 'Subscriber Ledger'),
-          customerEmail: p.user?.email || '',
-          amount: p.amount || 0,
-          amountPaid: p.amount || 0,
-          currency: p.currency || 'KES',
-          status: ['paid', 'confirmed', 'Completed'].includes(p.status) ? 'paid' : p.status,
-          createdAt: p.date || p.createdAt,
-          sortAt: new Date(p.date || p.createdAt).getTime()
-        }))
+        .map((p) => {
+          const propInfo = resolvePropDetails(p.propertyId, p.unitId);
+          return {
+            _id: `pay_${p._id}`,
+            isWorkspacePayment: true,
+            sourceType: 'workspace_ledger',
+            propertyId: propInfo.propertyId,
+            propertyName: propInfo.propertyName || p.property || 'Property',
+            unitNumber: propInfo.unitNumber,
+            internalTransactionId: p.reference || p.invoiceNumber || String(p._id),
+            accountReference: p.invoiceNumber || p.reference || p.type || 'Rent Payment',
+            providerReference: p.reference || '',
+            provider: p.method || 'M-Pesa / Ledger',
+            paymentChannel: p.category || p.type || 'rent',
+            paymentCategory: p.category || 'rent',
+            paymentMethodDetail: propInfo.unitNumber ? `Unit ${propInfo.unitNumber}` : (p.type || 'Rent'),
+            landlordId: p.user || null,
+            customerName: `${propInfo.propertyName || 'Property'}${propInfo.unitNumber ? ` · Unit ${propInfo.unitNumber}` : ''} (Tenant Protected - ODPP)`,
+            customerEmail: p.user?.email || '',
+            amount: p.amount || 0,
+            amountPaid: p.amount || 0,
+            currency: p.currency || 'KES',
+            status: ['paid', 'confirmed', 'Completed'].includes(p.status) ? 'paid' : p.status,
+            createdAt: p.date || p.createdAt,
+            sortAt: new Date(p.date || p.createdAt).getTime()
+          };
+        })
     ].sort((a, b) => b.sortAt - a.sortAt);
 
     const total = combined.length;
@@ -202,9 +277,57 @@ exports.listPayments = async (req, res) => {
       }
     });
 
+    // Compute total paid per property across all non-demo settled payments
+    const propTotalsAgg = await Payment.aggregate([
+      {
+        $match: {
+          ...scope.paymentExcludeFilter,
+          status: { $in: ['paid', 'confirmed', 'Completed', 'partial'] }
+        }
+      },
+      {
+        $lookup: {
+          from: 'units',
+          localField: 'unitId',
+          foreignField: '_id',
+          as: 'unitDoc'
+        }
+      },
+      {
+        $project: {
+          amount: 1,
+          resolvedPropId: { $ifNull: ['$propertyId', { $arrayElemAt: ['$unitDoc.propertyId', 0] }] }
+        }
+      },
+      {
+        $group: {
+          _id: '$resolvedPropId',
+          totalPaid: { $sum: '$amount' },
+          paymentCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const propTotalsById = new Map(
+      propTotalsAgg
+        .filter((x) => x._id)
+        .map((x) => [String(x._id), { totalPaid: x.totalPaid || 0, paymentCount: x.paymentCount || 0 }])
+    );
+
     res.json({
       items,
       summary,
+      properties: allProps.map((pr) => {
+        const stats = propTotalsById.get(String(pr._id)) || { totalPaid: 0, paymentCount: 0 };
+        return {
+          _id: String(pr._id),
+          name: pr.name,
+          location: pr.location || '',
+          landlordName: pr.user?.name || 'Landlord',
+          totalPaid: stats.totalPaid,
+          paymentCount: stats.paymentCount
+        };
+      }),
       pagination: {
         page,
         limit,
@@ -230,17 +353,26 @@ exports.getPaymentDetail = async (req, res) => {
     const sanitizedTxn = {
       ...txn,
       tenantId: undefined,
-      customerName: isSub ? txn.customerName : `${txn.landlordId?.name || 'Subscriber'} · Protected Tenant Payment`,
-      customerEmail: isSub ? txn.customerEmail : (txn.landlordId?.email || ''),
-      customerPhone: isSub ? txn.customerPhone : ''
+      customerName: isSub ? (txn.landlordId?.name || txn.customerName || 'Landlord') : `${txn.landlordId?.name || 'Landlord'} · Tenant Protected (ODPP)`,
+      customerEmail: isSub ? (txn.landlordId?.email || txn.customerEmail || '') : 'ODPP Protected',
+      customerPhone: isSub ? (txn.landlordId?.phone || txn.customerPhone || '') : ''
     };
 
-    const [invoice, callbacks, allocations, receipt] = await Promise.all([
+    const [invoice, callbacks, allocations, rawReceipt] = await Promise.all([
       txn.invoiceId ? Invoice.findById(txn.invoiceId).select('invoiceNumber status totalAmount amountPaid balanceDue billingPeriod createdAt').lean() : null,
-      PaymentCallback.find({ transactionId: txn._id }).select('-rawPayload.secret -rawPayload.password').sort({ receivedAt: -1 }).lean(),
-      PaymentAllocation.find({ transactionId: txn._id }).lean(),
+      PaymentCallback.find({ transactionId: txn._id }).select('-rawPayload.secret -rawPayload.password -payload.FirstName -payload.MiddleName -payload.LastName -payload.MSISDN').sort({ receivedAt: -1 }).lean(),
+      PaymentAllocation.find({ transactionId: txn._id }).select('-tenantId').lean(),
       PaymentReceipt.findOne({ transactionId: txn._id }).lean()
     ]);
+
+    const receipt = rawReceipt
+      ? {
+          ...rawReceipt,
+          tenantId: undefined,
+          recipientName: isSub ? rawReceipt.recipientName : 'Tenant Protected (ODPP)',
+          recipientEmail: isSub ? rawReceipt.recipientEmail : ''
+        }
+      : null;
 
     res.json({ transaction: sanitizedTxn, invoice, callbacks, allocations, receipt });
   } catch (err) {
@@ -295,6 +427,19 @@ exports.reversePayment = async (req, res) => {
 exports.exportPaymentsCsv = async (req, res) => {
   try {
     const filter = buildPaymentFilter({ ...req.query, environment: req.query.environment || 'production' });
+    const propertyId = req.query.propertyId;
+    if (propertyId && propertyId !== 'all' && isValidObjectId(String(propertyId))) {
+      const propUnits = await Unit.find({ propertyId: String(propertyId) }).select('_id').lean();
+      const unitIds = propUnits.map((u) => u._id);
+      const propClause = {
+        $or: [
+          { propertyId: String(propertyId) },
+          ...(unitIds.length > 0 ? [{ unitId: { $in: unitIds } }] : [])
+        ]
+      };
+      if (filter.$and) filter.$and.push(propClause);
+      else Object.assign(filter, propClause);
+    }
     const txns = await PaymentTransaction.find(filter)
       .populate('landlordId', 'name email')
       .populate('subscriptionId', 'planName billingCycle')

@@ -210,15 +210,6 @@ export default function CloudflareTurnstile({
           </button>
         </div>
       )}
-      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-        <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
-        <span>Protected by Cloudflare Turnstile</span>
-        {isVerified && (
-          <span className="flex items-center gap-1 text-emerald-600 font-medium ml-1">
-            <CheckCircle2 className="w-3 h-3" /> Verified
-          </span>
-        )}
-      </div>
     </div>
   );
 }

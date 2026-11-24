@@ -607,6 +607,23 @@ async function runTests() {
       mixedPayments.items.some((p) => p.sourceType === 'workspace_ledger' && Number(p.amount) === 35000),
       'Real landlord workspace ledger payments must appear in Admin Payments'
     );
+    assert.ok(Array.isArray(mixedPayments.properties) && mixedPayments.properties.length >= 1);
+    const propPayFilteredRes = await fetch(`${baseUrl}/api/admin/payments?propertyId=${prop._id}`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(propPayFilteredRes.status, 200);
+    const propPayFiltered = await propPayFilteredRes.json();
+    assert.ok(
+      propPayFiltered.items.every((item) => !String(item.customerName || '').includes('Alice Tenant')),
+      'ODPP compliance: Payment list must hide tenant names'
+    );
+    const postDashRes = await fetch(`${baseUrl}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${superToken}` } });
+    const postDash = await postDashRes.json();
+    assert.ok(Array.isArray(postDash.feeds.propertyTransactions) && postDash.feeds.propertyTransactions.length >= 1);
+    assert.ok(
+      postDash.feeds.newRegistrations.some((u) => u.roleLabel === 'Landlord'),
+      'New registrations must label admin/landlord accounts as Landlord'
+    );
 
     // Real-time WhatsApp-style SSE streams + two-way user reply
     const adminStreamAc = new AbortController();

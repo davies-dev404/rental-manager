@@ -87,7 +87,7 @@ export default function AdminPaymentDetail({ id }) {
         <Card className="bg-white dark:bg-slate-900"><CardContent className="p-3.5"><span className="text-slate-500 block">Amount</span><strong className="text-lg">{txn.currency || "KES"} {Number(txn.amountPaid || txn.amount || 0).toLocaleString()}</strong></CardContent></Card>
         <Card className="bg-white dark:bg-slate-900"><CardContent className="p-3.5"><span className="text-slate-500 block">Provider / Channel</span><strong className="capitalize">{txn.provider} ({txn.paymentChannel})</strong></CardContent></Card>
         <Card className="bg-white dark:bg-slate-900"><CardContent className="p-3.5"><span className="text-slate-500 block">Environment</span><strong className="uppercase">{txn.gatewayEnvironment}</strong></CardContent></Card>
-        <Card className="bg-white dark:bg-slate-900"><CardContent className="p-3.5"><span className="text-slate-500 block">Subscriber</span><strong>{txn.landlordId?.name || txn.customerName || "—"}</strong></CardContent></Card>
+        <Card className="bg-white dark:bg-slate-900"><CardContent className="p-3.5"><span className="text-slate-500 block">Account Holder (ODPP)</span><strong>{txn.customerName || txn.landlordId?.name || "ODPP Protected"}</strong></CardContent></Card>
       </div>
 
       <Card className="bg-white dark:bg-slate-900 shadow-xs">

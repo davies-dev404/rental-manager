@@ -1,6 +1,8 @@
 import React from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminService } from "../services/adminService";
+import { adminHref } from "../utils/msimamiziMode";
 import StatCard from "../components/StatCard";
 import RevenueChart from "../components/RevenueChart";
 import { useToast } from "@/hooks/use-toast";
@@ -23,10 +25,12 @@ import {
   RefreshCw,
   Bell,
   Activity,
-  Trash2
+  Trash2,
+  ChevronRight
 } from "lucide-react";
 
 export default function AdminDashboard() {
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -248,34 +252,52 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Transactions */}
+        {/* Recent Transactions (Grouped by Property) */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs rounded-xl">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-[#00a99d]" /> Recent Transactions
+              <CreditCard className="w-4 h-4 text-[#00a99d]" /> Transactions by Property
             </CardTitle>
+            <button
+              type="button"
+              onClick={() => setLocation(adminHref("/payments"))}
+              className="text-[11px] font-semibold text-[#00a99d] hover:underline cursor-pointer"
+            >
+              All Payments
+            </button>
           </CardHeader>
-          <CardContent className="space-y-2.5 max-h-80 overflow-y-auto text-xs">
-            {(feeds.recentTransactions || []).length === 0 ? (
-              <p className="text-slate-400 text-center py-6">No gateway transactions recorded yet.</p>
+          <CardContent className="space-y-2 max-h-80 overflow-y-auto text-xs">
+            {(feeds.propertyTransactions || []).length === 0 ? (
+              <p className="text-slate-400 text-center py-6">No property transactions recorded yet.</p>
             ) : (
-              feeds.recentTransactions.map((t) => (
-                <div key={t._id} className="border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0 flex items-center justify-between gap-2">
+              feeds.propertyTransactions.map((p) => (
+                <button
+                  key={p.propertyId}
+                  type="button"
+                  onClick={() => setLocation(adminHref(`/payments?propertyId=${p.propertyId}`))}
+                  className="w-full text-left border-b border-slate-100 dark:border-slate-800 pb-2.5 last:border-0 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-md px-1.5 py-1 transition cursor-pointer"
+                >
                   <div className="min-w-0">
-                    <p className="font-mono font-semibold text-slate-900 dark:text-white truncate">{t.accountReference}</p>
+                    <p className="font-semibold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#00a99d] shrink-0" />
+                      {p.propertyName}
+                    </p>
                     <p className="text-[11px] text-slate-500 truncate">
-                      {t.landlordId?.name || t.customerName || "—"} · {t.provider}
+                      {p.landlordName} · {p.paymentCount || 0} {p.paymentCount === 1 ? "payment" : "payments"}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-bold text-slate-900 dark:text-white">
-                      {t.currency || "KES"} {Number(t.amountPaid || t.amount || 0).toLocaleString()}
-                    </p>
-                    <Badge className={`text-[9.5px] uppercase ${t.status === "paid" ? "bg-[#00a99d] text-white" : "bg-slate-100 text-slate-700"}`}>
-                      {t.status}
-                    </Badge>
+                  <div className="text-right shrink-0 flex items-center gap-1.5">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">
+                        {p.currency || "KES"} {Number(p.totalPaid || 0).toLocaleString()}
+                      </p>
+                      <Badge className="text-[9.5px] uppercase bg-[#00a99d] text-white">
+                        Total Paid
+                      </Badge>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                   </div>
-                </div>
+                </button>
               ))
             )}
           </CardContent>
@@ -283,29 +305,51 @@ export default function AdminDashboard() {
 
         {/* New User Registrations */}
         <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs rounded-xl">
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
               <Users className="w-4 h-4 text-[#00a99d]" /> New Registrations
             </CardTitle>
+            <button
+              type="button"
+              onClick={() => setLocation(adminHref("/users"))}
+              className="text-[11px] font-semibold text-[#00a99d] hover:underline cursor-pointer"
+            >
+              View All
+            </button>
           </CardHeader>
-          <CardContent className="space-y-2.5 max-h-80 overflow-y-auto text-xs">
+          <CardContent className="space-y-2 max-h-80 overflow-y-auto text-xs">
             {(feeds.newRegistrations || []).length === 0 ? (
-              <p className="text-slate-400 text-center py-6">No registered users yet.</p>
+              <p className="text-slate-400 text-center py-6">No registered landlords yet.</p>
             ) : (
-              feeds.newRegistrations.map((u) => (
-                <div key={u._id} className="border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 dark:text-white truncate">{u.name}</p>
-                    <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <Badge variant="outline" className="text-[9.5px] capitalize">{u.role}</Badge>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-KE") : "—"}
-                    </p>
-                  </div>
-                </div>
-              ))
+              feeds.newRegistrations.map((u) => {
+                const displayRole =
+                  u.roleLabel ||
+                  (["admin", "landlord"].includes(String(u.role || "").toLowerCase()) ? "Landlord" : u.role);
+                return (
+                  <button
+                    key={u._id}
+                    type="button"
+                    onClick={() => setLocation(adminHref(`/users/${u._id}`))}
+                    className="w-full text-left border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-md px-1.5 py-1 transition cursor-pointer"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-white truncate">{u.name}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-1.5">
+                      <div>
+                        <Badge variant="outline" className="text-[9.5px] bg-[#00a99d]/10 text-[#0d2240] dark:text-[#00d4c8] border-[#00a99d]/30">
+                          {displayRole}
+                        </Badge>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString("en-KE") : "—"}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                  </button>
+                );
+              })
             )}
           </CardContent>
         </Card>
