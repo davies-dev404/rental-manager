@@ -16,6 +16,16 @@ import {
 import CloudflareTurnstile from "@/components/auth/CloudflareTurnstile";
 import SEO from "@/components/SEO";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
+import { getFlagUrl } from "@/components/public/CountryPhoneInput";
+
+const SIGNUP_COUNTRIES = [
+  { dial: "+254", code: "KE", name: "Kenya" },
+  { dial: "+255", code: "TZ", name: "Tanzania" },
+  { dial: "+256", code: "UG", name: "Uganda" },
+  { dial: "+250", code: "RW", name: "Rwanda" },
+  { dial: "+1", code: "US", name: "United States" },
+  { dial: "+44", code: "GB", name: "United Kingdom" }
+];
 
 export default function LoginPage() {
   const [location, setLocation] = useLocation();
@@ -845,18 +855,27 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center rounded-md border border-slate-300 bg-white overflow-hidden shadow-2xs focus-within:border-blue-500">
                 <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border-r border-slate-200 text-xs text-slate-700">
-                  <span>🇰🇪</span>
+                  {(() => {
+                    const selectedCountry =
+                      SIGNUP_COUNTRIES.find((c) => c.dial === signupCountryCode) || SIGNUP_COUNTRIES[0];
+                    return (
+                      <img
+                        src={getFlagUrl(selectedCountry.code)}
+                        alt={selectedCountry.name}
+                        className="w-5 h-3.5 object-cover rounded-[2px] shadow-2xs shrink-0"
+                      />
+                    );
+                  })()}
                   <select
                     value={signupCountryCode}
                     onChange={(e) => setSignupCountryCode(e.target.value)}
                     className="bg-transparent text-xs font-medium focus:outline-none cursor-pointer"
                   >
-                    <option value="+254">+254</option>
-                    <option value="+255">+255</option>
-                    <option value="+256">+256</option>
-                    <option value="+250">+250</option>
-                    <option value="+1">+1</option>
-                    <option value="+44">+44</option>
+                    {SIGNUP_COUNTRIES.map((country) => (
+                      <option key={country.code} value={country.dial}>
+                        {country.dial}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <input
