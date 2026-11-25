@@ -108,9 +108,6 @@ export default function AdminLogin() {
             <ShieldCheck className="w-3.5 h-3.5" />
             MSIMAMIZI
           </div>
-          <p className="text-xs text-[#a8bfd4]">
-            Restricted SaaS Platform Administration
-          </p>
         </div>
 
         {/* Form Body */}
