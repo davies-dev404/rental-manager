@@ -458,7 +458,7 @@ async function runTests() {
   let rentTxnRes;
   let rentInvoiceId;
   await test('16, 17, 18, 19. Tenant rent collection via Pesaflow allocates rent/water/service, creates receipt & rental invoice PDF', async () => {
-    const unitA1 = await Unit.findOne({ user: landlordA._id, unitNumber: 'A-1' });
+    const unitA1 = await Unit.findOne({ user: landlordA._id }).sort({ createdAt: 1 });
     const tenantA = await Tenant.create({
       name: 'Grace Wanjiku',
       email: 'grace.wanjiku@example.com',

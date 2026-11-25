@@ -22,14 +22,20 @@ export default function StatCard({
     <Card className={cn("bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs rounded-xl", className)}>
       <CardContent className="p-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 truncate">
+          <p
+            title={title}
+            className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 leading-snug line-clamp-2"
+          >
             {title}
           </p>
           <p className="text-xl font-extrabold text-slate-900 dark:text-white mt-1 tabular-nums">
             {value}
           </p>
           {subtitle && (
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+            <p
+              title={subtitle}
+              className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-snug"
+            >
               {subtitle}
             </p>
           )}

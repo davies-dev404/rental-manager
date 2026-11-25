@@ -19,6 +19,9 @@ const Unit = require('../models/Unit');
 const Tenant = require('../models/Tenant');
 const Payment = require('../models/Payment');
 const PaymentTransaction = require('../models/PaymentTransaction');
+const PaymentCallback = require('../models/PaymentCallback');
+const Invoice = require('../models/Invoice');
+const TaxSubmission = require('../models/TaxSubmission');
 const SubscriptionPlan = require('../models/SubscriptionPlan');
 const LandlordSubscription = require('../models/LandlordSubscription');
 const UnitEntitlement = require('../models/UnitEntitlement');
@@ -684,7 +687,133 @@ async function runTests() {
 
     console.log('✅ PASS 7: Demo exclusion/purge, cookie isolation, ODPP tenant counts, synced reports, AfriNexTech support, and real-time SSE chat verified');
 
-    console.log('\n🎉 ALL 7 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
+    // 8. Msimamizi Upgrade: User 360°, Financial Separation & Discrepancies, Callbacks, eTIMS Retry, Subscriptions MRR/Lifecycle, Global Search & Excel Export
+    await PaymentTransaction.create({
+      internalTransactionId: 'TXN-MISMATCH-TEST-1',
+      landlordId: landlord._id,
+      provider: 'mpesa_c2b',
+      gatewayEnvironment: 'production',
+      isSandbox: false,
+      paymentCategory: 'rent',
+      amount: 12000,
+      amountPaid: 10000,
+      currency: 'KES',
+      accountReference: 'RENT-MISMATCH-01',
+      providerReference: 'MPE998877',
+      status: 'paid',
+      reconciliationStatus: 'amount_mismatch'
+    });
+    const unmatchedCb = await PaymentCallback.create({
+      provider: 'mpesa_c2b',
+      gatewayEnvironment: 'production',
+      accountReference: 'UNKNOWN-UNIT-99',
+      providerReference: 'CBUNMATCH1',
+      amountReceived: 5500,
+      currencyReceived: 'KES',
+      processingStatus: 'unmatched',
+      processingMessage: 'No matching account reference',
+      payload: { FirstName: 'Sensitive', MiddleName: 'Name', MSISDN: '254700000000', TransAmount: '5500' }
+    });
+    const testInv = await Invoice.create({
+      invoiceNumber: 'INV-SUB-TEST-01',
+      invoiceCategory: 'subscription',
+      landlordId: landlord._id,
+      subtotal: 1500,
+      vatRate: 16,
+      taxAmount: 240,
+      totalAmount: 1740,
+      status: 'open',
+      balanceDue: 1740,
+      etimsStatus: 'failed'
+    });
+    const testEtimsSub = await TaxSubmission.create({
+      invoiceId: testInv._id,
+      landlordId: landlord._id,
+      environment: 'sandbox',
+      tin: 'P000000000A',
+      bhfId: '00',
+      trdInvcNo: testInv.invoiceNumber,
+      invcNo: 1,
+      taxableAmount: 1500,
+      vatRate: 16,
+      taxAmount: 240,
+      totalAmount: 1740,
+      status: 'failed',
+      lastError: 'Initial sandbox error'
+    });
+
+    const user360Res = await fetch(`${baseUrl}/api/admin/users/${landlord._id}`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(user360Res.status, 200);
+    const user360 = await user360Res.json();
+    assert.ok('saasSubscriptionPaidTotal' in user360.summary, 'User 360 summary must expose saasSubscriptionPaidTotal');
+    assert.ok('accountActivityCount' in user360.summary, 'User 360 summary must expose accountActivityCount');
+
+    const reconRes = await fetch(`${baseUrl}/api/admin/reconciliation/overview?environment=production`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(reconRes.status, 200);
+    const recon = await reconRes.json();
+    assert.ok(recon.saasRevenue && recon.rentalCollections, 'Reconciliation must strictly separate SaaS and Rental totals');
+    assert.ok(recon.discrepancies.amountMismatchCount >= 1, 'Amount mismatch discrepancy must be flagged');
+    assert.ok(recon.discrepancies.unmatchedCallbacksCount >= 1, 'Unmatched callback must be counted');
+
+    const cbListRes = await fetch(`${baseUrl}/api/admin/reconciliation/callbacks?processingStatus=unmatched`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(cbListRes.status, 200);
+    const cbList = await cbListRes.json();
+    assert.ok(cbList.items.length >= 1 && !cbList.items[0].payload?.FirstName, 'Callbacks must mask ODPP FirstName/MSISDN');
+
+    const cbResolveRes = await fetch(`${baseUrl}/api/admin/reconciliation/callbacks/${unmatchedCb._id}/resolve`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'ignore', notes: 'Test cleanup ignore' })
+    });
+    assert.strictEqual(cbResolveRes.status, 200);
+
+    const etimsRes = await fetch(`${baseUrl}/api/admin/reconciliation/etims`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(etimsRes.status, 200);
+    const etimsRetryRes = await fetch(`${baseUrl}/api/admin/reconciliation/etims/${testEtimsSub._id}/retry`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(etimsRetryRes.status, 200);
+
+    const subsUpgradeRes = await fetch(`${baseUrl}/api/admin/subscriptions`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(subsUpgradeRes.status, 200);
+    const subsUpgrade = await subsUpgradeRes.json();
+    assert.ok('mrr' in subsUpgrade.summary && 'arr' in subsUpgrade.summary, 'Subscriptions summary must compute MRR & ARR');
+    assert.ok(Array.isArray(subsUpgrade.billingInvoices) && subsUpgrade.billingInvoices.length >= 1, 'Subscription invoices must be listed');
+
+    const trialExtRes = await fetch(`${baseUrl}/api/admin/subscriptions/landlords/${landlord._id}/extend-trial`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${superToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ extraDays: 10, reason: 'Integration test trial extension' })
+    });
+    assert.strictEqual(trialExtRes.status, 200);
+
+    const searchRes = await fetch(`${baseUrl}/api/admin/search?q=kibet`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(searchRes.status, 200);
+    const searchData = await searchRes.json();
+    assert.ok(Array.isArray(searchData.users) && Array.isArray(searchData.transactions));
+
+    const xlsRes = await fetch(`${baseUrl}/api/admin/reports/reconciliation/export?format=xlsx`, {
+      headers: { Authorization: `Bearer ${superToken}` }
+    });
+    assert.strictEqual(xlsRes.status, 200);
+    assert.ok((xlsRes.headers.get('content-type') || '').includes('spreadsheetml'), 'Excel report export must return .xlsx MIME type');
+
+    console.log('✅ PASS 8: User 360° metrics, Financial reconciliation/callbacks/eTIMS retry, MRR/ARR & trial extension, Global search, and Excel export verified');
+
+    console.log('\n🎉 ALL 8 SUPER ADMIN INTEGRATION TEST SUITES PASSED!');
   } finally {
     await mongoose.connection.dropDatabase().catch(() => {});
     await mongoose.disconnect().catch(() => {});

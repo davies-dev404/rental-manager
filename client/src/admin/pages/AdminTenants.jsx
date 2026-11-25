@@ -40,12 +40,24 @@ export default function AdminTenants() {
     {
       key: "landlord",
       label: "Subscriber / Landlord",
-      render: (r) => (
-        <div>
-          <p className="font-semibold text-slate-800 dark:text-slate-200">{r.landlord?.companyName || r.landlord?.name || "—"}</p>
-          <p className="text-[11px] text-slate-500">{r.landlord?.email}</p>
-        </div>
-      )
+      render: (r) =>
+        r.landlord?._id ? (
+          <button
+            type="button"
+            onClick={() => setLocation(adminHref(`/users/${r.landlord._id}`))}
+            className="text-left group cursor-pointer"
+          >
+            <p className="font-semibold text-[#0d2240] dark:text-[#00d4c8] group-hover:underline">
+              {r.landlord?.companyName || r.landlord?.name || "—"}
+            </p>
+            <p className="text-[11px] text-slate-500">{r.landlord?.email}</p>
+          </button>
+        ) : (
+          <div>
+            <p className="font-semibold text-slate-800 dark:text-slate-200">{r.landlord?.companyName || r.landlord?.name || "—"}</p>
+            <p className="text-[11px] text-slate-500">{r.landlord?.email}</p>
+          </div>
+        )
     },
     {
       key: "units",

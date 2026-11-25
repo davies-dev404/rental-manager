@@ -19,6 +19,7 @@ const subscriptionAuditLogSchema = new mongoose.Schema({
       'subscription_expired',
       'subscription_suspended',
       'subscription_reactivated',
+      'trial_extended',
       'grace_period_entered',
       'unit_limit_reached',
       'unit_limit_blocked',

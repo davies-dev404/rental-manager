@@ -10,6 +10,10 @@ import { Download, FileText } from "lucide-react";
 const REPORT_TYPES = [
   { id: "landlords", label: "Landlord Portfolio & Revenue" },
   { id: "revenue", label: "Platform & Landlord Revenue" },
+  { id: "daily", label: "Daily Collections" },
+  { id: "reconciliation", label: "Reconciliation Audit" },
+  { id: "refunds", label: "Refunds & Reversals" },
+  { id: "failures", label: "Failed Payments" },
   { id: "properties", label: "Property & Tenant Sync Reports" },
   { id: "tenants", label: "Tenant Growth & Collections" },
   { id: "users", label: "User Registration Reports" },
@@ -56,6 +60,14 @@ export default function AdminReports() {
             className="text-xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => adminService.exportReport(reportType, "xlsx", { period, startDate, endDate })}
+            className="text-xs cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Export Excel
           </Button>
           <Button
             size="sm"

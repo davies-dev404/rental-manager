@@ -306,6 +306,44 @@ export const adminService = {
       `${API_URL}/admin/payments/export${buildQueryString(params)}`,
       `makaziflow-transactions-${new Date().toISOString().slice(0, 10)}.csv`
     ),
+  getReconciliationOverview: async (params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/reconciliation/overview${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load financial reconciliation overview");
+  },
+  getReconciliationCallbacks: async (params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/reconciliation/callbacks${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load payment callbacks");
+  },
+  resolveCallback: async (id, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/reconciliation/callbacks/${id}/resolve`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update callback reconciliation");
+  },
+  getEtimsSubmissions: async (params = {}) => {
+    const res = await smartFetch(`${API_URL}/admin/reconciliation/etims${buildQueryString(params)}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to load eTIMS submissions");
+  },
+  retryEtimsSubmission: async (id) => {
+    const res = await smartFetch(`${API_URL}/admin/reconciliation/etims/${id}/retry`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to retry eTIMS submission");
+  },
 
   // Subscriptions
   getSubscriptions: async (params = {}) => {
@@ -349,6 +387,31 @@ export const adminService = {
       credentials: "include"
     });
     return parseApiResponse(res, "Failed to process subscription expirations");
+  },
+  extendTrial: async (landlordId, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/subscriptions/landlords/${landlordId}/extend-trial`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to extend trial");
+  },
+  manageSubscriptionLifecycle: async (subscriptionId, payload) => {
+    const res = await smartFetch(`${API_URL}/admin/subscriptions/${subscriptionId}/lifecycle`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      credentials: "include",
+      body: JSON.stringify(payload)
+    });
+    return parseApiResponse(res, "Failed to update subscription lifecycle");
+  },
+  globalSearch: async (q) => {
+    const res = await smartFetch(`${API_URL}/admin/search${buildQueryString({ q })}`, {
+      headers: getAuthHeaders(),
+      credentials: "include"
+    });
+    return parseApiResponse(res, "Failed to search platform records");
   },
 
   // Reports

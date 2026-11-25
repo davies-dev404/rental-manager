@@ -12,7 +12,7 @@ const { logAdminAction } = require('../../utils/auditLogger');
 const { getDemoExclusionScope } = require('../../services/adminScopeService');
 
 function buildPaymentFilter(query = {}) {
-  const { search = '', provider = 'all', channel = 'all', status = 'all', category = 'all', environment = 'production', startDate = '', endDate = '' } = query;
+  const { search = '', provider = 'all', channel = 'all', status = 'all', category = 'all', reconciliationStatus = 'all', environment = 'production', startDate = '', endDate = '' } = query;
   const filter = {};
 
   if (environment === 'production') {
@@ -24,7 +24,14 @@ function buildPaymentFilter(query = {}) {
   if (provider && provider !== 'all') filter.provider = String(provider);
   if (channel && channel !== 'all') filter.paymentChannel = String(channel);
   if (status && status !== 'all') filter.status = String(status);
-  if (category && category !== 'all') filter.paymentCategory = String(category);
+  if (reconciliationStatus && reconciliationStatus !== 'all') filter.reconciliationStatus = String(reconciliationStatus);
+  if (category === 'saas') {
+    filter.paymentCategory = { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] };
+  } else if (category === 'rental') {
+    filter.paymentCategory = { $in: ['rent', 'water', 'electricity', 'service_charge', 'penalty', 'deposit', 'combined'] };
+  } else if (category && category !== 'all') {
+    filter.paymentCategory = String(category);
+  }
 
   if (startDate || endDate) {
     filter.createdAt = {};
@@ -101,8 +108,13 @@ exports.listPayments = async (req, res) => {
       }
     }
 
-    // Also load recorded landlord workspace payments when viewing production/all records
-    const includeWorkspacePayments = environment !== 'sandbox';
+    // Also load recorded landlord workspace payments when viewing rental/all production records
+    const cat = String(req.query.category || 'all');
+    const recStat = String(req.query.reconciliationStatus || 'all');
+    const includeWorkspacePayments =
+      environment !== 'sandbox' &&
+      !['saas', 'subscription', 'unit_upgrade', 'subscription_renewal'].includes(cat) &&
+      (recStat === 'all' || recStat === 'reconciled');
     const ledgerFilter = { ...scope.paymentExcludeFilter };
     if (selectedPropId) {
       ledgerFilter.$or = [

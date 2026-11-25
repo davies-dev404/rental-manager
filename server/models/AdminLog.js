@@ -8,7 +8,7 @@ const adminLogSchema = new mongoose.Schema({
   action: { type: String, required: true, index: true },
   category: {
     type: String,
-    enum: ['auth', 'user', 'property', 'tenant', 'payment', 'subscription', 'support', 'settings', 'report', 'security'],
+    enum: ['auth', 'user', 'property', 'tenant', 'payment', 'subscription', 'support', 'settings', 'report', 'tax', 'security'],
     default: 'security',
     index: true
   },

@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
 const User = require('../../models/User');
 const Property = require('../../models/Property');
 const Unit = require('../../models/Unit');
@@ -20,7 +21,11 @@ const VALID_REPORT_TYPES = new Set([
   'transactions',
   'subscriptions',
   'occupancy',
-  'activity'
+  'activity',
+  'daily',
+  'reconciliation',
+  'refunds',
+  'failures'
 ]);
 
 const SETTLED_PAYMENT_STATUSES = ['paid', 'confirmed', 'Completed', 'partial'];
@@ -532,6 +537,90 @@ async function generateReportPayload(type, query = {}) {
     };
   }
 
+  if (type === 'daily') {
+    const dayMap = new Map();
+    const gwTxns = await PaymentTransaction.find({
+      gatewayEnvironment: 'production',
+      isSandbox: { $ne: true },
+      status: 'paid',
+      ...(applyDateFilter ? { createdAt: dateFilter } : {})
+    })
+      .select('paymentCategory amount amountPaid createdAt paidAt')
+      .lean();
+    gwTxns.forEach((t) => {
+      const day = new Date(t.paidAt || t.createdAt).toISOString().slice(0, 10);
+      const bucket = dayMap.get(day) || { date: day, saasTotal: 0, rentalTotal: 0, count: 0 };
+      const amt = Number(t.amountPaid || t.amount || 0);
+      if (['subscription', 'unit_upgrade', 'subscription_renewal'].includes(t.paymentCategory)) {
+        bucket.saasTotal += amt;
+      } else {
+        bucket.rentalTotal += amt;
+      }
+      bucket.count += 1;
+      dayMap.set(day, bucket);
+    });
+    const days = Array.from(dayMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+    return {
+      type,
+      period,
+      title: 'Daily Collections & Revenue Breakdown',
+      summary: {
+        daysRecorded: days.length,
+        saasRevenueTotal: days.reduce((s, d) => s + d.saasTotal, 0),
+        rentalCollectionsTotal: days.reduce((s, d) => s + d.rentalTotal, 0)
+      },
+      columns: ['Date', 'Transactions Count', 'SaaS Revenue (KES)', 'Landlord Rent Collections (KES)', 'Combined Total (KES)'],
+      rows: days.map((d) => [d.date, d.count, d.saasTotal, d.rentalTotal, d.saasTotal + d.rentalTotal])
+    };
+  }
+
+  if (type === 'reconciliation' || type === 'refunds' || type === 'failures') {
+    const statusFilter =
+      type === 'refunds'
+        ? { status: { $in: ['reversed', 'refunded'] } }
+        : type === 'failures'
+        ? { status: { $in: ['failed', 'cancelled'] } }
+        : {};
+    const txns = await PaymentTransaction.find({
+      gatewayEnvironment: 'production',
+      isSandbox: { $ne: true },
+      ...statusFilter,
+      ...(applyDateFilter ? { createdAt: dateFilter } : {})
+    })
+      .populate('landlordId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
+    const rows = txns.map((t) => [
+      t.internalTransactionId,
+      t.provider,
+      t.paymentCategory,
+      t.landlordId?.name || 'Landlord',
+      Number(t.amount || 0),
+      Number(t.amountPaid || 0),
+      t.status,
+      t.reconciliationStatus || 'pending',
+      t.failureReason || t.reversalReason || '—',
+      new Date(t.createdAt).toISOString().slice(0, 10)
+    ]);
+    return {
+      type,
+      period,
+      title:
+        type === 'refunds'
+          ? 'Refunds & Reversals Report'
+          : type === 'failures'
+          ? 'Payment Failures & Exceptions Report'
+          : 'Gateway Reconciliation Audit Report',
+      summary: {
+        totalRecords: txns.length,
+        totalAmount: txns.reduce((s, t) => s + Number(t.amountPaid || t.amount || 0), 0)
+      },
+      columns: ['Txn ID', 'Gateway', 'Category', 'Landlord', 'Expected', 'Paid', 'Status', 'Recon Status', 'Reason / Notes', 'Date'],
+      rows
+    };
+  }
+
   // 'activity'
   const [adminLogs, activityLogs] = await Promise.all([
     AdminLog.find(applyDateFilter ? { createdAt: dateFilter } : {}).sort({ createdAt: -1 }).limit(300).lean(),
@@ -645,6 +734,33 @@ function buildReportPdfBuffer(report) {
   });
 }
 
+async function buildReportExcelBuffer(report) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'MakaziFlow Msimamizi Super Admin';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet(String(report.type || 'Report').slice(0, 31));
+
+  sheet.addRow([`MakaziFlow — ${report.title}`]);
+  sheet.addRow([`Generated: ${new Date().toISOString().slice(0, 19).replace('T', ' ')} | Period: ${report.period}`]);
+  sheet.addRow([]);
+
+  const headerRow = sheet.addRow(report.columns);
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.eachCell((cell) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D2240' } };
+  });
+
+  report.rows.forEach((r) => {
+    sheet.addRow(r);
+  });
+
+  sheet.columns.forEach((col) => {
+    col.width = 20;
+  });
+
+  return workbook.xlsx.writeBuffer();
+}
+
 exports.getReportData = async (req, res) => {
   try {
     const reportType = String(req.params.type || 'revenue').toLowerCase();
@@ -681,6 +797,13 @@ exports.exportReport = async (req, res) => {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="makaziflow-${reportType}-report-${new Date().toISOString().slice(0, 10)}.pdf"`);
       return res.send(pdfBuf);
+    }
+
+    if (format === 'xlsx' || format === 'excel') {
+      const xlsBuf = await buildReportExcelBuffer(report);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="makaziflow-${reportType}-report-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+      return res.send(Buffer.from(xlsBuf));
     }
 
     const csvSafe = (v) => {

@@ -46,7 +46,17 @@ export default function AdminSupport() {
       render: (t) => (
         <div>
           <p className="font-medium">
-            {t.name}
+            {t.userId ? (
+              <button
+                type="button"
+                onClick={() => setLocation(adminHref(`/users/${t.userId}`))}
+                className="text-[#0d2240] dark:text-[#00d4c8] hover:underline font-semibold cursor-pointer"
+              >
+                {t.name}
+              </button>
+            ) : (
+              t.name
+            )}
             {t.source === "landing_page" && (
               <Badge variant="outline" className="ml-1.5 text-[9.5px] bg-[#00a99d]/12 text-[#00a99d] border-[#00a99d]/30">
                 Landing Page

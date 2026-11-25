@@ -415,6 +415,18 @@ export default function OverviewTab({ userDetail, globalSearch = "", onSelectTab
                 <span className="text-[#738197]">Address</span>
                 <strong className="text-[#152238] dark:text-slate-200 truncate max-w-[170px]">{u.address || "Not provided"}</strong>
               </div>
+              <div className="flex justify-between">
+                <span className="text-[#738197]">SaaS Payments Paid</span>
+                <strong className="text-[#00B8B0]">
+                  {formatKES(summary.saasSubscriptionPaidTotal || 0)} ({summary.saasSubscriptionPaymentsCount || 0})
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#738197]">Support &amp; Activity</span>
+                <strong className="text-[#152238] dark:text-slate-200">
+                  {summary.supportTicketCount || 0} ticket(s) · {summary.accountActivityCount || 0} events (30d)
+                </strong>
+              </div>
               {userDetail?.businessSettings && (
                 <div className="flex justify-between">
                   <span className="text-[#738197]">M-Pesa Mode</span>

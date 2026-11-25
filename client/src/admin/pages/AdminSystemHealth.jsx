@@ -186,6 +186,44 @@ export default function AdminSystemHealth() {
         </Card>
       </div>
 
+      {/* Gateway, Tax & Email Integration Readiness */}
+      {health?.integrations && (
+        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-[#00a99d]" /> Gateway, KRA eTIMS &amp; Email Integration Readiness
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Live configuration status and operational reconciliation queues across external providers.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 text-xs">
+            {[
+              { label: "Pesapal", ok: health.integrations.pesapalConfigured },
+              { label: "IntaSend", ok: health.integrations.intasendConfigured },
+              { label: "M-Pesa Paybill", ok: health.integrations.mpesaConfigured },
+              { label: "KRA eTIMS", ok: health.integrations.etimsConfigured },
+              { label: "Brevo Email", ok: health.integrations.brevoConfigured }
+            ].map((item) => (
+              <div key={item.label} className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+                <p className="text-[11px] font-semibold text-slate-500">{item.label}</p>
+                <Badge variant="outline" className={`mt-1 text-[10px] ${item.ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                  {item.ok ? "Configured" : "Not Configured"}
+                </Badge>
+              </div>
+            ))}
+            <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+              <p className="text-[11px] font-semibold text-slate-500">Unmatched Webhooks</p>
+              <p className="text-base font-extrabold text-amber-600 mt-0.5">{pay.unmatchedCallbacksCount ?? 0}</p>
+            </div>
+            <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50">
+              <p className="text-[11px] font-semibold text-slate-500">Failed eTIMS</p>
+              <p className="text-base font-extrabold text-rose-600 mt-0.5">{pay.failedEtimsCount ?? 0}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Circuit Breakers & Cache Telemetry */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border-slate-200 dark:border-slate-800 shadow-xs">

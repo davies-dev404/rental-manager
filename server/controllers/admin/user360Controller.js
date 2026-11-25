@@ -453,7 +453,8 @@ exports.getUser360Overview = async (req, res) => {
       recentActivity30d,
       loginActivityCount,
       adminLogs,
-      supportTicketCount
+      supportTicketCount,
+      saasTransactions
     ] = await Promise.all([
       Payment.find({
         ...scope.paymentExcludeFilter,
@@ -476,8 +477,22 @@ exports.getUser360Overview = async (req, res) => {
       ActivityLog.countDocuments({ userId: user._id, timestamp: { $gte: thirtyDaysAgo } }),
       ActivityLog.countDocuments({ userId: user._id, action: /login/i }),
       AdminLog.find({ targetType: 'User', targetId: String(user._id) }).sort({ createdAt: -1 }).limit(15).lean(),
-      SupportTicket.countDocuments({ $or: [{ userId: user._id }, { email: String(user.email || '').toLowerCase() }] })
+      SupportTicket.countDocuments({ $or: [{ userId: user._id }, { email: String(user.email || '').toLowerCase() }] }),
+      PaymentTransaction.find({
+        landlordId: user._id,
+        paymentCategory: { $in: ['subscription', 'unit_upgrade', 'subscription_renewal'] },
+        status: 'paid',
+        isSandbox: { $ne: true }
+      })
+        .select('amount amountPaid currency paidAt createdAt')
+        .lean()
     ]);
+
+    const saasSubscriptionPaidTotal = (Array.isArray(saasTransactions) ? saasTransactions : []).reduce(
+      (sum, t) => sum + Number(t.amountPaid || t.amount || 0),
+      0
+    );
+    const saasSubscriptionPaymentsCount = Array.isArray(saasTransactions) ? saasTransactions.length : 0;
 
     const unitToProp = new Map(units.map((u) => [String(u._id), String(u.propertyId)]));
     const propNameMap = new Map(properties.map((p) => [String(p._id), p.name]));
@@ -692,7 +707,10 @@ exports.getUser360Overview = async (req, res) => {
         planName: entitlement?.planName || activeSub?.planName || user.subscriptionTier || 'Starter',
         daysRemaining,
         revenueGrowthPct,
-        supportTicketCount
+        supportTicketCount,
+        saasSubscriptionPaidTotal,
+        saasSubscriptionPaymentsCount,
+        accountActivityCount: recentActivity30d
       },
       health,
       engagement,

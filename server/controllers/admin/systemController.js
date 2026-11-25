@@ -1,8 +1,18 @@
 const mongoose = require('mongoose');
 const DeadLetterJob = require('../../models/DeadLetterJob');
 const PaymentTransaction = require('../../models/PaymentTransaction');
+const PaymentCallback = require('../../models/PaymentCallback');
+const TaxSubmission = require('../../models/TaxSubmission');
+const LandlordSubscription = require('../../models/LandlordSubscription');
+const User = require('../../models/User');
+const Property = require('../../models/Property');
+const SupportTicket = require('../../models/SupportTicket');
+const Invoice = require('../../models/Invoice');
 const AdminLog = require('../../models/AdminLog');
 const FeatureFlag = require('../../models/FeatureFlag');
+const EtimsService = require('../../services/tax/EtimsService');
+const { getDemoExclusionScope } = require('../../services/adminScopeService');
+const { escapeRegExp } = require('../../middleware/securityMiddleware');
 const { replayDeadLetter } = require('../../services/dlqService');
 const { getTelemetrySnapshot, getPrometheusMetricsText } = require('../../services/metricsService');
 const { getAllBreakersStatus } = require('../../utils/resilience');
@@ -33,11 +43,28 @@ exports.getSystemHealth = async (req, res) => {
     }
 
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [failedPayments24h, pendingPaymentsCount, deadLetterCount, recentSecurityEvents] = await Promise.all([
+    const in14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const [
+      failedPayments24h,
+      pendingPaymentsCount,
+      deadLetterCount,
+      recentSecurityEvents,
+      unmatchedCallbacksCount,
+      failedEtimsCount,
+      expiringSubscriptionsCount,
+      openSupportTicketsCount
+    ] = await Promise.all([
       PaymentTransaction.countDocuments({ status: 'failed', createdAt: { $gte: since24h } }),
       PaymentTransaction.countDocuments({ status: { $in: ['pending', 'processing'] } }),
       DeadLetterJob.countDocuments({ status: 'dead' }),
-      AdminLog.countDocuments({ category: 'security', createdAt: { $gte: since24h } })
+      AdminLog.countDocuments({ category: 'security', createdAt: { $gte: since24h } }),
+      PaymentCallback.countDocuments({ processingStatus: 'unmatched' }),
+      TaxSubmission.countDocuments({ status: 'failed' }),
+      LandlordSubscription.countDocuments({
+        status: { $in: ['active', 'trial', 'grace_period'] },
+        expiryDate: { $gte: new Date(), $lte: in14Days }
+      }),
+      SupportTicket.countDocuments({ status: { $in: ['open', 'in_progress'] } })
     ]);
 
     const mem = process.memoryUsage();
@@ -80,7 +107,23 @@ exports.getSystemHealth = async (req, res) => {
       },
       payments: {
         failedLast24h: failedPayments24h,
-        pendingActive: pendingPaymentsCount
+        pendingActive: pendingPaymentsCount,
+        unmatchedCallbacksCount,
+        failedEtimsCount
+      },
+      alerts: {
+        expiringSubscriptionsCount,
+        openSupportTicketsCount,
+        unmatchedCallbacksCount,
+        failedEtimsCount,
+        failedPayments24h
+      },
+      integrations: {
+        pesapalConfigured: Boolean((process.env.PESAPAL_CONSUMER_KEY || '').trim() && (process.env.PESAPAL_CONSUMER_SECRET || '').trim()),
+        intasendConfigured: Boolean((process.env.INTASEND_SECRET_KEY || '').trim()),
+        mpesaConfigured: Boolean((process.env.MPESA_SHORTCODE || process.env.MPESA_CONSUMER_KEY || '').trim()),
+        etimsConfigured: EtimsService.isConfigured(),
+        brevoConfigured: Boolean((process.env.BREVO_API_KEY || '').trim())
       },
       reliability: {
         ...httpTelemetry,
@@ -192,5 +235,59 @@ exports.resolveDeadLetterJob = async (req, res) => {
     res.json({ message: 'Dead letter job marked resolved', job });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+exports.globalSearch = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) {
+      return res.json({ users: [], properties: [], transactions: [], invoices: [], tickets: [] });
+    }
+    const rx = new RegExp(escapeRegExp(q), 'i');
+    const scope = await getDemoExclusionScope();
+
+    const [users, properties, transactions, invoices, tickets] = await Promise.all([
+      User.find({
+        ...scope.userExcludeFilter,
+        role: { $ne: 'superadmin' },
+        $or: [{ name: rx }, { email: rx }, { phone: rx }, { companyName: rx }]
+      })
+        .select('name email phone companyName accountStatus role')
+        .limit(6)
+        .lean(),
+      Property.find({
+        ...scope.propertyExcludeFilter,
+        $or: [{ name: rx }, { location: rx }]
+      })
+        .populate('user', 'name email')
+        .select('name location type status user')
+        .limit(6)
+        .lean(),
+      PaymentTransaction.find({
+        $or: [{ internalTransactionId: rx }, { accountReference: rx }, { providerReference: rx }, { trackingId: rx }]
+      })
+        .select('internalTransactionId accountReference providerReference provider paymentCategory amount amountPaid currency status')
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean(),
+      Invoice.find({
+        invoiceCategory: 'subscription',
+        $or: [{ invoiceNumber: rx }, { customerName: rx }, { customerEmail: rx }]
+      })
+        .select('invoiceNumber customerName landlordId totalAmount status')
+        .limit(5)
+        .lean(),
+      SupportTicket.find({
+        $or: [{ ticketNumber: rx }, { subject: rx }, { email: rx }, { name: rx }]
+      })
+        .select('ticketNumber subject email status priority')
+        .limit(5)
+        .lean()
+    ]);
+
+    res.json({ users, properties, transactions, invoices, tickets });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Global search failed' });
   }
 };

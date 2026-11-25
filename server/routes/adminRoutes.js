@@ -10,6 +10,7 @@ const user360Controller = require('../controllers/admin/user360Controller');
 const propertyController = require('../controllers/admin/propertyController');
 const tenantController = require('../controllers/admin/tenantController');
 const paymentController = require('../controllers/admin/paymentController');
+const reconciliationController = require('../controllers/admin/reconciliationController');
 const subscriptionController = require('../controllers/admin/subscriptionController');
 const reportController = require('../controllers/admin/reportController');
 const supportController = require('../controllers/admin/supportController');
@@ -53,12 +54,17 @@ router.patch('/properties/:id/flag', validateObjectId('id'), propertyController.
 router.get('/tenants', tenantController.listTenants);
 router.get('/tenants/:id', validateObjectId('id'), tenantController.getTenantDetail);
 
-// Payments & Transactions
+// Payments & Financial Reconciliation / eTIMS Monitoring
 router.get('/payments/export', paymentController.exportPaymentsCsv);
 router.get('/payments', paymentController.listPayments);
 router.get('/payments/:id', validateObjectId('id'), paymentController.getPaymentDetail);
 router.post('/payments/:id/verify', validateObjectId('id'), paymentController.verifyPayment);
 router.post('/payments/:id/reverse', validateObjectId('id'), paymentController.reversePayment);
+router.get('/reconciliation/overview', reconciliationController.getReconciliationOverview);
+router.get('/reconciliation/callbacks', reconciliationController.listCallbacks);
+router.post('/reconciliation/callbacks/:id/resolve', validateObjectId('id'), reconciliationController.resolveCallback);
+router.get('/reconciliation/etims', reconciliationController.listEtimsSubmissions);
+router.post('/reconciliation/etims/:id/retry', validateObjectId('id'), reconciliationController.retryEtimsSubmission);
 
 // Subscription & Plans Management
 router.get('/subscriptions', subscriptionController.listSubscriptions);
@@ -66,6 +72,8 @@ router.post('/subscriptions/plans', subscriptionController.createPlan);
 router.patch('/subscriptions/plans/:id', validateObjectId('id'), subscriptionController.updatePlan);
 router.put('/subscriptions/plans/:id', validateObjectId('id'), subscriptionController.updatePlan);
 router.post('/subscriptions/landlords/:id/override', validateObjectId('id'), subscriptionController.overrideLandlordSubscription);
+router.post('/subscriptions/landlords/:id/extend-trial', validateObjectId('id'), subscriptionController.extendTrial);
+router.patch('/subscriptions/:id/lifecycle', validateObjectId('id'), subscriptionController.manageSubscriptionLifecycle);
 router.post('/subscriptions/process-expirations', subscriptionController.runExpirySweep);
 
 // Reports & Analytics (JSON, CSV, PDF)
@@ -87,6 +95,7 @@ router.post('/settings/maintenance/notify', settingsController.sendMaintenanceBr
 router.get('/activity-logs', activityController.listAuditLogs);
 
 // System Health, Telemetry, Feature Flags & Dead Letter Queue
+router.get('/search', systemController.globalSearch);
 router.get('/system-health', systemController.getSystemHealth);
 router.get('/metrics', systemController.getPrometheusMetrics);
 router.get('/feature-flags', systemController.listFeatureFlags);

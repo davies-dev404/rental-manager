@@ -37,12 +37,24 @@ export default function AdminProperties() {
     {
       key: "landlord",
       label: "Subscriber / Landlord",
-      render: (p) => (
-        <div>
-          <p className="font-semibold text-slate-800 dark:text-slate-200">{p.landlord?.name || "—"}</p>
-          <p className="text-[11px] text-slate-500">{p.landlord?.email}</p>
-        </div>
-      )
+      render: (p) =>
+        p.landlord?._id ? (
+          <button
+            type="button"
+            onClick={() => setLocation(adminHref(`/users/${p.landlord._id}`))}
+            className="text-left group cursor-pointer"
+          >
+            <p className="font-semibold text-[#0d2240] dark:text-[#00d4c8] group-hover:underline">
+              {p.landlord?.name || "—"}
+            </p>
+            <p className="text-[11px] text-slate-500">{p.landlord?.email}</p>
+          </button>
+        ) : (
+          <div>
+            <p className="font-semibold text-slate-800 dark:text-slate-200">{p.landlord?.name || "—"}</p>
+            <p className="text-[11px] text-slate-500">{p.landlord?.email}</p>
+          </div>
+        )
     },
     {
       key: "occupancy",
