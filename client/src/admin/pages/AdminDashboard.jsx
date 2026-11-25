@@ -83,9 +83,6 @@ export default function AdminDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[11px] uppercase border-[#00a99d]/40 text-[#0d2240] dark:text-[#00d4c8]">
-            {m.gatewayProvider || "pesapal"} · {m.gatewayEnvironment || "sandbox"}
-          </Badge>
           <Button
             size="sm"
             variant="outline"

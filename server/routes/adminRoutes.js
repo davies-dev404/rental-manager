@@ -6,6 +6,7 @@ const { validateObjectId } = require('../middleware/securityMiddleware');
 
 const dashboardController = require('../controllers/admin/dashboardController');
 const userController = require('../controllers/admin/userController');
+const user360Controller = require('../controllers/admin/user360Controller');
 const propertyController = require('../controllers/admin/propertyController');
 const tenantController = require('../controllers/admin/tenantController');
 const paymentController = require('../controllers/admin/paymentController');
@@ -24,10 +25,24 @@ router.get('/dashboard', dashboardController.getOverviewDashboard);
 router.post('/system/clear-demo-data', dashboardController.clearDemoData);
 router.post('/system/cleanup-test-accounts', dashboardController.cleanupTestAccounts);
 
-// User Management
+// User Management & User 360° Dashboard
 router.get('/users', userController.listUsers);
-router.get('/users/:id', validateObjectId('id'), userController.getUserDetail);
+router.get('/users/:id', validateObjectId('id'), user360Controller.getUser360Overview);
+router.patch('/users/:id', validateObjectId('id'), user360Controller.updateUserProfile);
 router.patch('/users/:id/status', validateObjectId('id'), userController.updateUserStatus);
+router.post('/users/:id/actions', validateObjectId('id'), user360Controller.performAccountAction);
+router.get('/users/:id/export', validateObjectId('id'), user360Controller.exportUserData);
+router.get('/users/:id/properties', validateObjectId('id'), user360Controller.getUserProperties);
+router.patch('/users/:id/properties/:propertyId', validateObjectId('id'), user360Controller.manageUserProperty);
+router.get('/users/:id/tenants', validateObjectId('id'), user360Controller.getUserTenants);
+router.get('/users/:id/payments', validateObjectId('id'), user360Controller.getUserPayments);
+router.get('/users/:id/payments/:paymentId', validateObjectId('id'), user360Controller.getUserPaymentInvestigation);
+router.get('/users/:id/subscriptions', validateObjectId('id'), user360Controller.getUserSubscriptions);
+router.post('/users/:id/subscriptions/manage', validateObjectId('id'), user360Controller.manageUserSubscription);
+router.get('/users/:id/security', validateObjectId('id'), user360Controller.getUserSecurityAudit);
+router.get('/users/:id/support', validateObjectId('id'), user360Controller.getUserSupportCenter);
+router.post('/users/:id/notes', validateObjectId('id'), user360Controller.createInternalNote);
+router.post('/users/:id/notify', validateObjectId('id'), user360Controller.sendUserNotification);
 
 // Property Management
 router.get('/properties', propertyController.listProperties);
